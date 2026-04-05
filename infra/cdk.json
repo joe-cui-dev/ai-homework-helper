@@ -1,0 +1,22 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/app.ts",
+  "context": {
+    "allowedOrigin": "*",
+    "logLevel": "DEBUG"
+  },
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "**/*.d.ts",
+      "**/*.js",
+      "tsconfig.json",
+      ".gitignore",
+      "package.json",
+      "package-lock.json",
+      "node_modules",
+      "cdk.out"
+    ]
+  }
+}

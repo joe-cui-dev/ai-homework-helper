@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "workspaces": [
+    "backend",
+    "infra"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "deploy": "npm run deploy --workspace=infra"
+  }
+}
