@@ -2,6 +2,8 @@
 
 A serverless AI tutor for Australian primary school students (Years 1–6). Students submit a homework question and receive a step-by-step explanation tailored to their year level.
 
+> **MVP status:** Backend and infrastructure are complete. Frontend is not yet built.
+
 ## How it works
 
 The backend runs an agentic loop powered by **Amazon Bedrock (Claude Haiku 4.5)**. For each question the agent:
@@ -18,12 +20,12 @@ Responses stream back to the client as NDJSON events over a Lambda Function URL.
 ## Architecture
 
 ```
-Browser → Lambda Function URL (streaming)
-               │
-               ├── Amazon Bedrock (Claude Haiku 4.5)
-               ├── Amazon Cognito  (JWT auth)
-               ├── S3              (session history)
-               └── Bedrock Guardrails (content safety)
+Client → Lambda Function URL (streaming)
+              │
+              ├── Amazon Bedrock (Claude Haiku 4.5)
+              ├── Amazon Cognito  (JWT auth)
+              ├── S3              (session history)
+              └── Bedrock Guardrails (content safety)
 ```
 
 | Layer          | Technology                                        |
@@ -37,7 +39,7 @@ Browser → Lambda Function URL (streaming)
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - AWS CLI configured with credentials for your target account
 - Bedrock model access enabled for `anthropic.claude-haiku-4-5-20251001-v1:0` in your region
 
@@ -89,6 +91,7 @@ ai-homework-helper/
 │       ├── curriculum.ts # Australian Curriculum data (local)
 │       ├── logger.ts     # Powertools logger singleton
 │       └── types.ts      # Shared types
+├── frontend/             # Not yet built
 └── infra/
     ├── bin/app.ts        # CDK app entry point
     └── lib/stack.ts      # Full stack definition

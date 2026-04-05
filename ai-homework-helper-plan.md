@@ -8,14 +8,15 @@ A serverless, multimodal AI homework assistant. Students submit a question as te
 
 ## Key Design Decisions
 
-| Decision        | Choice                  | Reason                                     |
-| --------------- | ----------------------- | ------------------------------------------ |
-| AI pipeline     | Sequential 3-step chain | Simpler and cheaper than a full agent loop |
-| Image input     | Base64 in request body  | Removes presigned URL round-trip           |
-| OCR             | Claude native vision    | No Textract needed                         |
-| History storage | S3 JSON objects         | No DynamoDB table to manage                |
-| Auth            | None (public demo)      | Add Cognito in production                  |
-| Monorepo        | npm workspaces          | Single `npm install` at root               |
+| Decision        | Choice                          | Reason                                        |
+| --------------- | ------------------------------- | --------------------------------------------- |
+| AI pipeline     | Tool-dispatching agentic loop   | Claude picks tools; adapts to each question   |
+| Image input     | Base64 in request body          | Removes presigned URL round-trip              |
+| OCR             | Claude native vision            | No Textract needed                            |
+| History storage | S3 JSON objects                 | No DynamoDB table to manage                   |
+| Auth            | Amazon Cognito (JWT in Lambda)  | Verified at cold-start; student ID from token |
+| API layer       | Lambda Function URL (streaming) | No API GW; removes 29 s timeout ceiling       |
+| Monorepo        | npm workspaces                  | Single `npm install` at root                  |
 
 ---
 
@@ -47,73 +48,87 @@ ai-homework-helper/
 
 ## Tech Stack
 
-- **Frontend:** React 18, Vite, TypeScript, Material UI
-- **Backend:** AWS Lambda, Node.js 20, TypeScript
+- **Frontend:** React 18, Vite, TypeScript, Material UI _(not yet built)_
+- **Backend:** AWS Lambda, Node.js 24, TypeScript
 - **Infrastructure:** AWS CDK v2
 - **AI:** Amazon Bedrock — Claude Haiku 4.5
-- **Storage:** S3 (image input + session history as JSON)
-- **API:** API Gateway HTTP API
+- **Auth:** Amazon Cognito (User Pool + SPA client)
+- **Storage:** S3 (session history as JSON, 30-day expiry)
+- **API:** Lambda Function URL (streaming NDJSON)
 
 ---
 
 ## Environment Variables
 
-### Backend Lambda
+### Backend Lambda (all set by CDK — no manual configuration needed)
 
-```
-BEDROCK_MODEL_ID=anthropic.claude-haiku-3-5-20241022-v1:0
-S3_BUCKET_NAME=<deployed bucket name>
-```
+| Variable                    | Description                                     |
+| --------------------------- | ----------------------------------------------- |
+| `BEDROCK_MODEL_ID`          | Bedrock model identifier                        |
+| `S3_BUCKET_NAME`            | Session history bucket name                     |
+| `BEDROCK_GUARDRAIL_ID`      | Guardrail for content safety                    |
+| `BEDROCK_GUARDRAIL_VERSION` | Guardrail version (created by CDK)              |
+| `COGNITO_USER_POOL_ID`      | Cognito User Pool ID                            |
+| `COGNITO_APP_CLIENT_ID`     | Cognito App Client ID (no secret, browser-safe) |
+| `ALLOWED_ORIGIN`            | CORS allowed origin (CDK context, default `*`)  |
+| `SERVICE_NAME`              | Powertools logger service name                  |
+| `LOG_LEVEL`                 | Log verbosity (CDK context, default `INFO`)     |
 
 ### Frontend (`.env.local`)
 
 ```
-VITE_API_URL=<API Gateway endpoint after deploy>
+VITE_API_URL=<Lambda Function URL — printed by CDK after deploy>
+VITE_COGNITO_USER_POOL_ID=<from CDK output>
+VITE_COGNITO_APP_CLIENT_ID=<from CDK output>
 ```
 
 ---
 
-## AI Pipeline
+## AI Agent
 
-All logic runs inside a single Lambda function. No agent runtime. Three sequential Bedrock calls per request.
+The backend runs a tool-dispatching agentic loop. Claude receives a system prompt and a set of tools, then decides which to call based on the question. The loop runs up to 5 iterations and always ends when Claude calls `submit_answer`.
+
+### Agent flow
 
 ```
-Request (text + optional base64 image)
+Request (question + optional base64 image)
   │
   ▼
-Step 1 — Classify
-  Prompt: Identify the subject (math, science, english, other)
-  and difficulty level (primary, secondary, other).
-  Return JSON: { subject, difficulty }
+Claude (ConverseCommand) — selects tools
   │
-  ▼
-Step 2 — Solve
-  Prompt: Given subject and difficulty, solve the problem.
-  Include the image in this call if provided.
-  Return JSON: { answer, steps[] }
-  │
-  ▼
-Step 3 — Explain
-  Prompt: Rewrite the solution in simple, encouraging language
-  for a student at the identified level.
-  Return JSON: { explanation }
-  │
-  ▼
-Persist to S3 (async, fire-and-forget)
-  Key: sessions/{uuid}.json
-  Content: { input, subject, difficulty, answer, steps, explanation, timestamp }
-  │
-  ▼
-Response to frontend
-  { subject, difficulty, answer, steps, explanation, sessionId }
+  ├── lookup_curriculum (optional)     → local data, zero Bedrock cost
+  ├── fetch_session_history (optional) → S3 read; only if studentId present
+  ├── solve_question                   → calls pipeline.solve() via Bedrock
+  ├── explain_solution (optional)      → calls pipeline.explain() via Bedrock
+  ├── generate_hint (optional)         → calls pipeline.generateHint() via Bedrock
+  └── submit_answer (terminal)         → ends loop, returns AgentResult
 ```
 
-### Prompt guidelines
+### Tools
 
-- Each prompt requests JSON-only output (no markdown fences).
-- Include `max_tokens: 1024` per call.
-- Pass `temperature: 0` for deterministic classification, `0.3` for explanation.
-- System prompt on every call: `"You are a helpful homework tutor for school students. Always respond in JSON."`
+| Tool                    | Description                                                        | Bedrock call? |
+| ----------------------- | ------------------------------------------------------------------ | ------------- |
+| `solve_question`        | Solves step by step using subject/year-appropriate prompts         | Yes           |
+| `explain_solution`      | Rewrites answer in friendly, age-appropriate language              | Yes           |
+| `generate_hint`         | Produces 2–3 Socratic hints                                        | Yes           |
+| `lookup_curriculum`     | Returns Australian Curriculum outcomes for subject + year          | No (local)    |
+| `fetch_session_history` | Fetches 3 most recent sessions for the student from S3             | No (S3)       |
+| `submit_answer`         | Terminal tool — provides the final `AgentResult` and ends the loop | No            |
+
+### Streaming events (NDJSON)
+
+Each line of the response body is a JSON-encoded `StreamEvent`:
+
+| Type         | Payload                | When                                            |
+| ------------ | ---------------------- | ----------------------------------------------- |
+| `tool_start` | `{ toolName }`         | Before each tool dispatch                       |
+| `tool_end`   | `{ toolName, result }` | After each tool completes                       |
+| `complete`   | `AgentResult`          | When `submit_answer` is called                  |
+| `error`      | `{ message }`          | On auth failure, validation error, or exception |
+
+### Cost behaviour
+
+The system prompt tells Claude to be cost-conscious: skip `explain_solution` for simple factual answers, call `fetch_session_history` only when a `studentId` is present, and call `solve_question` once. Typical request: **3–6 Bedrock calls total**.
 
 ---
 
@@ -123,55 +138,67 @@ Response to frontend
 
 Responsibilities:
 
-1. Parse request body — extract `question` (string) and `image` (base64 string, optional).
-2. Run the 3-step pipeline via `pipeline.ts`.
-3. Persist result to S3 asynchronously.
-4. Return JSON response.
+1. **Authenticate** — validate the Cognito access token from `Authorization: Bearer <token>`. Rejects with an `error` event if missing or invalid. Extracts student ID from the verified JWT `sub` claim (never trusts the request body for identity).
+2. **Parse and validate** — extract `question` (string, required, max 2000 chars) and `image` (base64 string, optional) from the request body.
+3. **Stream response** — opens an `HttpResponseStream` with CORS headers and writes NDJSON events.
+4. **Run agent** — calls `runAgent()`, forwarding each streaming event to the client.
+5. **Persist session** — calls `saveSession()` after the agent completes, keyed as `sessions/{studentId}/{sessionId}.json`.
+
+### File: `backend/src/agent.ts`
+
+The agentic loop. Iterates up to 5 times calling `ConverseCommand`, dispatches tools on each turn, and emits `tool_start`/`tool_end` events to the stream. Ends when Claude calls `submit_answer` or max iterations is reached.
+
+Exports:
+
+- `runAgent(question, studentId, image?, onEvent)` → `AgentResult`
+- `TOOL_SCHEMA` — array of 6 tool definitions
+- `dispatchTool(name, input, studentId?)` — routes tool calls to pipeline / curriculum / storage
 
 ### File: `backend/src/pipeline.ts`
 
-Export three async functions:
+Three async functions, each making a direct `InvokeModelCommand` call. Prompts use a two-dimension system: **domain skill** (subject-specific) × **tone skill** (year-level-appropriate):
 
-- `classify(question, imageBase64?)` → `{ subject, difficulty }`
-- `solve(question, subject, difficulty, imageBase64?)` → `{ answer, steps }`
-- `explain(answer, steps, difficulty)` → `{ explanation }`
-
-Each function calls Bedrock using the `@aws-sdk/client-bedrock-runtime` `InvokeModelCommand`.
+- `solve(question, subject, difficulty)` → `{ answer, steps[] }` — temperature 0
+- `explain(answer, steps, difficulty)` → `{ explanation }` — temperature 0.3
+- `generateHint(question, subject, difficulty)` → `{ hints: string[] }` — temperature 0.3
 
 ### File: `backend/src/bedrock.ts`
 
-Single helper:
+Two exports:
 
 ```typescript
+// Direct invocation — used by pipeline.ts
 export async function callClaude(
   prompt: string,
-  imageBase64?: string,
+  temperature: number,
 ): Promise<string>;
+
+// Tool-use conversation — used by agent.ts
+export async function converseWithTools(
+  messages: BedrockMessage[],
+  tools: Tool[],
+  system: string,
+): Promise<ConverseResponse>;
 ```
 
-Builds the `messages` array. If `imageBase64` is provided, include it as:
-
-```json
-{
-  "type": "image",
-  "source": {
-    "type": "base64",
-    "media_type": "image/jpeg",
-    "data": "<base64 string>"
-  }
-}
-```
+Both apply the Bedrock Guardrail when `BEDROCK_GUARDRAIL_ID` is set.
 
 ### File: `backend/src/storage.ts`
 
 ```typescript
+// Persist a completed session
 export async function saveSession(
   sessionId: string,
   data: object,
-): Promise<void>;
-```
+  studentId?: string,
+): Promise<void>; // Key: sessions/{studentId}/{sessionId}.json
 
-Writes `sessions/{sessionId}.json` to S3 using `PutObjectCommand`. Call with `await` inside the handler but do not block the response — use `void saveSession(...)` pattern.
+// Fetch the most recent sessions for personalisation
+export async function getRecentSessions(
+  studentId: string,
+  limit?: number, // default 3
+): Promise<object[]>;
+```
 
 ---
 
@@ -205,8 +232,9 @@ Send the base64 string in the request body. Do not upload to S3 directly from th
 ### API call shape
 
 ```typescript
-POST /solve
+POST <VITE_API_URL>
 Content-Type: application/json
+Authorization: Bearer <Cognito access token>
 
 {
   "question": "What is the quadratic formula?",
@@ -214,39 +242,61 @@ Content-Type: application/json
 }
 ```
 
+The response is a streaming NDJSON body. Parse each newline-delimited JSON object as a `tool_start`, `tool_end`, `complete`, or `error` event.
+
 Enforce a max image size of 4 MB client-side before encoding.
 
 ---
 
 ## Infrastructure (CDK)
 
-### `infra/lib/stack.ts` — resources to create
+### `infra/lib/stack.ts` — resources deployed
 
 1. **S3 bucket**
    - Block all public access
-   - Lifecycle rule: expire objects under `sessions/` prefix after 30 days
-   - CORS rule allowing PUT/GET from the frontend origin
+   - 30-day lifecycle expiry on `sessions/` prefix
+   - Auto-delete on stack destroy (demo only)
 
-2. **Lambda function**
-   - Runtime: `nodejs24.x`
-   - Memory: 512 MB
-   - Timeout: 30 seconds
-   - Environment variables: `BEDROCK_MODEL_ID`, `S3_BUCKET_NAME`
-   - IAM: grant `bedrock:InvokeModel` on the Haiku model ARN, grant `s3:PutObject` on the sessions prefix
+2. **Bedrock Guardrail**
+   - Filters: HATE, INSULTS, SEXUAL, VIOLENCE (HIGH both directions)
+   - Word policy: PROFANITY managed list
+   - PII blocking: NAME, EMAIL, PHONE, ADDRESS, AGE
+   - Topic deny: off-topic requests, roleplay, code generation, jailbreaks
 
-3. **API Gateway HTTP API**
-   - Single route: `POST /solve` → Lambda integration
-   - CORS enabled for the frontend origin
-   - Output the endpoint URL as a CDK stack output
+3. **Cognito User Pool**
+   - Email sign-in with auto-verification; self-signup enabled
+   - SPA App Client (no secret, ALLOW_USER_SRP_AUTH)
+   - User Pool ID + Client ID output as CDK stack outputs
+
+4. **Lambda function**
+   - Runtime: `nodejs24.x`, memory: 512 MB, timeout: **5 minutes**
+   - Reserved concurrency: **10** (primary cost and abuse throttle)
+   - Response streaming enabled
+   - All 9 environment variables set by CDK
+   - IAM: `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream`, `bedrock:ApplyGuardrail`, `s3:PutObject`, `s3:GetObject` on `sessions/*`
+
+5. **Lambda Function URL**
+   - Invocation mode: `RESPONSE_STREAM`; auth type: `NONE` (Cognito validated inside Lambda)
+   - CORS: POST allowed from `*`, headers `Content-Type` + `Authorization`
+   - Function URL output as CDK stack output
+
+6. **Bedrock invocation logging**
+   - CloudWatch log group (30-day retention) + service role via CDK custom resource
+   - Enables model-level request/response auditing
 
 ### IAM policy for Bedrock
 
 ```typescript
 fn.addToRolePolicy(
   new iam.PolicyStatement({
-    actions: ["bedrock:InvokeModel"],
+    actions: [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+      "bedrock:ApplyGuardrail",
+    ],
     resources: [
-      `arn:aws:bedrock:${region}::foundation-model/anthropic.claude-haiku-4-5-xxx`,
+      `arn:aws:bedrock:${region}::foundation-model/${HAIKU_45_MODEL_ID}`,
+      guardrail.attrGuardrailArn,
     ],
   }),
 );
@@ -256,13 +306,13 @@ fn.addToRolePolicy(
 
 ## Request Size Limits
 
-| Layer                   | Limit                          |
-| ----------------------- | ------------------------------ |
-| Client-side image guard | 4 MB before base64 encoding    |
-| API Gateway payload     | 10 MB (default HTTP API limit) |
-| Lambda request body     | 10 MB                          |
+| Layer                   | Limit                             |
+| ----------------------- | --------------------------------- |
+| Client-side image guard | 4 MB before base64 encoding       |
+| Lambda Function URL     | 20 MB (streaming invocation mode) |
+| Lambda request body     | 20 MB                             |
 
-Base64 encoding inflates size by ~33%. A 4 MB image becomes ~5.3 MB — safely within limits.
+Base64 encoding inflates size by ~33%. A 4 MB image becomes ~5.3 MB — safely within the 20 MB limit.
 
 ---
 
@@ -272,36 +322,38 @@ Base64 encoding inflates size by ~33%. A 4 MB image becomes ~5.3 MB — safely w
 # Install all dependencies
 npm install
 
-# Start frontend locally
-npm run dev
-
 # Deploy infrastructure (first time)
 cd infra
 npx cdk bootstrap
 npx cdk deploy
 
-# Copy the API Gateway URL from CDK outputs into frontend/.env.local
+# CDK outputs:
+#   AiHomeworkHelperStack.FunctionUrl    → VITE_API_URL
+#   AiHomeworkHelperStack.UserPoolId     → VITE_COGNITO_USER_POOL_ID
+#   AiHomeworkHelperStack.AppClientId    → VITE_COGNITO_APP_CLIENT_ID
+
+# Copy the above values into frontend/.env.local, then start the frontend:
+npm run dev
 ```
 
 ---
 
 ## What to Add in Production
 
-- **Auth:** Amazon Cognito user pool + API Gateway authorizer
-- **Rate limiting:** API Gateway usage plan
-- **Streaming responses:** Bedrock `InvokeModelWithResponseStream`
-- **Personalisation:** Per-user history (DynamoDB keyed by `userId`)
+- **Rate limiting:** AWS WAF or tighten reserved-concurrency (currently capped at 10)
+- **Richer personalisation:** DynamoDB keyed by `userId` instead of flat S3 objects
 - **Quiz generation:** Post-solve step that generates 3 practice questions
+- **Frontend auth flow:** Sign-up/sign-in UI using `amazon-cognito-identity-js`
 
 ---
 
 ## Cost Profile (estimated, low usage)
 
-| Service             | Cost driver                      | Estimate               |
-| ------------------- | -------------------------------- | ---------------------- |
-| Bedrock (Haiku 4.5) | ~3 calls × 1K tokens per request | ~$0.001 per question   |
-| Lambda              | Pay per invocation               | Negligible             |
-| API Gateway         | Pay per request                  | Negligible             |
-| S3                  | Storage + requests               | < $0.01/month for demo |
+| Service             | Cost driver                                | Estimate                  |
+| ------------------- | ------------------------------------------ | ------------------------- |
+| Bedrock (Haiku 4.5) | 3–6 Bedrock calls × ~1K tokens per request | ~$0.001–$0.003 / question |
+| Lambda              | Pay per invocation + duration              | Negligible                |
+| Cognito             | Free tier: 50,000 MAU                      | $0                        |
+| S3                  | Storage + requests                         | < $0.01/month for demo    |
 
 **Total: under $1/month for typical portfolio demo usage.**
