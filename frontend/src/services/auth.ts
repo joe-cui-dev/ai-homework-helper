@@ -11,7 +11,10 @@ const userPool = new CognitoUserPool({
   ClientId: import.meta.env.VITE_COGNITO_APP_CLIENT_ID,
 });
 
-export function signUp(email: string, password: string): Promise<CognitoUser> {
+export const signUp = (
+  email: string,
+  password: string,
+): Promise<CognitoUser> => {
   const attributes = [
     new CognitoUserAttribute({ Name: "email", Value: email }),
   ];
@@ -21,9 +24,9 @@ export function signUp(email: string, password: string): Promise<CognitoUser> {
       resolve(result.user);
     });
   });
-}
+};
 
-export function confirmSignUp(email: string, code: string): Promise<void> {
+export const confirmSignUp = (email: string, code: string): Promise<void> => {
   const user = new CognitoUser({ Username: email, Pool: userPool });
   return new Promise((resolve, reject) => {
     user.confirmRegistration(code, true, (err) => {
@@ -31,9 +34,9 @@ export function confirmSignUp(email: string, code: string): Promise<void> {
       resolve();
     });
   });
-}
+};
 
-export function signIn(email: string, password: string): Promise<string> {
+export const signIn = (email: string, password: string): Promise<string> => {
   const user = new CognitoUser({ Username: email, Pool: userPool });
   const authDetails = new AuthenticationDetails({
     Username: email,
@@ -47,14 +50,14 @@ export function signIn(email: string, password: string): Promise<string> {
       onFailure: reject,
     });
   });
-}
+};
 
-export function signOut(): void {
+export const signOut = (): void => {
   const user = userPool.getCurrentUser();
   user?.signOut();
-}
+};
 
-export function getAccessToken(): Promise<string | null> {
+export const getAccessToken = (): Promise<string | null> => {
   return new Promise((resolve) => {
     const user = userPool.getCurrentUser();
     if (!user) return resolve(null);
@@ -63,8 +66,8 @@ export function getAccessToken(): Promise<string | null> {
       resolve(session.getAccessToken().getJwtToken());
     });
   });
-}
+};
 
-export function getCurrentUserEmail(): string | null {
+export const getCurrentUserEmail = (): string | null => {
   return userPool.getCurrentUser()?.getUsername() ?? null;
-}
+};
