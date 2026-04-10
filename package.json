@@ -2,10 +2,13 @@
   "private": true,
   "workspaces": [
     "backend",
-    "infra"
+    "infra",
+    "frontend"
   ],
   "scripts": {
     "install:all": "npm install",
+    "dev": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=frontend",
     "deploy": "npm run deploy --workspace=infra"
   }
 }

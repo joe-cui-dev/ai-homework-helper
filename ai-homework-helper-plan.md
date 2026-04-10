@@ -48,7 +48,7 @@ ai-homework-helper/
 
 ## Tech Stack
 
-- **Frontend:** React 18, Vite, TypeScript, Material UI _(not yet built)_
+- **Frontend:** React 18, Vite, TypeScript, Tailwind _(not yet built)_
 - **Backend:** AWS Lambda, Node.js 24, TypeScript
 - **Infrastructure:** AWS CDK v2
 - **AI:** Amazon Bedrock — Claude Haiku 4.5
