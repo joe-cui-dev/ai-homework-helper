@@ -11,7 +11,10 @@ import { Construct } from "constructs";
 import * as path from "path";
 
 // before deploying. Enable model access in your target region first.
-const HAIKU_45_MODEL_ID = "anthropic.claude-haiku-4-5-20251001-v1:0";
+// Cross-region inference profile ID required for newer Anthropic models;
+// on-demand throughput via the bare model ID is not supported.
+const HAIKU_45_MODEL_ID = "au.anthropic.claude-haiku-4-5-20251001-v1:0";
+const HAIKU_45_BASE_MODEL_ID = "anthropic.claude-haiku-4-5-20251001-v1:0";
 
 export class AiHomeworkHelperStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -120,7 +123,13 @@ export class AiHomeworkHelperStack extends cdk.Stack {
     );
 
     // ── Lambda function ────────────────────────────────────────────────────
+    const lambdaLogGroup = new logs.LogGroup(this, "SolveFunctionLogs", {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     const fn = new lambdaNodejs.NodejsFunction(this, "SolveFunction", {
+      logGroup: lambdaLogGroup,
       entry: path.join(__dirname, "../../backend/src/handler.ts"),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_24_X,
@@ -156,7 +165,10 @@ export class AiHomeworkHelperStack extends cdk.Stack {
           "bedrock:InvokeModelWithResponseStream",
         ],
         resources: [
-          `arn:aws:bedrock:${this.region}::foundation-model/${HAIKU_45_MODEL_ID}`,
+          // Foundation model — required even when invoked via an inference profile
+          `arn:aws:bedrock:*::foundation-model/${HAIKU_45_BASE_MODEL_ID}`,
+          // Cross-region inference profile
+          `arn:aws:bedrock:*:*:inference-profile/${HAIKU_45_MODEL_ID}`,
         ],
       }),
     );
