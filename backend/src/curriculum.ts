@@ -1,3 +1,8 @@
+// ── Curriculum lookup ─────────────────────────────────────────────────────────
+// In-memory lookup of Australian Curriculum learning outcomes (v9).
+// Used by the lookup_curriculum tool — no AI call or network request needed.
+// The agent uses these outcomes to ground explanations in curriculum language.
+// ─────────────────────────────────────────────────────────────────────────────
 type Subject = "math" | "science" | "english" | "other";
 type Year = "year-1" | "year-2" | "year-3" | "year-4" | "year-5" | "year-6";
 

@@ -1,3 +1,13 @@
+// ── Lambda entry point ───────────────────────────────────────────────────────
+// Handles every HTTPS POST from the frontend browser.
+//
+// Request flow:
+//   1. Verify the Cognito Bearer token — reject immediately if invalid.
+//   2. Validate and sanitise the question from the request body.
+//   3. Call runAgent() which drives the agentic AI loop (see agent.ts).
+//   4. Stream progress events (tool_start/tool_end) and the final result back
+//      to the browser as NDJSON lines over the Lambda response stream.
+// ─────────────────────────────────────────────────────────────────────────────
 import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { v4 as uuidv4 } from "uuid";

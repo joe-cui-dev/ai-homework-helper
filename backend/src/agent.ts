@@ -1,3 +1,18 @@
+// ── Agentic AI loop ──────────────────────────────────────────────────────────
+// Drives a multi-turn conversation with Claude where the model autonomously
+// decides which tools to call and in what order.
+//
+// Each iteration:
+//   1. Send the current message history to Claude via the Converse API.
+//   2. Claude responds with one or more tool_use blocks (never plain text,
+//      because toolChoice: { any: {} } forces it to always pick a tool).
+//   3. Execute each requested tool and collect the results.
+//   4. Append all results to the conversation as a new "user" message.
+//   5. Repeat — Claude sees the results and decides what to do next.
+//
+// The loop ends when Claude calls submit_answer, which is a synthetic tool
+// that carries the final structured result as its input.
+// ─────────────────────────────────────────────────────────────────────────────
 import type { BedrockMessage, Tool } from "./bedrock";
 import { converseWithTools } from "./bedrock";
 import { solve, explain, generateHint } from "./pipeline";
@@ -256,6 +271,10 @@ export const runAgent = async (
 
   for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
     logger.debug("agent_iteration", { iteration });
+
+    // Ask Claude what to do next, given everything in the conversation so far.
+    // toolChoice: { any: {} } (set in converseWithTools) forces it to always
+    // pick a tool — it can never respond with plain text.
     const response = await converseWithTools(messages, tools, SYSTEM_PROMPT);
     messages.push(response.message);
 
@@ -275,6 +294,9 @@ export const runAgent = async (
     const toolResultBlocks: Record<string, unknown>[] = [];
     let submitted: AgentResult | null = null;
 
+    // Execute every tool Claude requested in this iteration.
+    // Claude can request multiple tools in a single response; we run them all
+    // and collect the results before sending them back in one go.
     for (const block of response.message.content ?? []) {
       const toolUse = block.toolUse as
         | { toolUseId: string; name: string; input: unknown }
@@ -283,6 +305,9 @@ export const runAgent = async (
       const { toolUseId, name, input } = toolUse;
 
       if (name === "submit_answer") {
+        // submit_answer is a synthetic tool — no real function is invoked.
+        // Claude uses it to deliver the final structured answer as its input.
+        // Capturing the input here ends the loop after this iteration.
         onEvent?.({ type: "tool_start", tool: name });
         logger.info("tool_dispatch", { tool: name, iteration });
         submitted = input as unknown as AgentResult;
@@ -329,8 +354,11 @@ export const runAgent = async (
       }
     }
 
+    // Feed all tool outputs back into the conversation as a new user message.
+    // On the next iteration, Claude will see what happened and decide what to do next.
     messages.push({ role: "user", content: toolResultBlocks });
 
+    // If Claude called submit_answer this iteration, we have the final answer.
     if (submitted) return submitted;
   }
 

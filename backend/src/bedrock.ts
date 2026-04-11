@@ -1,3 +1,14 @@
+// ── Bedrock API wrappers ──────────────────────────────────────────────────────
+// Two distinct AWS Bedrock APIs are used, each for a different purpose:
+//
+//   callClaude          → InvokeModelCommand  (single-turn)
+//     Used by pipeline.ts. Sends one prompt, returns raw text. Simple and cheap.
+//     Each pipeline skill (solve, explain, hint) calls this independently.
+//
+//   converseWithTools   → ConverseCommand  (multi-turn + tool use)
+//     Used by the agent loop. Maintains the full conversation history and
+//     advertises the tool schema so Claude can decide what to call next.
+// ─────────────────────────────────────────────────────────────────────────────
 import {
   BedrockRuntimeClient,
   ConverseCommand,
@@ -15,10 +26,10 @@ const GUARDRAIL_VERSION = process.env.BEDROCK_GUARDRAIL_VERSION;
 const SYSTEM_PROMPT =
   "You are a helpful homework tutor for school students. Always respond in JSON.";
 
-export const callClaude = async (
+export async function callClaude(
   prompt: string,
   temperature: number = 0,
-): Promise<string> => {
+): Promise<string> {
   const modelId = process.env.BEDROCK_MODEL_ID;
   if (!modelId) {
     throw new Error("BEDROCK_MODEL_ID environment variable is not set");
@@ -67,7 +78,7 @@ export const callClaude = async (
     );
   }
   return parsed.content[0].text;
-};
+}
 
 // ---------------------------------------------------------------------------
 // Converse API — used by the agent loop (tool use)

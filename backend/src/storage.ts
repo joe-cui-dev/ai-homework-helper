@@ -1,3 +1,10 @@
+// ── Session storage ───────────────────────────────────────────────────────────
+// Persists completed sessions to S3 so the agent can personalise responses
+// using a student's recent history via the fetch_session_history tool.
+//
+// Key format: sessions/<studentId>/<sessionId>.json
+// Sessions expire after 30 days (lifecycle rule set in CDK).
+// ─────────────────────────────────────────────────────────────────────────────
 import {
   S3Client,
   PutObjectCommand,

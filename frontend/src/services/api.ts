@@ -2,7 +2,7 @@ import type { StreamEvent } from "../types";
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4 MB
 
-export function toBase64(file: File): Promise<string> {
+export const toBase64 = (file: File): Promise<string> => {
   if (file.size > MAX_IMAGE_BYTES) {
     return Promise.reject(
       new Error("Image must be under 4 MB. Please choose a smaller file."),
@@ -15,14 +15,14 @@ export function toBase64(file: File): Promise<string> {
     reader.onerror = () => reject(new Error("Failed to read image file."));
     reader.readAsDataURL(file);
   });
-}
+};
 
-export async function streamHomework(
+export const streamHomework = async (
   question: string,
   token: string,
   onEvent: (event: StreamEvent) => void,
   image?: string,
-): Promise<void> {
+): Promise<void> => {
   const apiUrl = import.meta.env.VITE_API_URL;
   if (!apiUrl) throw new Error("VITE_API_URL is not configured.");
 
@@ -75,4 +75,4 @@ export async function streamHomework(
       // Ignore.
     }
   }
-}
+};

@@ -1,3 +1,15 @@
+// ── Pipeline skill functions ──────────────────────────────────────────────────
+// Each function is a standalone single-turn Claude call invoked by the agent
+// via dispatchTool when Claude picks one of its tools.
+//
+// solve        — works through the problem step by step, returns { answer, steps }
+// explain      — rewrites the solution in age-appropriate friendly language
+// generateHint — produces Socratic hints that guide without giving away the answer
+//
+// Subject (math/science/english) and year level drive two prompt layers:
+//   SKILL_PROMPTS — what to solve and how to structure the answer (domain)
+//   TONE_PROMPTS  — how to communicate for the student's year level (voice)
+// ─────────────────────────────────────────────────────────────────────────────
 import { callClaude } from "./bedrock";
 import { logger } from "./logger";
 
@@ -110,6 +122,7 @@ Question: ${question}`;
 
   try {
     const raw = await callClaude(prompt, 0);
+    logger.debug("pipeline_solve_raw", { raw });
     return JSON.parse(extractJson(raw)) as SolveResult;
   } catch (err) {
     logger.error("pipeline_parse_error", { fn: "solve", subject, difficulty });
@@ -166,6 +179,7 @@ Question: ${question}`;
 
   try {
     const raw = await callClaude(prompt, 0.3);
+    logger.debug("pipeline_generate_hint_raw", { raw });
     return JSON.parse(extractJson(raw)) as HintResult;
   } catch (err) {
     logger.error("pipeline_parse_error", {
