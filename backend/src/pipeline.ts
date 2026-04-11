@@ -1,6 +1,13 @@
 import { callClaude } from "./bedrock";
 import { logger } from "./logger";
 
+// Strip markdown code fences (```json ... ``` or ``` ... ```) that Claude
+// sometimes emits despite instructions to return only JSON.
+const extractJson = (raw: string): string => {
+  const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  return match ? match[1].trim() : raw.trim();
+};
+
 export interface SolveResult {
   answer: string;
   steps: string[];
@@ -103,12 +110,12 @@ Question: ${question}`;
 
   try {
     const raw = await callClaude(prompt, 0);
-    return JSON.parse(raw) as SolveResult;
-  } catch {
+    return JSON.parse(extractJson(raw)) as SolveResult;
+  } catch (err) {
     logger.error("pipeline_parse_error", { fn: "solve", subject, difficulty });
-    throw new Error(
-      "The content filter blocked this response. Please rephrase the question.",
-    );
+    throw err instanceof Error
+      ? err
+      : new Error("Failed to parse solve response.");
   }
 };
 
@@ -130,12 +137,13 @@ ${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
 
   try {
     const raw = await callClaude(prompt, 0.3);
-    return JSON.parse(raw) as ExplainResult;
-  } catch {
+    logger.debug("pipeline_explain_raw", { raw });
+    return JSON.parse(extractJson(raw)) as ExplainResult;
+  } catch (err) {
     logger.error("pipeline_parse_error", { fn: "explain", difficulty });
-    throw new Error(
-      "The content filter blocked this response. Please rephrase the question.",
-    );
+    throw err instanceof Error
+      ? err
+      : new Error("Failed to parse explain response.");
   }
 };
 
@@ -158,15 +166,15 @@ Question: ${question}`;
 
   try {
     const raw = await callClaude(prompt, 0.3);
-    return JSON.parse(raw) as HintResult;
-  } catch {
+    return JSON.parse(extractJson(raw)) as HintResult;
+  } catch (err) {
     logger.error("pipeline_parse_error", {
       fn: "generateHint",
       subject,
       difficulty,
     });
-    throw new Error(
-      "The content filter blocked this response. Please rephrase the question.",
-    );
+    throw err instanceof Error
+      ? err
+      : new Error("Failed to parse hint response.");
   }
 };

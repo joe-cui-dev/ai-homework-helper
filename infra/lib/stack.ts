@@ -147,7 +147,6 @@ export class AiHomeworkHelperStack extends cdk.Stack {
         BEDROCK_GUARDRAIL_VERSION: guardrailVersion.attrVersion,
         COGNITO_USER_POOL_ID: userPool.userPoolId,
         COGNITO_APP_CLIENT_ID: userPoolClient.userPoolClientId,
-        ALLOWED_ORIGIN: this.node.tryGetContext("allowedOrigin") ?? "*",
         SERVICE_NAME: "ai-homework-helper",
         LOG_LEVEL: this.node.tryGetContext("logLevel") ?? "DEBUG",
       },

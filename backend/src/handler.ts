@@ -13,13 +13,12 @@ const verifier = CognitoJwtVerifier.create({
   tokenUse: "access",
 });
 
-// CORS headers sent with every streaming response.
-// Function URL CORS config (set in CDK) handles OPTIONS preflights before the
-// Lambda is invoked, so we only need these headers on the actual response.
-const CORS_HEADERS: Record<string, string> = {
+// Content-Type for the streaming response.
+// CORS headers (Access-Control-Allow-Origin etc.) are injected automatically
+// by the Lambda Function URL CORS config defined in CDK — setting them here
+// too would produce duplicate header values and cause browser CORS errors.
+const RESPONSE_HEADERS: Record<string, string> = {
   "Content-Type": "application/x-ndjson",
-  "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN ?? "*",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 export const handler = awslambda.streamifyResponse(
@@ -31,7 +30,7 @@ export const handler = awslambda.streamifyResponse(
     // stream-open time.
     const httpStream = awslambda.HttpResponseStream.from(responseStream, {
       statusCode: 200,
-      headers: CORS_HEADERS,
+      headers: RESPONSE_HEADERS,
     });
 
     const writeEvent = (evt: StreamEvent): void => {
