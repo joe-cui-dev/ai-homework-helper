@@ -15,10 +15,10 @@ const GUARDRAIL_VERSION = process.env.BEDROCK_GUARDRAIL_VERSION;
 const SYSTEM_PROMPT =
   "You are a helpful homework tutor for school students. Always respond in JSON.";
 
-export async function callClaude(
+export const callClaude = async (
   prompt: string,
   temperature: number = 0,
-): Promise<string> {
+): Promise<string> => {
   const modelId = process.env.BEDROCK_MODEL_ID;
   if (!modelId) {
     throw new Error("BEDROCK_MODEL_ID environment variable is not set");
@@ -61,8 +61,13 @@ export async function callClaude(
   const parsed = JSON.parse(Buffer.from(response.body).toString("utf-8")) as {
     content: Array<{ type: string; text: string }>;
   };
+  if (!parsed.content?.length || !parsed.content[0]?.text) {
+    throw new Error(
+      "The content filter blocked this response. Please rephrase the question.",
+    );
+  }
   return parsed.content[0].text;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Converse API — used by the agent loop (tool use)

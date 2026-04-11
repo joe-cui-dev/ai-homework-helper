@@ -101,8 +101,8 @@ Return ONLY valid JSON with no markdown fences: { "answer": "<concise answer>", 
 
 Question: ${question}`;
 
-  const raw = await callClaude(prompt, 0);
   try {
+    const raw = await callClaude(prompt, 0);
     return JSON.parse(raw) as SolveResult;
   } catch {
     logger.error("pipeline_parse_error", { fn: "solve", subject, difficulty });
@@ -128,8 +128,8 @@ Answer: ${answer}
 Steps:
 ${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
 
-  const raw = await callClaude(prompt, 0.3);
   try {
+    const raw = await callClaude(prompt, 0.3);
     return JSON.parse(raw) as ExplainResult;
   } catch {
     logger.error("pipeline_parse_error", { fn: "explain", difficulty });
@@ -156,8 +156,8 @@ Return ONLY valid JSON with no markdown fences: { "hints": ["<hint 1>", "<hint 2
 
 Question: ${question}`;
 
-  const raw = await callClaude(prompt, 0.3);
   try {
+    const raw = await callClaude(prompt, 0.3);
     return JSON.parse(raw) as HintResult;
   } catch {
     logger.error("pipeline_parse_error", {
