@@ -49,6 +49,15 @@ export class AiHomeworkHelperStack extends cdk.Stack {
           { type: "INSULTS", inputStrength: "HIGH", outputStrength: "HIGH" },
           { type: "SEXUAL", inputStrength: "HIGH", outputStrength: "HIGH" },
           { type: "VIOLENCE", inputStrength: "HIGH", outputStrength: "HIGH" },
+          // Blocks drug references and illegal activity — appropriate for a kids' app.
+          { type: "MISCONDUCT", inputStrength: "HIGH", outputStrength: "HIGH" },
+          // Blocks jailbreak / prompt-injection attempts at the model level,
+          // complementing the OffTopic topic policy.
+          {
+            type: "PROMPT_ATTACK",
+            inputStrength: "HIGH",
+            outputStrength: "NONE",
+          },
         ],
       },
       wordPolicyConfig: {
@@ -56,11 +65,12 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       },
       sensitiveInformationPolicyConfig: {
         piiEntitiesConfig: [
-          { type: "NAME", action: "BLOCK" },
+          // NAME and AGE are intentionally omitted: word problems routinely
+          // contain both (e.g. "Nick has a garden...", "Emma is 9 years old...")
+          // and blocking them would reject legitimate homework questions.
           { type: "EMAIL", action: "BLOCK" },
           { type: "PHONE", action: "BLOCK" },
           { type: "ADDRESS", action: "BLOCK" },
-          { type: "AGE", action: "BLOCK" },
         ],
       },
       topicPolicyConfig: {
