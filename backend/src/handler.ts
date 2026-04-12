@@ -11,7 +11,7 @@
 import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { v4 as uuidv4 } from "uuid";
-import { runAgent } from "./agent";
+import { runAgent, AlreadyReportedError } from "./agent";
 import { saveSession } from "./storage";
 import type { StreamEvent } from "./types";
 import { logger } from "./logger";
@@ -145,11 +145,20 @@ export const handler = awslambda.streamifyResponse(
         resolvedStudentId,
       );
     } catch (err) {
-      logger.error("unhandled_error", err instanceof Error ? err : String(err));
-      writeEvent({
-        type: "error",
-        message: err instanceof Error ? err.message : "Internal server error",
-      });
+      // AlreadyReportedError means the agent already sent an error event to the
+      // frontend (e.g. guardrail_intervened). Skip writing a duplicate event.
+      if (err instanceof AlreadyReportedError) {
+        logger.warn("error_already_reported", { message: err.message });
+      } else {
+        logger.error(
+          "unhandled_error",
+          err instanceof Error ? err : String(err),
+        );
+        writeEvent({
+          type: "error",
+          message: err instanceof Error ? err.message : "Internal server error",
+        });
+      }
     } finally {
       logger.resetKeys();
       httpStream.end();

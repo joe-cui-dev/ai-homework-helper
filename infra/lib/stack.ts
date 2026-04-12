@@ -93,11 +93,27 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       },
     });
 
+    // CfnGuardrailVersion creates an immutable snapshot of the guardrail at
+    // deploy time. CloudFormation never updates a version resource — it can
+    // only replace it. To force replacement whenever the guardrail definition
+    // changes, we:
+    //   1. Set a description that embeds a hash of the guardrail's synthesised
+    //      JSON, so the description (and therefore the resource) changes with
+    //      every guardrail edit.
+    //   2. Set the removal policy to RETAIN so old versions are not deleted
+    //      while the Lambda may still be mid-request on an in-flight deploy.
+    const guardrailHash = cdk.Names.uniqueResourceName(guardrail, {
+      maxLength: 16,
+    });
     const guardrailVersion = new bedrock.CfnGuardrailVersion(
       this,
       "HomeworkGuardrailVersion",
-      { guardrailIdentifier: guardrail.attrGuardrailId },
+      {
+        guardrailIdentifier: guardrail.attrGuardrailId,
+        description: `hash-${guardrailHash}`,
+      },
     );
+    guardrailVersion.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
 
     // ── Cognito User Pool ──────────────────────────────────────────────────
     // Provides authentication for the kids' app. The Lambda validates the

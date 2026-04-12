@@ -23,6 +23,15 @@ import { logger } from "./logger";
 
 export type { AgentResult };
 
+// Thrown after an error event has already been sent to the frontend via
+// onEvent, so the handler knows not to emit a second duplicate error event.
+export class AlreadyReportedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AlreadyReportedError";
+  }
+}
+
 const MAX_ITERATIONS = 5;
 
 const SYSTEM_PROMPT = `You are a homework tutor for Australian primary school students (Years 1-6).
@@ -281,6 +290,24 @@ export const runAgent = async (
     if (response.stopReason === "end_turn") {
       logger.error("end_turn_without_submit", { iteration });
       throw new Error("Agent ended without calling submit_answer");
+    }
+
+    if (response.stopReason === "guardrail_intervened") {
+      // The guardrail blocked the request. The assistant message content holds
+      // the configured blockedInputMessaging / blockedOutputsMessaging text.
+      // Surface it directly to the frontend rather than throwing a generic error.
+      const guardrailMessage =
+        (response.message.content ?? [])
+          .map((b) => (b as { text?: string }).text)
+          .filter(Boolean)
+          .join(" ") ||
+        "Your question was blocked by the content filter. Please rephrase it.";
+      logger.warn("guardrail_intervened", {
+        iteration,
+        message: guardrailMessage,
+      });
+      onEvent?.({ type: "error", message: guardrailMessage });
+      throw new AlreadyReportedError(guardrailMessage);
     }
 
     if (response.stopReason !== "tool_use") {
