@@ -108,6 +108,7 @@ export const solve = async (
   question: string,
   subject: string,
   difficulty: string,
+  image?: string,
 ): Promise<SolveResult> => {
   logger.debug("pipeline_solve", { subject, difficulty });
   const skill = selectSkill(subject);
@@ -121,7 +122,7 @@ Return ONLY valid JSON with no markdown fences: { "answer": "<concise answer>", 
 Question: ${question}`;
 
   try {
-    const raw = await callClaude(prompt, 0);
+    const raw = await callClaude(prompt, 0, image);
     logger.debug("pipeline_solve_raw", { raw });
     return JSON.parse(extractJson(raw)) as SolveResult;
   } catch (err) {
@@ -164,6 +165,7 @@ export const generateHint = async (
   question: string,
   subject: string,
   difficulty: string,
+  image?: string,
 ): Promise<HintResult> => {
   logger.debug("pipeline_generate_hint", { subject, difficulty });
   const skill = selectSkill(subject);
@@ -178,7 +180,7 @@ Return ONLY valid JSON with no markdown fences: { "hints": ["<hint 1>", "<hint 2
 Question: ${question}`;
 
   try {
-    const raw = await callClaude(prompt, 0.3);
+    const raw = await callClaude(prompt, 0.3, image);
     logger.debug("pipeline_generate_hint_raw", { raw });
     return JSON.parse(extractJson(raw)) as HintResult;
   } catch (err) {

@@ -14,7 +14,7 @@
 // that carries the final structured result as its input.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { BedrockMessage, Tool } from "./bedrock";
-import { converseWithTools } from "./bedrock";
+import { converseWithTools, parseDataUrl } from "./bedrock";
 import { solve, explain, generateHint } from "./pipeline";
 import { lookupCurriculum } from "./curriculum";
 import { getRecentSessions } from "./storage";
@@ -35,7 +35,8 @@ export class AlreadyReportedError extends Error {
 const MAX_ITERATIONS = 5;
 
 const SYSTEM_PROMPT = `You are a homework tutor for Australian primary school students (Years 1-6).
-Given a homework question, use the available tools to help the student. Follow this process:
+Given a homework question, use the available tools to help the student. A photo of the question may be included alongside the text — use it to read any handwritten or printed content.
+Follow this process:
 
 1. Classify the subject (math, science, english, other) and year level (year-1 to year-6) from the question itself.
 2. Optionally call lookup_curriculum to reference relevant Australian curriculum outcomes.
@@ -224,6 +225,7 @@ export const dispatchTool = async (
   name: string,
   input: Record<string, unknown>,
   studentId?: string,
+  image?: string,
 ): Promise<unknown> => {
   switch (name) {
     case "solve_question":
@@ -231,6 +233,7 @@ export const dispatchTool = async (
         input.question as string,
         input.subject as string,
         input.difficulty as string,
+        image,
       );
 
     case "generate_hint":
@@ -238,6 +241,7 @@ export const dispatchTool = async (
         input.question as string,
         input.subject as string,
         input.difficulty as string,
+        image,
       );
 
     case "explain_solution":
@@ -266,11 +270,18 @@ export const runAgent = async (
   question: string,
   studentId?: string,
   onEvent?: (event: StreamEvent) => void,
+  image?: string,
 ): Promise<AgentResult> => {
-  const userContent = question;
+  const initialContent: Record<string, unknown>[] = [];
+  if (image) {
+    const { mediaType, base64Data } = parseDataUrl(image);
+    const format = mediaType.split("/")[1] as "jpeg" | "png" | "gif" | "webp";
+    initialContent.push({ image: { format, source: { bytes: Buffer.from(base64Data, "base64") } } });
+  }
+  initialContent.push({ text: question });
 
   const messages: BedrockMessage[] = [
-    { role: "user", content: [{ text: userContent }] },
+    { role: "user", content: initialContent },
   ];
 
   // exclude fetch_session_history from tools if no studentId is provided
@@ -354,6 +365,7 @@ export const runAgent = async (
             name,
             input as Record<string, unknown>,
             studentId,
+            image,
           );
           logger.debug("tool_result", { tool: name, success: true });
           toolResultBlocks.push({

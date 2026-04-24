@@ -5,3 +5,4 @@ cdk.out/
 .env.local
 *.js.map
 *.d.ts
+*.tsbuildinfo

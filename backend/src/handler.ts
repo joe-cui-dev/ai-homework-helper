@@ -78,16 +78,16 @@ export const handler = awslambda.streamifyResponse(
       logger.appendKeys({ studentId: tokenSub });
 
       // ── Request parsing ─────────────────────────────────────────────────
-      let body: { question?: unknown };
+      let body: { question?: unknown; image?: unknown };
       try {
-        body = JSON.parse(event.body ?? "{}") as { question?: unknown };
+        body = JSON.parse(event.body ?? "{}") as { question?: unknown; image?: unknown };
       } catch {
         logger.warn("validation_invalid_json");
         writeEvent({ type: "error", message: "Invalid JSON body" });
         return;
       }
 
-      const { question } = body;
+      const { question, image } = body;
       if (typeof question !== "string" || question.trim() === "") {
         logger.warn("validation_missing_question");
         writeEvent({
@@ -110,17 +110,37 @@ export const handler = awslambda.streamifyResponse(
         return;
       }
 
+      let validatedImage: string | undefined;
+      if (image != null) {
+        if (
+          typeof image !== "string" ||
+          !/^data:image\/(jpeg|png|gif|webp);base64,/.test(image)
+        ) {
+          logger.warn("validation_invalid_image");
+          writeEvent({ type: "error", message: "Invalid image format" });
+          return;
+        }
+        const base64Data = image.split(",")[1] ?? "";
+        if (base64Data.length > 5_500_000) {
+          logger.warn("validation_image_too_large");
+          writeEvent({ type: "error", message: "Image must be under 4 MB" });
+          return;
+        }
+        validatedImage = image;
+      }
+
       // studentId comes from the verified token sub — never trust client input.
       const resolvedStudentId = tokenSub;
       const sessionId = uuidv4();
 
       logger.appendKeys({ sessionId });
-      logger.info("request_received");
+      logger.info("request_received", { hasImage: !!validatedImage });
 
       const result = await runAgent(
         trimmedQuestion,
         resolvedStudentId,
         writeEvent,
+        validatedImage,
       );
 
       writeEvent({ type: "complete", result });

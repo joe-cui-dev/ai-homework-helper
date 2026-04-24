@@ -26,20 +26,37 @@ const GUARDRAIL_VERSION = process.env.BEDROCK_GUARDRAIL_VERSION;
 const SYSTEM_PROMPT =
   "You are a helpful homework tutor for school students. Always respond in JSON.";
 
+export function parseDataUrl(dataUrl: string): { mediaType: string; base64Data: string } {
+  const match = dataUrl.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,(.+)$/s);
+  if (!match) throw new Error("Invalid image data URL");
+  return { mediaType: match[1], base64Data: match[2] };
+}
+
 export async function callClaude(
   prompt: string,
   temperature: number = 0,
+  image?: string,
 ): Promise<string> {
   const modelId = process.env.BEDROCK_MODEL_ID;
   if (!modelId) {
     throw new Error("BEDROCK_MODEL_ID environment variable is not set");
   }
 
+  const userContent = image
+    ? (() => {
+        const { mediaType, base64Data } = parseDataUrl(image);
+        return [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } },
+          { type: "text", text: prompt },
+        ];
+      })()
+    : prompt;
+
   const requestBody = {
     anthropic_version: "bedrock-2023-05-31",
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: userContent }],
     temperature,
   };
 
