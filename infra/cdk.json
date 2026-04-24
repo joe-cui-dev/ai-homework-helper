@@ -3,7 +3,7 @@
   "context": {
     "allowedOrigin": "*",
     "logLevel": "DEBUG",
-    "certificateArn": "arn:aws:acm:us-east-1:651694081254:certificate/7018230f-42c9-44b2-a409-26871a7a2143"
+    "portfolioDistributionId": "E3REB3SI4U63SX"
   },
   "watch": {
     "include": ["**"],

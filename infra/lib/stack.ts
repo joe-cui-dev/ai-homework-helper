@@ -7,11 +7,7 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as bedrock from "aws-cdk-lib/aws-bedrock";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as cr from "aws-cdk-lib/custom-resources";
-import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
-import * as cloudfrontOrigins from "aws-cdk-lib/aws-cloudfront-origins";
-import * as route53 from "aws-cdk-lib/aws-route53";
-import * as route53Targets from "aws-cdk-lib/aws-route53-targets";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import { Construct } from "constructs";
 import * as path from "path";
@@ -23,7 +19,7 @@ const HAIKU_45_MODEL_ID = "au.anthropic.claude-haiku-4-5-20251001-v1:0";
 const HAIKU_45_BASE_MODEL_ID = "anthropic.claude-haiku-4-5-20251001-v1:0";
 
 interface AiHomeworkHelperStackProps extends cdk.StackProps {
-  certificateArn: string;
+  portfolioDistributionId: string;
 }
 
 export class AiHomeworkHelperStack extends cdk.Stack {
@@ -312,13 +308,19 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       },
     });
 
-    // ── CloudFront + Route 53 ─────────────────────────────────────────────
-    // CloudFront serves the frontend assets from the S3 bucket and provides the HTTPS endpoint at joe-cui.com.
-    // It also handles SPA-style routing by rewriting all non-asset requests to /ai-homework-helper/index.html.
+    // ── CloudFront Function (SPA routing) ────────────────────────────────
+
+    // CloudFront Function to rewrite SPA routes. The portfolio distribution serves
+    // multiple SPA apps, so we route /ai-homework-helper/* to the homework helper
+    // index.html, and let the frontend router handle it from there. All other
+    // paths are left alone (e.g. /blog/* goes to the blog SPA, /index.html
+    // goes to the root SPA, /api/* goes to the API Gateway, etc.).
     const spaRewriteFunction = new cloudfront.Function(
       this,
       "SpaRewriteFunction",
       {
+        // The function code is a simple URI rewrite that directs all /ai-homework-helper/* requests to /ai-homework-helper/index.html,
+        // allowing the frontend router to handle SPA routing. All other URIs are passed through unchanged.
         code: cloudfront.FunctionCode.fromInline(`
 function handler(event) {
   var request = event.request;
@@ -334,77 +336,43 @@ function handler(event) {
       },
     );
 
-    // The certificate must be in us-east-1 for CloudFront. Create or import it before deploying the stack.
-    const certificate = acm.Certificate.fromCertificateArn(
-      this,
-      "Certificate",
-      props.certificateArn,
-    );
+    // OAC for the portfolio distribution to access the frontend bucket.
+    // Select this OAC when adding the S3 origin in the CloudFront console.
+    const oac = new cloudfront.S3OriginAccessControl(this, "FrontendOAC");
 
-    // CloudFront distribution with S3 origin for frontend and Lambda@Edge for SPA routing.
-    const distribution = new cloudfront.Distribution(
-      this,
-      "FrontendDistribution",
-      {
-        certificate,
-        domainNames: ["joe-cui.com"],
-        defaultRootObject: "ai-homework-helper/index.html",
-        defaultBehavior: {
-          origin:
-            cloudfrontOrigins.S3BucketOrigin.withOriginAccessControl(
-              frontendBucket,
-            ),
-          viewerProtocolPolicy:
-            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-          functionAssociations: [
-            {
-              function: spaRewriteFunction,
-              eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
-            },
-          ],
+    // Bucket policy: grant the portfolio distribution read access via OAC.
+    frontendBucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:GetObject"],
+        principals: [new iam.ServicePrincipal("cloudfront.amazonaws.com")],
+        resources: [frontendBucket.arnForObjects("*")],
+        conditions: {
+          StringEquals: {
+            "AWS:SourceArn": `arn:aws:cloudfront::${this.account}:distribution/${props.portfolioDistributionId}`,
+          },
         },
-        errorResponses: [
-          {
-            httpStatus: 403,
-            responseHttpStatus: 200,
-            responsePagePath: "/ai-homework-helper/index.html",
-            ttl: cdk.Duration.seconds(0),
-          },
-          {
-            httpStatus: 404,
-            responseHttpStatus: 200,
-            responsePagePath: "/ai-homework-helper/index.html",
-            ttl: cdk.Duration.seconds(0),
-          },
-        ],
-        priceClass: cloudfront.PriceClass.PRICE_CLASS_ALL,
-        comment: "AI Homework Helper frontend",
-      },
+      }),
     );
 
-    // Route 53 A record pointing joe-cui.com to the CloudFront distribution.
-    const hostedZone = route53.HostedZone.fromLookup(this, "HostedZone", {
-      domainName: "joe-cui.com",
-    });
+    // Import the existing portfolio distribution for BucketDeployment cache invalidation.
+    const portfolioDistribution =
+      cloudfront.Distribution.fromDistributionAttributes(
+        this,
+        "PortfolioDistribution",
+        {
+          distributionId: props.portfolioDistributionId,
+          domainName: "joe-cui.com",
+        },
+      );
 
-    // route53.ARecord doesn't support aliasing to CloudFront distributions with custom domains, so we use fromAlias with CloudFrontTarget instead.
-    new route53.ARecord(this, "SiteARecord", {
-      zone: hostedZone,
-      recordName: "joe-cui.com",
-      target: route53.RecordTarget.fromAlias(
-        new route53Targets.CloudFrontTarget(distribution),
-      ),
-    });
-
-    // Deploy the frontend assets to S3 and invalidate CloudFront cache on changes. The deployment runs after the distribution is created, ensuring the distribution is ready to serve the new assets immediately.
     new s3deploy.BucketDeployment(this, "FrontendDeployment", {
       sources: [
         s3deploy.Source.asset(path.join(__dirname, "../../frontend/dist")),
       ],
       destinationBucket: frontendBucket,
-      distribution,
-      distributionPaths: ["/*"],
+      destinationKeyPrefix: "ai-homework-helper",
+      distribution: portfolioDistribution,
+      distributionPaths: ["/ai-homework-helper/*"],
       memoryLimit: 512,
       prune: true,
     });
@@ -425,15 +393,21 @@ function handler(event) {
       description: "Cognito App Client ID (use in frontend)",
     });
 
-    new cdk.CfnOutput(this, "CloudFrontUrl", {
-      value: `https://${distribution.distributionDomainName}`,
-      description: "CloudFront distribution URL",
+    new cdk.CfnOutput(this, "FrontendBucketName", {
+      value: frontendBucket.bucketName,
+      description: "S3 bucket — select as the origin in CloudFront console",
     });
 
-    new cdk.CfnOutput(this, "CloudFrontDistributionId", {
-      value: distribution.distributionId,
+    new cdk.CfnOutput(this, "OACId", {
+      value: oac.originAccessControlId,
       description:
-        "CloudFront Distribution ID (for manual cache invalidations)",
+        "OAC ID — select when adding the S3 origin in CloudFront console",
+    });
+
+    new cdk.CfnOutput(this, "SpaFunctionArn", {
+      value: spaRewriteFunction.functionArn,
+      description:
+        "CloudFront Function ARN — attach to the /ai-homework-helper* behavior (viewer-request)",
     });
   }
 }
