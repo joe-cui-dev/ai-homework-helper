@@ -133,7 +133,7 @@ export class AiHomeworkHelperStack extends cdk.Stack {
     // Cognito-issued JWT on every request — unauthenticated calls never
     // reach Bedrock.
     const userPool = new cognito.UserPool(this, "HomeworkUserPool", {
-      selfSignUpEnabled: true,
+      selfSignUpEnabled: false,
       signInAliases: { email: true },
       autoVerify: { email: true },
       passwordPolicy: {
