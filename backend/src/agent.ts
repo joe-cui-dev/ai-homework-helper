@@ -229,20 +229,32 @@ export const dispatchTool = async (
 ): Promise<unknown> => {
   switch (name) {
     case "solve_question":
-      return solve(
-        input.question as string,
-        input.subject as string,
-        input.difficulty as string,
-        image,
-      );
+      return image !== undefined
+        ? solve(
+            input.question as string,
+            input.subject as string,
+            input.difficulty as string,
+            image,
+          )
+        : solve(
+            input.question as string,
+            input.subject as string,
+            input.difficulty as string,
+          );
 
     case "generate_hint":
-      return generateHint(
-        input.question as string,
-        input.subject as string,
-        input.difficulty as string,
-        image,
-      );
+      return image !== undefined
+        ? generateHint(
+            input.question as string,
+            input.subject as string,
+            input.difficulty as string,
+            image,
+          )
+        : generateHint(
+            input.question as string,
+            input.subject as string,
+            input.difficulty as string,
+          );
 
     case "explain_solution":
       return explain(
@@ -276,7 +288,9 @@ export const runAgent = async (
   if (image) {
     const { mediaType, base64Data } = parseDataUrl(image);
     const format = mediaType.split("/")[1] as "jpeg" | "png" | "gif" | "webp";
-    initialContent.push({ image: { format, source: { bytes: Buffer.from(base64Data, "base64") } } });
+    initialContent.push({
+      image: { format, source: { bytes: Buffer.from(base64Data, "base64") } },
+    });
   }
   initialContent.push({ text: question });
 

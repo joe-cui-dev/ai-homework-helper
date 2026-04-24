@@ -122,7 +122,9 @@ Return ONLY valid JSON with no markdown fences: { "answer": "<concise answer>", 
 Question: ${question}`;
 
   try {
-    const raw = await callClaude(prompt, 0, image);
+    const raw = await (image !== undefined
+      ? callClaude(prompt, 0, image)
+      : callClaude(prompt, 0));
     logger.debug("pipeline_solve_raw", { raw });
     return JSON.parse(extractJson(raw)) as SolveResult;
   } catch (err) {
@@ -180,7 +182,9 @@ Return ONLY valid JSON with no markdown fences: { "hints": ["<hint 1>", "<hint 2
 Question: ${question}`;
 
   try {
-    const raw = await callClaude(prompt, 0.3, image);
+    const raw = await (image !== undefined
+      ? callClaude(prompt, 0.3, image)
+      : callClaude(prompt, 0.3));
     logger.debug("pipeline_generate_hint_raw", { raw });
     return JSON.parse(extractJson(raw)) as HintResult;
   } catch (err) {
