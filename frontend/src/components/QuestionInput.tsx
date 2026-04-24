@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent, type ChangeEvent } from "react";
+import { useState, useRef, type FormEvent, type ChangeEvent, type DragEvent } from "react";
 import { toBase64 } from "../services/api";
 
 interface QuestionInputProps {
@@ -13,12 +13,11 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string | undefined>(undefined);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
+  const processFile = async (file: File) => {
     setImageError(null);
-    const file = e.target.files?.[0];
-    if (!file) return;
     try {
       const b64 = await toBase64(file);
       setImageBase64(b64);
@@ -28,8 +27,38 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
       setImageBase64(undefined);
       setImagePreview(null);
     }
+  };
+
+  const handleImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await processFile(file);
     // Reset input so same file can be re-selected after clearing.
     e.target.value = "";
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!disabled) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLFormElement>) => {
+    // Only clear when leaving the form entirely, not when moving between children.
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDrop = async (e: DragEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (disabled) return;
+    const file = e.dataTransfer.files[0];
+    if (file?.type.startsWith("image/")) {
+      await processFile(file);
+    } else if (file) {
+      setImageError("Only image files can be dropped here.");
+    }
   };
 
   const clearImage = () => {
@@ -41,20 +70,26 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const trimmed = question.trim();
-    if (!trimmed || disabled) return;
+    if ((!trimmed && !imageBase64) || disabled) return;
     onSubmit(trimmed, imageBase64);
   };
 
   const charsLeft = MAX_CHARS - question.length;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
+    <form
+      onSubmit={handleSubmit}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`space-y-3 rounded-2xl transition-colors ${isDragging ? "outline outline-2 outline-dashed outline-brand-400 bg-brand-50" : ""}`}
+    >
       <div className="relative">
         <textarea
           value={question}
           onChange={(e) => setQuestion(e.target.value.slice(0, MAX_CHARS))}
           rows={4}
-          placeholder="Type your homework question here… e.g. What is 7 × 8?"
+          placeholder="Type your homework question here… or drop a photo of it below."
           disabled={disabled}
           className="w-full rounded-2xl border-2 border-gray-200 focus:border-brand-400 focus:outline-none px-4 py-3 text-gray-800 placeholder-gray-400 resize-none transition-colors disabled:opacity-50 text-base leading-relaxed"
         />
@@ -86,7 +121,7 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
               d="M4 16l4.586-4.586A2 2 0 0111.414 11H12m0 0l4.586 4.586M12 11V3m-8 8h16"
             />
           </svg>
-          Add a photo
+          {isDragging ? "Drop it!" : "Add a photo"}
         </button>
         <input
           ref={fileRef}
@@ -119,7 +154,7 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
 
       <button
         type="submit"
-        disabled={disabled || !question.trim()}
+        disabled={disabled || (!question.trim() && !imageBase64)}
         className="w-full py-3 rounded-2xl bg-gradient-to-r from-brand-500 to-indigo-500 text-white font-bold text-lg shadow-md hover:shadow-lg hover:from-brand-600 hover:to-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {disabled ? "Working on it…" : "Ask the tutor! 🚀"}

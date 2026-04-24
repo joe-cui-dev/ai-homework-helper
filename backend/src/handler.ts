@@ -88,28 +88,8 @@ export const handler = awslambda.streamifyResponse(
       }
 
       const { question, image } = body;
-      if (typeof question !== "string" || question.trim() === "") {
-        logger.warn("validation_missing_question");
-        writeEvent({
-          type: "error",
-          message: "'question' must be a non-empty string",
-        });
-        return;
-      }
 
-      const trimmedQuestion = question.trim();
-
-      if (trimmedQuestion.length > 2000) {
-        logger.warn("validation_question_too_long", {
-          length: trimmedQuestion.length,
-        });
-        writeEvent({
-          type: "error",
-          message: "Question must be 2000 characters or fewer",
-        });
-        return;
-      }
-
+      // Validate image first so we know whether it is present before checking question.
       let validatedImage: string | undefined;
       if (image != null) {
         if (
@@ -127,6 +107,30 @@ export const handler = awslambda.streamifyResponse(
           return;
         }
         validatedImage = image;
+      }
+
+      // A question is required unless an image was provided (image-only submission).
+      const trimmedQuestion =
+        typeof question === "string" ? question.trim() : "";
+
+      if (!trimmedQuestion && !validatedImage) {
+        logger.warn("validation_missing_question");
+        writeEvent({
+          type: "error",
+          message: "Please provide a question or an image",
+        });
+        return;
+      }
+
+      if (trimmedQuestion.length > 2000) {
+        logger.warn("validation_question_too_long", {
+          length: trimmedQuestion.length,
+        });
+        writeEvent({
+          type: "error",
+          message: "Question must be 2000 characters or fewer",
+        });
+        return;
       }
 
       // studentId comes from the verified token sub — never trust client input.

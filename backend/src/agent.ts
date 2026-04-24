@@ -35,7 +35,7 @@ export class AlreadyReportedError extends Error {
 const MAX_ITERATIONS = 5;
 
 const SYSTEM_PROMPT = `You are a homework tutor for Australian primary school students (Years 1-6).
-Given a homework question, use the available tools to help the student. A photo of the question may be included alongside the text — use it to read any handwritten or printed content.
+Given a homework question, use the available tools to help the student. The student may provide text, a photo of the question, or both. If only a photo is provided, read the question directly from the image before proceeding.
 Follow this process:
 
 1. Classify the subject (math, science, english, other) and year level (year-1 to year-6) from the question itself.
@@ -292,7 +292,10 @@ export const runAgent = async (
       image: { format, source: { bytes: Buffer.from(base64Data, "base64") } },
     });
   }
-  initialContent.push({ text: question });
+  // Only add a text block when there is actual text — Bedrock rejects empty text blocks.
+  if (question) {
+    initialContent.push({ text: question });
+  }
 
   const messages: BedrockMessage[] = [
     { role: "user", content: initialContent },
