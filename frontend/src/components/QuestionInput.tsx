@@ -1,6 +1,5 @@
 import { useState, useRef, type FormEvent, type ChangeEvent, type DragEvent } from "react";
 import { toBase64 } from "../services/api";
-import { ImageCropModal } from "./ImageCropModal";
 
 interface QuestionInputProps {
   onSubmit: (question: string, image?: string) => void;
@@ -15,28 +14,17 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
   const [imageBase64, setImageBase64] = useState<string | undefined>(undefined);
   const [imageError, setImageError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [cropSource, setCropSource] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const processFile = async (file: File) => {
     setImageError(null);
     try {
       const dataUrl = await toBase64(file);
-      setCropSource(dataUrl);
+      setImageBase64(dataUrl);
+      setImagePreview(dataUrl);
     } catch (err) {
       setImageError(err instanceof Error ? err.message : "Invalid image.");
     }
-  };
-
-  const handleCropConfirm = (croppedDataUrl: string) => {
-    setImageBase64(croppedDataUrl);
-    setImagePreview(croppedDataUrl);
-    setCropSource(null);
-  };
-
-  const handleCropCancel = () => {
-    setCropSource(null);
-    if (fileRef.current) fileRef.current.value = "";
   };
 
   const handleImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -87,14 +75,6 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
   const charsLeft = MAX_CHARS - question.length;
 
   return (
-    <>
-    {cropSource && (
-      <ImageCropModal
-        imageSrc={cropSource}
-        onConfirm={handleCropConfirm}
-        onCancel={handleCropCancel}
-      />
-    )}
     <form
       onSubmit={handleSubmit}
       onDragOver={handleDragOver}
@@ -178,6 +158,5 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
         {disabled ? "Working on it…" : "Ask the tutor! 🚀"}
       </button>
     </form>
-    </>
   );
 }
