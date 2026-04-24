@@ -159,7 +159,7 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       entry: path.join(__dirname, "../../backend/src/handler.ts"),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_24_X,
-      memorySize: 512,
+      memorySize: 1024,
       timeout: cdk.Duration.minutes(5), // no longer bottlenecked by API GW's 29 s ceiling
       // Caps simultaneous in-flight agent loops across all users.
       // Each invocation holds a slot for the full agent duration (~10–30 s).
@@ -251,7 +251,7 @@ export class AiHomeworkHelperStack extends cdk.Stack {
             },
             textDataDeliveryEnabled: true,
             embeddingDataDeliveryEnabled: false,
-            imageDataDeliveryEnabled: false,
+            imageDataDeliveryEnabled: true,
           },
         },
         physicalResourceId: cr.PhysicalResourceId.of("BedrockLoggingConfig"),
