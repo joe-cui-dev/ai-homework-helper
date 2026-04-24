@@ -36,7 +36,7 @@ export function ResultCard({ result }: ResultCardProps) {
   const [showExplanation, setShowExplanation] = useState(false);
 
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-6 space-y-5">
+    <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 sm:p-6 space-y-5">
       {/* Badges */}
       <div className="flex flex-wrap gap-2">
         <span

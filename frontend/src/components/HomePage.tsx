@@ -29,7 +29,7 @@ export function HomePage({ email, token, onLogout }: HomePageProps) {
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🎒</span>
-            <span className="font-extrabold text-xl text-brand-700 tracking-tight">
+            <span className="font-extrabold text-base sm:text-xl text-brand-700 tracking-tight">
               AI Homework Helper
             </span>
           </div>
@@ -48,11 +48,11 @@ export function HomePage({ email, token, onLogout }: HomePageProps) {
       </header>
 
       {/* Main */}
-      <main className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+      <main className="max-w-2xl mx-auto px-3 sm:px-4 py-5 sm:py-8 space-y-4 sm:space-y-6">
         {/* Welcome */}
         {status === "idle" && (
           <div className="text-center space-y-1 pb-2">
-            <h1 className="text-3xl font-extrabold text-gray-800">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-800">
               What are we learning today? ✨
             </h1>
             <p className="text-gray-500">
@@ -62,7 +62,7 @@ export function HomePage({ email, token, onLogout }: HomePageProps) {
         )}
 
         {/* Input */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
           <QuestionInput onSubmit={handleSubmit} disabled={isStreaming} />
         </div>
 

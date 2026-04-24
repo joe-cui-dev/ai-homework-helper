@@ -76,7 +76,7 @@ export function AuthPage({ onLogin, onRegister, onConfirm }: AuthPageProps) {
         {/* Card */}
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
           {/* Hero header */}
-          <div className="bg-gradient-to-r from-brand-500 to-indigo-500 px-8 py-8 text-center">
+          <div className="bg-gradient-to-r from-brand-500 to-indigo-500 px-5 py-6 sm:px-8 sm:py-8 text-center">
             <div className="text-5xl mb-2">🎒</div>
             <h1 className="text-2xl font-extrabold text-white tracking-tight">
               AI Homework Helper
@@ -108,7 +108,7 @@ export function AuthPage({ onLogin, onRegister, onConfirm }: AuthPageProps) {
             </div>
           )}
 
-          <div className="px-8 py-6 space-y-4">
+          <div className="px-5 py-5 sm:px-8 sm:py-6 space-y-4">
             {/* Feedback messages */}
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm">
