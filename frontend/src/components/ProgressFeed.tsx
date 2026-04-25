@@ -16,7 +16,7 @@ interface ProgressFeedProps {
   events: ToolEvent[];
 }
 
-export function ProgressFeed({ events }: ProgressFeedProps) {
+export const ProgressFeed = ({ events }: ProgressFeedProps) => {
   if (events.length === 0) {
     return (
       <div className="flex items-center gap-2 text-gray-400 text-sm">
@@ -57,4 +57,4 @@ export function ProgressFeed({ events }: ProgressFeedProps) {
       ))}
     </div>
   );
-}
+};

@@ -10,7 +10,8 @@ interface HomePageProps {
   onLogout: () => void;
 }
 
-export function HomePage({ email, token, onLogout }: HomePageProps) {
+export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
+  // Use the custom hook to manage the homework stream state
   const { status, toolEvents, result, error, submit, reset } =
     useHomeworkStream();
 
@@ -116,4 +117,4 @@ export function HomePage({ email, token, onLogout }: HomePageProps) {
       </main>
     </div>
   );
-}
+};
