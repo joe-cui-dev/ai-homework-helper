@@ -225,37 +225,25 @@ export const dispatchTool = async (
   name: string,
   input: Record<string, unknown>,
   studentId?: string,
-  image?: string,
 ): Promise<unknown> => {
+  // Each tool implementation is responsible for validating its own input against the schema defined in TOOL_SCHEMA, and should throw an error if the input is invalid. The converseWithTools function ensures that the input adheres to the schema before invoking the tool, but it's good practice for each tool to defensively check its input as well.
   switch (name) {
+    // solve_question is the core tool that performs the actual problem-solving. It receives the question along with the classified subject and difficulty level, so it can apply appropriate methods to arrive at the answer and the step-by-step solution.
     case "solve_question":
-      return image !== undefined
-        ? solve(
-            input.question as string,
-            input.subject as string,
-            input.difficulty as string,
-            image,
-          )
-        : solve(
-            input.question as string,
-            input.subject as string,
-            input.difficulty as string,
-          );
+      return solve(
+        input.question as string,
+        input.subject as string,
+        input.difficulty as string,
+      );
 
+    // generate_hint and explain_solution are optional tools that Claude can choose to call if it thinks the student would benefit from hints or a friendlier explanation. They receive the same subject and difficulty level as solve_question, along with the question for generate_hint, and the answer + steps for explain_solution, so they can tailor their output appropriately.
     case "generate_hint":
-      return image !== undefined
-        ? generateHint(
-            input.question as string,
-            input.subject as string,
-            input.difficulty as string,
-            image,
-          )
-        : generateHint(
-            input.question as string,
-            input.subject as string,
-            input.difficulty as string,
-          );
-
+      return generateHint(
+        input.question as string,
+        input.subject as string,
+        input.difficulty as string,
+      );
+    // explain_solution takes the answer and steps produced by solve_question and rewrites them in a more accessible way. This is especially useful for younger students or more complex problems where the raw solution might be hard to understand.
     case "explain_solution":
       return explain(
         input.answer as string,
@@ -263,9 +251,11 @@ export const dispatchTool = async (
         input.difficulty as string,
       );
 
+    // lookup_curriculum and fetch_session_history are tools that provide additional context to Claude. lookup_curriculum allows Claude to reference specific curriculum outcomes, which can help it tailor its explanations to the relevant learning goals. fetch_session_history gives Claude insight into the student's recent interactions, allowing for a more personalized response based on the student's history and progress.
     case "lookup_curriculum":
       return lookupCurriculum(input.subject as string, input.year as string);
 
+    // fetch_session_history is only included in the toolset if a studentId is provided, so we can be confident that studentId is defined when this tool is called. It retrieves the student's recent session history from storage, which can include information about past questions, performance, and interactions with the agent. This information can be invaluable for Claude to personalize its responses and provide continuity across sessions.
     case "fetch_session_history":
       return getRecentSessions(studentId!);
 
@@ -382,7 +372,6 @@ export const runAgent = async (
             name,
             input as Record<string, unknown>,
             studentId,
-            image,
           );
           logger.debug("tool_result", { tool: name, success: true });
           toolResultBlocks.push({

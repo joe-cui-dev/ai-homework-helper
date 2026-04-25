@@ -54,6 +54,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
 
       // Handle events from the homework stream
       const handleEvent = (event: StreamEvent) => {
+        console.log("Received event:", event); // Log the event for debugging purposes
         // If the user has reset or submitted a new question, we should ignore any incoming events from the previous stream.
         if (abortRef.current) return;
 

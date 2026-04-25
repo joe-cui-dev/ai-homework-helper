@@ -57,6 +57,7 @@ export const streamHomework = async (
 
     // Append the decoded chunk to the buffer and split it into lines. Each line is expected to be a complete JSON string representing a StreamEvent.
     buffer += decoder.decode(value, { stream: true });
+    console.log("Received chunk:", buffer); // Log the raw buffer for debugging purposes.
     const lines = buffer.split("\n"); // The last line may be incomplete, so we keep it in the buffer for the next chunk. The rest of the lines are complete and can be processed as events.
     // Keep the last (potentially incomplete) chunk in the buffer.
     buffer = lines.pop() ?? "";
