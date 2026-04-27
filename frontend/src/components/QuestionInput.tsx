@@ -1,5 +1,5 @@
 import { useState, useRef, type FormEvent, type ChangeEvent, type DragEvent } from "react";
-import { toBase64 } from "../services/api";
+import { compressImage } from "../services/api";
 
 interface QuestionInputProps {
   onSubmit: (question: string, images: string[]) => void;
@@ -15,6 +15,7 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
   const [imageBase64s, setImageBase64s] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const processFiles = async (files: File[]) => {
@@ -24,7 +25,9 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
       setImageError(`You can upload at most ${MAX_IMAGES} images. ${imageBase64s.length > 0 ? `${imageBase64s.length} already added.` : ""}`);
       files = files.slice(0, remaining);
     }
-    const results = await Promise.allSettled(files.map(toBase64));
+    setIsCompressing(true);
+    const results = await Promise.allSettled(files.map(compressImage));
+    setIsCompressing(false);
     const successful: string[] = [];
     for (const r of results) {
       if (r.status === "fulfilled") {
@@ -85,7 +88,7 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
   };
 
   const charsLeft = MAX_CHARS - question.length;
-  const canAddMore = imageBase64s.length < MAX_IMAGES;
+  const canAddMore = imageBase64s.length < MAX_IMAGES && !isCompressing;
 
   return (
     <form
@@ -168,15 +171,18 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
           </div>
         ))}
 
+        {isCompressing && (
+          <p className="text-gray-400 text-sm self-center animate-pulse">Compressing…</p>
+        )}
         {imageError && <p className="text-red-500 text-sm self-center">{imageError}</p>}
       </div>
 
       <button
         type="submit"
-        disabled={disabled || (!question.trim() && imageBase64s.length === 0)}
+        disabled={disabled || isCompressing || (!question.trim() && imageBase64s.length === 0)}
         className="w-full py-3 rounded-2xl bg-gradient-to-r from-brand-500 to-indigo-500 text-white font-bold text-lg shadow-md hover:shadow-lg hover:from-brand-600 hover:to-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {disabled ? "Working on it…" : "Ask the tutor! 🚀"}
+        {disabled ? "Working on it…" : isCompressing ? "Preparing photo…" : "Ask the tutor! 🚀"}
       </button>
     </form>
   );
