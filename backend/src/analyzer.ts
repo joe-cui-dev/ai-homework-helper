@@ -99,12 +99,25 @@ export const analyzePages = async (
 
   logger.info("analyzer_start", { imageCount: images.length, hasText: !!questionText?.trim() });
 
+  // 8192 tokens to accommodate long articles without truncation.
   const response = await converseWithTools(
     messages,
     [SUBMIT_TOOL],
     ANALYZER_SYSTEM_PROMPT,
     { tool: { name: "submit_page_analysis" } },
+    8192,
   );
+
+  if (response.stopReason === "guardrail_intervened") {
+    const guardrailMessage =
+      (response.message.content ?? [])
+        .map((b) => (b as { text?: string }).text)
+        .filter(Boolean)
+        .join(" ") ||
+      "Your submission was blocked by the content filter. Please rephrase it.";
+    logger.warn("analyzer_guardrail_intervened", { message: guardrailMessage });
+    throw new Error(guardrailMessage);
+  }
 
   // Extract the tool input from the response.
   for (const block of response.message.content ?? []) {

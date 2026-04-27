@@ -20,6 +20,7 @@ interface UseHomeworkStreamReturn {
   toolEvents: ToolEvent[];
   results: QuestionResult[];
   activeQuestion: ActiveQuestion | null;
+  totalQuestions: number;
   error: string | null;
   submit: (question: string, token: string, images?: string[]) => Promise<void>;
   stop: () => void;
@@ -31,6 +32,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [results, setResults] = useState<QuestionResult[]>([]);
   const [activeQuestion, setActiveQuestion] = useState<ActiveQuestion | null>(null);
+  const [totalQuestions, setTotalQuestions] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   // abortRef gates stale event processing; abortControllerRef cancels the fetch.
@@ -66,6 +68,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
       setToolEvents([]);
       setResults([]);
       setActiveQuestion(null);
+      setTotalQuestions(0);
       setError(null);
 
       const handleEvent = (event: StreamEvent) => {
@@ -82,6 +85,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
         } else if (event.type === "question_start") {
           setToolEvents([]);
           activeTextRef.current = event.text;
+          setTotalQuestions(event.total);
           setActiveQuestion({ id: event.questionId, total: event.total, text: event.text });
         } else if (event.type === "question_complete") {
           setResults((prev) => [
@@ -118,5 +122,5 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     [],
   );
 
-  return { status, toolEvents, results, activeQuestion, error, submit, stop, reset };
+  return { status, toolEvents, results, activeQuestion, totalQuestions, error, submit, stop, reset };
 };

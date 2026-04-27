@@ -1,11 +1,11 @@
 import type { StreamEvent } from "../types";
 
-const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4 MB
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB
 
 export const toBase64 = (file: File): Promise<string> => {
   if (file.size > MAX_IMAGE_BYTES) {
     return Promise.reject(
-      new Error("Image must be under 4 MB. Please choose a smaller file."),
+      new Error("Image must be under 2 MB. Please choose a smaller file."),
     );
   }
   return new Promise((resolve, reject) => {

@@ -118,6 +118,7 @@ export const converseWithTools = async (
   tools: Tool[],
   system: string,
   toolChoice: Record<string, unknown> = { any: {} },
+  maxTokens = 4096,
 ): Promise<ConverseResponse> => {
   const modelId = process.env.BEDROCK_MODEL_ID;
   if (!modelId) {
@@ -128,6 +129,7 @@ export const converseWithTools = async (
     modelId,
     messages: messages as unknown as Message[],
     system: [{ text: system }],
+    inferenceConfig: { maxTokens },
     toolConfig: {
       tools,
       toolChoice: toolChoice as unknown as { any: Record<string, never> },

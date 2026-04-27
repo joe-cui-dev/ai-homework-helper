@@ -36,8 +36,13 @@ const RESPONSE_HEADERS: Record<string, string> = {
 };
 
 const IMAGE_REGEX = /^data:image\/(jpeg|png|gif|webp);base64,/;
-const MAX_IMAGE_B64_LENGTH = 5_500_000;
+// ~2 MB raw image → ~2.8 MB base64. Keeps a single image well under Lambda's
+// 6 MB request body limit even after JSON framing.
+const MAX_IMAGE_B64_LENGTH = 2_800_000;
 const MAX_IMAGES = 5;
+// Total base64 budget across all images: ~4 MB raw, leaving headroom for JSON
+// framing and the question text inside Lambda's 6 MB request body ceiling.
+const MAX_TOTAL_B64_LENGTH = 5_500_000;
 
 function validateImage(image: unknown, index: number): string {
   if (typeof image !== "string" || !IMAGE_REGEX.test(image)) {
@@ -45,7 +50,7 @@ function validateImage(image: unknown, index: number): string {
   }
   const base64Data = image.split(",")[1] ?? "";
   if (base64Data.length > MAX_IMAGE_B64_LENGTH) {
-    throw Object.assign(new Error(`Image ${index + 1} must be under 4 MB`), { userFacing: true });
+    throw Object.assign(new Error(`Image ${index + 1} must be under 2 MB`), { userFacing: true });
   }
   return image;
 }
@@ -132,6 +137,13 @@ export const handler = awslambda.streamifyResponse(
         return;
       }
 
+      const totalB64 = validatedImages.reduce((sum, img) => sum + (img.split(",")[1]?.length ?? 0), 0);
+      if (totalB64 > MAX_TOTAL_B64_LENGTH) {
+        logger.warn("validation_total_payload_too_large", { totalB64 });
+        writeEvent({ type: "error", message: "Total image size must be under 4 MB. Please use fewer or smaller photos." });
+        return;
+      }
+
       const trimmedQuestion =
         typeof question === "string" ? question.trim() : "";
 
@@ -208,20 +220,26 @@ export const handler = awslambda.streamifyResponse(
           difficulty: result.difficulty,
         });
 
-        await saveSession(
-          sessionId,
-          {
-            input: q.text,
-            subject: result.subject,
-            difficulty: result.difficulty,
-            answer: result.answer,
-            steps: result.steps,
-            explanation: result.explanation,
-            hints: result.hints,
-            timestamp: new Date().toISOString(),
-          },
-          resolvedStudentId,
-        );
+        // Non-critical — a storage failure must not overwrite the answer already
+        // shown to the student with an error banner.
+        try {
+          await saveSession(
+            sessionId,
+            {
+              input: q.text,
+              subject: result.subject,
+              difficulty: result.difficulty,
+              answer: result.answer,
+              steps: result.steps,
+              explanation: result.explanation,
+              hints: result.hints,
+              timestamp: new Date().toISOString(),
+            },
+            resolvedStudentId,
+          );
+        } catch (saveErr) {
+          logger.error("save_session_failed", saveErr instanceof Error ? saveErr : String(saveErr));
+        }
       }
 
       writeEvent({ type: "complete", results: allResults });

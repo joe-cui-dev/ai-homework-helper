@@ -9,7 +9,7 @@ interface HomePageProps {
 }
 
 export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
-  const { status, toolEvents, results, activeQuestion, error, submit, stop, reset } =
+  const { status, toolEvents, results, activeQuestion, totalQuestions, error, submit, stop, reset } =
     useHomeworkStream();
 
   const handleSubmit = (question: string, images: string[]) => {
@@ -20,9 +20,6 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
   const isDone = status === "done";
   const isStopped = status === "stopped";
   const isError = status === "error";
-
-  // Total question count: from activeQuestion (known during streaming) or results length.
-  const total = activeQuestion?.total ?? results.length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-indigo-50 to-purple-100">
@@ -106,7 +103,7 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
             results={results}
             activeQuestion={activeQuestion}
             toolEvents={toolEvents}
-            total={total}
+            total={totalQuestions}
           />
         )}
 
