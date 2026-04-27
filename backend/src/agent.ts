@@ -272,16 +272,24 @@ export const runAgent = async (
   question: string,
   studentId?: string,
   onEvent?: (event: StreamEvent) => void,
-  image?: string,
+  images?: string[],
+  articleContext?: string,
 ): Promise<AgentResult> => {
   const initialContent: Record<string, unknown>[] = [];
-  if (image) {
+
+  for (const image of images ?? []) {
     const { mediaType, base64Data } = parseDataUrl(image);
     const format = mediaType.split("/")[1] as "jpeg" | "png" | "gif" | "webp";
     initialContent.push({
       image: { format, source: { bytes: Buffer.from(base64Data, "base64") } },
     });
   }
+
+  // Inject the article text so Claude can answer questions that reference it.
+  if (articleContext) {
+    initialContent.push({ text: `Reading passage:\n\n${articleContext}` });
+  }
+
   // Only add a text block when there is actual text — Bedrock rejects empty text blocks.
   if (question) {
     initialContent.push({ text: question });

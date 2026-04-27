@@ -9,8 +9,16 @@ export interface AgentResult {
   hints?: string[];
 }
 
+export interface QuestionResult {
+  questionId: number;
+  questionText: string;
+  result: AgentResult;
+}
+
 export type StreamEvent =
   | { type: "tool_start"; tool: string }
   | { type: "tool_end"; tool: string }
-  | { type: "complete"; result: AgentResult }
+  | { type: "question_start"; questionId: number; total: number; text: string }
+  | { type: "question_complete"; questionId: number; result: AgentResult }
+  | { type: "complete"; results: QuestionResult[] }
   | { type: "error"; message: string };

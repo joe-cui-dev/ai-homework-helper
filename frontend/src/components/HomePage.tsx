@@ -1,7 +1,5 @@
 import { QuestionInput } from "./QuestionInput";
-import { ProgressFeed } from "./ProgressFeed";
-import { ResultCard } from "./ResultCard";
-import { LoadingState } from "./LoadingState";
+import { QuestionResultList } from "./QuestionResultList";
 import { useHomeworkStream } from "../hooks/useHomeworkStream";
 
 interface HomePageProps {
@@ -11,17 +9,20 @@ interface HomePageProps {
 }
 
 export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
-  // Use the custom hook to manage the homework stream state
-  const { status, toolEvents, result, error, submit, reset } =
+  const { status, toolEvents, results, activeQuestion, error, submit, stop, reset } =
     useHomeworkStream();
 
-  const handleSubmit = (question: string, image?: string) => {
-    submit(question, token, image);
+  const handleSubmit = (question: string, images: string[]) => {
+    submit(question, token, images.length > 0 ? images : undefined);
   };
 
   const isStreaming = status === "streaming";
   const isDone = status === "done";
+  const isStopped = status === "stopped";
   const isError = status === "error";
+
+  // Total question count: from activeQuestion (known during streaming) or results length.
+  const total = activeQuestion?.total ?? results.length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-indigo-50 to-purple-100">
@@ -67,25 +68,47 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
           <QuestionInput onSubmit={handleSubmit} disabled={isStreaming} />
         </div>
 
-        {/* Progress feed */}
+        {/* Streaming status bar + stop button */}
         {isStreaming && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">
-              Your tutor is working…
-            </p>
-            <ProgressFeed events={toolEvents} />
+          <div className="bg-white/60 rounded-2xl border border-gray-100 px-5 py-3 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              {activeQuestion && activeQuestion.total > 1 ? (
+                <>
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                    Solving question {activeQuestion.id} of {activeQuestion.total}…
+                  </p>
+                  <p className="text-sm text-gray-600 mt-0.5 line-clamp-1">
+                    {activeQuestion.text}
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                  Your tutor is working…
+                </p>
+              )}
+            </div>
+            <button
+              onClick={stop}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 text-red-500 font-semibold text-sm hover:bg-red-100 transition-colors"
+              aria-label="Stop processing"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor">
+                <rect x="3" y="3" width="10" height="10" rx="1" />
+              </svg>
+              Stop
+            </button>
           </div>
         )}
 
-        {/* Loading skeleton while streaming before first result */}
-        {isStreaming && toolEvents.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <LoadingState />
-          </div>
+        {/* Results list (progressive — cards appear as each question completes) */}
+        {(isStreaming || isDone || isStopped) && (results.length > 0 || activeQuestion) && (
+          <QuestionResultList
+            results={results}
+            activeQuestion={activeQuestion}
+            toolEvents={toolEvents}
+            total={total}
+          />
         )}
-
-        {/* Result */}
-        {isDone && result && <ResultCard result={result} />}
 
         {/* Error */}
         {isError && (
@@ -103,8 +126,20 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
           </div>
         )}
 
+        {/* Stopped notice */}
+        {isStopped && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center space-y-1">
+            <p className="text-amber-700 font-semibold text-sm">Stopped early</p>
+            {results.length > 0 && (
+              <p className="text-amber-600 text-xs">
+                {results.length} question{results.length !== 1 ? "s" : ""} answered above.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Ask another question */}
-        {isDone && (
+        {(isDone || isStopped) && (
           <div className="text-center">
             <button
               onClick={reset}

@@ -3,17 +3,21 @@
 //
 // Request flow:
 //   1. Verify the Cognito Bearer token — reject immediately if invalid.
-//   2. Validate and sanitise the question from the request body.
-//   3. Call runAgent() which drives the agentic AI loop (see agent.ts).
-//   4. Stream progress events (tool_start/tool_end) and the final result back
-//      to the browser as NDJSON lines over the Lambda response stream.
+//   2. Validate and sanitise all uploaded images and the optional text question.
+//   3. Call analyzePages() — a single Claude vision call that identifies every
+//      question across all uploaded images and extracts any reading passage.
+//   4. Solve each identified question sequentially with runAgent(), streaming
+//      question_start / tool_start / tool_end / question_complete events.
+//   5. Emit a final complete event carrying all results, then save each
+//      question's answer to S3 for session history.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { v4 as uuidv4 } from "uuid";
 import { runAgent, AlreadyReportedError } from "./agent";
+import { analyzePages } from "./analyzer";
 import { saveSession } from "./storage";
-import type { StreamEvent } from "./types";
+import type { StreamEvent, QuestionResult } from "./types";
 import { logger } from "./logger";
 
 // Verifier is created once at cold-start; it caches JWKS automatically.
@@ -30,6 +34,21 @@ const verifier = CognitoJwtVerifier.create({
 const RESPONSE_HEADERS: Record<string, string> = {
   "Content-Type": "application/x-ndjson",
 };
+
+const IMAGE_REGEX = /^data:image\/(jpeg|png|gif|webp);base64,/;
+const MAX_IMAGE_B64_LENGTH = 5_500_000;
+const MAX_IMAGES = 5;
+
+function validateImage(image: unknown, index: number): string {
+  if (typeof image !== "string" || !IMAGE_REGEX.test(image)) {
+    throw Object.assign(new Error(`Image ${index + 1}: invalid format`), { userFacing: true });
+  }
+  const base64Data = image.split(",")[1] ?? "";
+  if (base64Data.length > MAX_IMAGE_B64_LENGTH) {
+    throw Object.assign(new Error(`Image ${index + 1} must be under 4 MB`), { userFacing: true });
+  }
+  return image;
+}
 
 export const handler = awslambda.streamifyResponse(
   async (event: APIGatewayProxyEventV2, responseStream, context) => {
@@ -49,8 +68,6 @@ export const handler = awslambda.streamifyResponse(
 
     try {
       // ── Authentication ──────────────────────────────────────────────────
-      // Validate the Cognito access token from the Authorization header.
-      // Any request without a valid token is rejected before touching Bedrock.
       const authHeader =
         event.headers?.["authorization"] ??
         event.headers?.["Authorization"] ??
@@ -78,42 +95,47 @@ export const handler = awslambda.streamifyResponse(
       logger.appendKeys({ studentId: tokenSub });
 
       // ── Request parsing ─────────────────────────────────────────────────
-      let body: { question?: unknown; image?: unknown };
+      let body: { question?: unknown; image?: unknown; images?: unknown };
       try {
-        body = JSON.parse(event.body ?? "{}") as { question?: unknown; image?: unknown };
+        body = JSON.parse(event.body ?? "{}") as {
+          question?: unknown;
+          image?: unknown;
+          images?: unknown;
+        };
       } catch {
         logger.warn("validation_invalid_json");
         writeEvent({ type: "error", message: "Invalid JSON body" });
         return;
       }
 
-      const { question, image } = body;
+      const { question, image, images } = body;
 
-      // Validate image first so we know whether it is present before checking question.
-      let validatedImage: string | undefined;
-      if (image != null) {
-        if (
-          typeof image !== "string" ||
-          !/^data:image\/(jpeg|png|gif|webp);base64,/.test(image)
-        ) {
-          logger.warn("validation_invalid_image");
-          writeEvent({ type: "error", message: "Invalid image format" });
-          return;
-        }
-        const base64Data = image.split(",")[1] ?? "";
-        if (base64Data.length > 5_500_000) {
-          logger.warn("validation_image_too_large");
-          writeEvent({ type: "error", message: "Image must be under 4 MB" });
-          return;
-        }
-        validatedImage = image;
+      // Normalise: accept either `images` (array) or legacy `image` (single).
+      const rawImages: unknown[] = Array.isArray(images)
+        ? images
+        : image != null
+          ? [image]
+          : [];
+
+      if (rawImages.length > MAX_IMAGES) {
+        logger.warn("validation_too_many_images", { count: rawImages.length });
+        writeEvent({ type: "error", message: `Please upload at most ${MAX_IMAGES} images at a time` });
+        return;
       }
 
-      // A question is required unless an image was provided (image-only submission).
+      let validatedImages: string[];
+      try {
+        validatedImages = rawImages.map(validateImage);
+      } catch (err) {
+        logger.warn("validation_invalid_image", { message: (err as Error).message });
+        writeEvent({ type: "error", message: (err as Error).message });
+        return;
+      }
+
       const trimmedQuestion =
         typeof question === "string" ? question.trim() : "";
 
-      if (!trimmedQuestion && !validatedImage) {
+      if (!trimmedQuestion && validatedImages.length === 0) {
         logger.warn("validation_missing_question");
         writeEvent({
           type: "error",
@@ -123,9 +145,7 @@ export const handler = awslambda.streamifyResponse(
       }
 
       if (trimmedQuestion.length > 2000) {
-        logger.warn("validation_question_too_long", {
-          length: trimmedQuestion.length,
-        });
+        logger.warn("validation_question_too_long", { length: trimmedQuestion.length });
         writeEvent({
           type: "error",
           message: "Question must be 2000 characters or fewer",
@@ -133,44 +153,80 @@ export const handler = awslambda.streamifyResponse(
         return;
       }
 
-      // studentId comes from the verified token sub — never trust client input.
       const resolvedStudentId = tokenSub;
-      const sessionId = uuidv4();
+      const batchId = uuidv4();
 
-      logger.appendKeys({ sessionId });
-      logger.info("request_received", { hasImage: !!validatedImage });
-
-      const result = await runAgent(
-        trimmedQuestion,
-        resolvedStudentId,
-        writeEvent,
-        validatedImage,
-      );
-
-      writeEvent({ type: "complete", result });
-      logger.info("request_complete", {
-        subject: result.subject,
-        difficulty: result.difficulty,
+      logger.appendKeys({ batchId });
+      logger.info("request_received", {
+        imageCount: validatedImages.length,
+        hasText: !!trimmedQuestion,
       });
 
-      // Awaited so the write completes before the stream closes.
-      await saveSession(
-        sessionId,
-        {
-          input: trimmedQuestion,
+      // ── Page analysis ───────────────────────────────────────────────────
+      // Single Claude call that reads all images and extracts questions + article.
+      const analysis = await analyzePages(validatedImages, trimmedQuestion);
+
+      // Fallback: unreadable images / no questions detected.
+      if (analysis.questions.length === 0) {
+        logger.warn("analyzer_no_questions_found");
+        writeEvent({ type: "error", message: "No questions were found in your submission. Please try a clearer photo." });
+        return;
+      }
+
+      logger.info("analyzer_questions_found", { count: analysis.questions.length });
+
+      // ── Sequential question solving ─────────────────────────────────────
+      const allResults: QuestionResult[] = [];
+      const total = analysis.questions.length;
+
+      for (const q of analysis.questions) {
+        const sessionId = `${batchId}-q${q.id}`;
+        logger.appendKeys({ sessionId, questionId: q.id });
+
+        writeEvent({ type: "question_start", questionId: q.id, total, text: q.text });
+
+        // Use the specific page image if we know which page the question is on;
+        // otherwise pass all images so Claude can orient itself.
+        const questionImages =
+          q.sourcePage !== undefined && validatedImages[q.sourcePage]
+            ? [validatedImages[q.sourcePage]]
+            : validatedImages;
+
+        const result = await runAgent(
+          q.text,
+          resolvedStudentId,
+          writeEvent,
+          questionImages,
+          q.usesArticle ? analysis.articleContext : undefined,
+        );
+
+        writeEvent({ type: "question_complete", questionId: q.id, result });
+        allResults.push({ questionId: q.id, questionText: q.text, result });
+
+        logger.info("question_complete", {
           subject: result.subject,
           difficulty: result.difficulty,
-          answer: result.answer,
-          steps: result.steps,
-          explanation: result.explanation,
-          hints: result.hints,
-          timestamp: new Date().toISOString(),
-        },
-        resolvedStudentId,
-      );
+        });
+
+        await saveSession(
+          sessionId,
+          {
+            input: q.text,
+            subject: result.subject,
+            difficulty: result.difficulty,
+            answer: result.answer,
+            steps: result.steps,
+            explanation: result.explanation,
+            hints: result.hints,
+            timestamp: new Date().toISOString(),
+          },
+          resolvedStudentId,
+        );
+      }
+
+      writeEvent({ type: "complete", results: allResults });
+      logger.info("request_complete", { questionCount: allResults.length });
     } catch (err) {
-      // AlreadyReportedError means the agent already sent an error event to the
-      // frontend (e.g. guardrail_intervened). Skip writing a duplicate event.
       if (err instanceof AlreadyReportedError) {
         logger.warn("error_already_reported", { message: err.message });
       } else {

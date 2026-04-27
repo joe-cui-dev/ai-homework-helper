@@ -117,6 +117,7 @@ export const converseWithTools = async (
   messages: BedrockMessage[],
   tools: Tool[],
   system: string,
+  toolChoice: Record<string, unknown> = { any: {} },
 ): Promise<ConverseResponse> => {
   const modelId = process.env.BEDROCK_MODEL_ID;
   if (!modelId) {
@@ -129,7 +130,7 @@ export const converseWithTools = async (
     system: [{ text: system }],
     toolConfig: {
       tools,
-      toolChoice: { any: {} },
+      toolChoice: toolChoice as unknown as { any: Record<string, never> },
     },
     ...(GUARDRAIL_ID && GUARDRAIL_VERSION
       ? {

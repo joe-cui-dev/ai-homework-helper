@@ -2,36 +2,47 @@ import { useState, useRef, type FormEvent, type ChangeEvent, type DragEvent } fr
 import { toBase64 } from "../services/api";
 
 interface QuestionInputProps {
-  onSubmit: (question: string, image?: string) => void;
+  onSubmit: (question: string, images: string[]) => void;
   disabled: boolean;
 }
 
 const MAX_CHARS = 2000;
+const MAX_IMAGES = 5;
 
 export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
   const [question, setQuestion] = useState("");
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [imageBase64, setImageBase64] = useState<string | undefined>(undefined);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [imageBase64s, setImageBase64s] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const processFile = async (file: File) => {
+  const processFiles = async (files: File[]) => {
     setImageError(null);
-    try {
-      const dataUrl = await toBase64(file);
-      setImageBase64(dataUrl);
-      setImagePreview(dataUrl);
-    } catch (err) {
-      setImageError(err instanceof Error ? err.message : "Invalid image.");
+    const remaining = MAX_IMAGES - imageBase64s.length;
+    if (files.length > remaining) {
+      setImageError(`You can upload at most ${MAX_IMAGES} images. ${imageBase64s.length > 0 ? `${imageBase64s.length} already added.` : ""}`);
+      files = files.slice(0, remaining);
+    }
+    const results = await Promise.allSettled(files.map(toBase64));
+    const successful: string[] = [];
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        successful.push(r.value);
+      } else {
+        setImageError(r.reason instanceof Error ? r.reason.message : "Invalid image.");
+      }
+    }
+    if (successful.length > 0) {
+      setImageBase64s((prev) => [...prev, ...successful]);
+      setImagePreviews((prev) => [...prev, ...successful]);
     }
   };
 
   const handleImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    await processFile(file);
-    // Reset input so same file can be re-selected after clearing.
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    await processFiles(files);
     e.target.value = "";
   };
 
@@ -41,7 +52,6 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
   };
 
   const handleDragLeave = (e: DragEvent<HTMLFormElement>) => {
-    // Only clear when leaving the form entirely, not when moving between children.
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
       setIsDragging(false);
     }
@@ -51,28 +61,31 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
     e.preventDefault();
     setIsDragging(false);
     if (disabled) return;
-    const file = e.dataTransfer.files[0];
-    if (file?.type.startsWith("image/")) {
-      await processFile(file);
-    } else if (file) {
+    const files = Array.from(e.dataTransfer.files).filter((f) =>
+      f.type.startsWith("image/"),
+    );
+    if (files.length === 0 && e.dataTransfer.files.length > 0) {
       setImageError("Only image files can be dropped here.");
+      return;
     }
+    await processFiles(files);
   };
 
-  const clearImage = () => {
-    setImageBase64(undefined);
-    setImagePreview(null);
+  const removeImage = (index: number) => {
+    setImageBase64s((prev) => prev.filter((_, i) => i !== index));
+    setImagePreviews((prev) => prev.filter((_, i) => i !== index));
     setImageError(null);
   };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const trimmed = question.trim();
-    if ((!trimmed && !imageBase64) || disabled) return;
-    onSubmit(trimmed, imageBase64);
+    if ((!trimmed && imageBase64s.length === 0) || disabled) return;
+    onSubmit(trimmed, imageBase64s);
   };
 
   const charsLeft = MAX_CHARS - question.length;
+  const canAddMore = imageBase64s.length < MAX_IMAGES;
 
   return (
     <form
@@ -99,60 +112,68 @@ export function QuestionInput({ onSubmit, disabled }: QuestionInputProps) {
       </div>
 
       {/* Image section */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={disabled}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-dashed border-gray-300 text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors text-sm font-semibold disabled:opacity-40"
-        >
-          <svg
-            className="w-4 h-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
+      <div className="flex items-start gap-3 flex-wrap">
+        {canAddMore && (
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={disabled}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-dashed border-gray-300 text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors text-sm font-semibold disabled:opacity-40 shrink-0"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 16l4.586-4.586A2 2 0 0111.414 11H12m0 0l4.586 4.586M12 11V3m-8 8h16"
-            />
-          </svg>
-          {isDragging ? "Drop it!" : "Add a photo"}
-        </button>
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 16l4.586-4.586A2 2 0 0111.414 11H12m0 0l4.586 4.586M12 11V3m-8 8h16"
+              />
+            </svg>
+            {isDragging ? "Drop it!" : imageBase64s.length === 0 ? "Add a photo" : "Add another"}
+          </button>
+        )}
         <input
           ref={fileRef}
           type="file"
           accept="image/*"
+          multiple
           className="hidden"
           onChange={handleImageChange}
         />
 
-        {imagePreview && (
-          <div className="relative inline-block">
+        {imagePreviews.map((src, i) => (
+          <div key={i} className="relative inline-block">
             <img
-              src={imagePreview}
-              alt="Question"
+              src={src}
+              alt={`Page ${i + 1}`}
               className="w-16 h-16 rounded-xl object-cover border-2 border-brand-200"
             />
+            {imagePreviews.length > 1 && (
+              <span className="absolute bottom-0 left-0 right-0 text-center text-white text-[10px] font-bold bg-black/40 rounded-b-xl leading-4">
+                p{i + 1}
+              </span>
+            )}
             <button
               type="button"
-              onClick={clearImage}
+              onClick={() => removeImage(i)}
               className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-400 text-white text-xs flex items-center justify-center hover:bg-red-500"
-              aria-label="Remove image"
+              aria-label={`Remove image ${i + 1}`}
             >
               ×
             </button>
           </div>
-        )}
+        ))}
 
-        {imageError && <p className="text-red-500 text-sm">{imageError}</p>}
+        {imageError && <p className="text-red-500 text-sm self-center">{imageError}</p>}
       </div>
 
       <button
         type="submit"
-        disabled={disabled || (!question.trim() && !imageBase64)}
+        disabled={disabled || (!question.trim() && imageBase64s.length === 0)}
         className="w-full py-3 rounded-2xl bg-gradient-to-r from-brand-500 to-indigo-500 text-white font-bold text-lg shadow-md hover:shadow-lg hover:from-brand-600 hover:to-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {disabled ? "Working on it…" : "Ask the tutor! 🚀"}

@@ -1,96 +1,116 @@
 import { useState, useCallback, useRef } from "react";
 import { streamHomework } from "../services/api";
-import type { AgentResult, StreamEvent } from "../types";
+import type { QuestionResult, StreamEvent } from "../types";
 
-type Status = "idle" | "streaming" | "done" | "error";
+type Status = "idle" | "streaming" | "done" | "stopped" | "error";
 
 interface ToolEvent {
   tool: string;
   done: boolean;
 }
 
+export interface ActiveQuestion {
+  id: number;
+  total: number;
+  text: string;
+}
+
 interface UseHomeworkStreamReturn {
   status: Status;
   toolEvents: ToolEvent[];
-  result: AgentResult | null;
+  results: QuestionResult[];
+  activeQuestion: ActiveQuestion | null;
   error: string | null;
-  submit: (question: string, token: string, image?: string) => Promise<void>;
+  submit: (question: string, token: string, images?: string[]) => Promise<void>;
+  stop: () => void;
   reset: () => void;
 }
 
-// Custom hook to manage the state of the homework stream
 export const useHomeworkStream = (): UseHomeworkStreamReturn => {
-  const [status, setStatus] = useState<Status>("idle"); // Track the current status of the stream
-  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]); // Track the events of tools being used during the stream
-  const [result, setResult] = useState<AgentResult | null>(null); // Track the final result of the stream
-  const [error, setError] = useState<string | null>(null); // Track any error that occurs during the stream
+  const [status, setStatus] = useState<Status>("idle");
+  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
+  const [results, setResults] = useState<QuestionResult[]>([]);
+  const [activeQuestion, setActiveQuestion] = useState<ActiveQuestion | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Ref to signal when to abort an ongoing stream (e.g., on reset)
-  // Using a ref instead of state because we don't want to trigger re-renders when this value changes.
+  // abortRef gates stale event processing; abortControllerRef cancels the fetch.
   const abortRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const activeTextRef = useRef<string>("");
 
-  // Reset the state to initial values and signal any ongoing stream to abort
-  // This is useful when the user wants to clear the current progress and start fresh.
+  const stop = useCallback(() => {
+    abortRef.current = true;
+    abortControllerRef.current?.abort();
+    setActiveQuestion(null);
+    setToolEvents([]);
+    setStatus("stopped");
+  }, []);
+
   const reset = useCallback(() => {
     abortRef.current = true;
+    abortControllerRef.current?.abort();
     setStatus("idle");
     setToolEvents([]);
-    setResult(null);
+    setResults([]);
+    setActiveQuestion(null);
     setError(null);
   }, []);
 
-  // Submit a question to the homework stream and handle incoming events
-  // This function initiates the streaming process and updates the state based on the events received.
-  // The handleEvent function is defined inside submit to have access to the current state and refs.
-  // The submit function is memoized with useCallback to prevent unnecessary re-renders of components that depend on it.
   const submit = useCallback(
-    async (question: string, token: string, image?: string) => {
-      // Start a new stream: reset state and clear any previous progress
-      abortRef.current = false; // Allow new events to be processed
-      setStatus("streaming"); // Mark the status as streaming to show progress indicators
-      setToolEvents([]); // Clear any previous tool events
-      setResult(null); // Clear previous result
-      setError(null); // Clear previous error
+    async (question: string, token: string, images?: string[]) => {
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      abortRef.current = false;
+      activeTextRef.current = "";
+      setStatus("streaming");
+      setToolEvents([]);
+      setResults([]);
+      setActiveQuestion(null);
+      setError(null);
 
-      // Handle events from the homework stream
       const handleEvent = (event: StreamEvent) => {
-        console.log("Received event:", event); // Log the event for debugging purposes
-        // If the user has reset or submitted a new question, we should ignore any incoming events from the previous stream.
         if (abortRef.current) return;
 
-        // Update tool events based on the type of event received
         if (event.type === "tool_start") {
-          // When a tool starts, we add it to the list of tool events with done: false
           setToolEvents((prev) => [...prev, { tool: event.tool, done: false }]);
         } else if (event.type === "tool_end") {
-          // When a tool ends, we mark it as done in the list of tool events
           setToolEvents((prev) =>
             prev.map((e) =>
               e.tool === event.tool && !e.done ? { ...e, done: true } : e,
             ),
           );
+        } else if (event.type === "question_start") {
+          setToolEvents([]);
+          activeTextRef.current = event.text;
+          setActiveQuestion({ id: event.questionId, total: event.total, text: event.text });
+        } else if (event.type === "question_complete") {
+          setResults((prev) => [
+            ...prev,
+            { questionId: event.questionId, questionText: activeTextRef.current, result: event.result },
+          ]);
+          setActiveQuestion(null);
         } else if (event.type === "complete") {
-          // When the stream is complete, we set the final result and mark the status as done
-          setResult(event.result);
+          setResults(event.results);
+          setActiveQuestion(null);
           setStatus("done");
         } else if (event.type === "error") {
-          // When an error occurs, we set the error message and mark the status as error
           setError(event.message);
           setStatus("error");
         }
       };
 
       try {
-        // Start streaming the homework process. This function will call handleEvent for each event received from the stream.
-        await streamHomework(question, token, handleEvent, image);
-        // If the stream finishes without errors, we ensure the status is set to done (in case the complete event was missed)
+        await streamHomework(question, token, handleEvent, images, controller.signal);
+        // If stop() was already called, leave status as "stopped".
         setStatus((prev) => (prev === "streaming" ? "done" : prev));
       } catch (err) {
-        // If an error occurs during the streaming process (e.g., network error), we catch it here. We also check if the stream was aborted to avoid setting state based on stale events.
+        // AbortError means the user clicked Stop — not an unexpected failure.
+        if (err instanceof Error && err.name === "AbortError") {
+          setStatus((prev) => (prev === "streaming" ? "stopped" : prev));
+          return;
+        }
         if (!abortRef.current) {
-          setError(
-            err instanceof Error ? err.message : "Something went wrong.",
-          );
+          setError(err instanceof Error ? err.message : "Something went wrong.");
           setStatus("error");
         }
       }
@@ -98,5 +118,5 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     [],
   );
 
-  return { status, toolEvents, result, error, submit, reset };
+  return { status, toolEvents, results, activeQuestion, error, submit, stop, reset };
 };
