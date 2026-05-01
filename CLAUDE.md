@@ -73,3 +73,17 @@ See `frontend/.env.local.example` for the template.
 - **`callClaude` vs `converseWithTools`:** pipeline skills use single-turn `InvokeModel`; the orchestration loop uses multi-turn Converse API — both go through Bedrock Guardrails
 - **`AlreadyReportedError`:** thrown when a guardrail blocks a response to prevent duplicate error events being streamed
 - **CDK context overrides:** `logLevel` and `allowedOrigin` can be changed at deploy time via `--context` flags without code changes
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as local markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
