@@ -1,6 +1,8 @@
+import { useState } from "react";
 import type { SessionSummary } from "../types";
 import { useSessionHistory } from "../hooks/useSessionHistory";
 import { subjectColour } from "../utils/subjectColour";
+import { SessionDetailModal } from "./SessionDetailModal";
 
 interface HistorySidebarProps {
   token: string;
@@ -16,9 +18,12 @@ function formatDate(iso: string): string {
   });
 }
 
-function SessionCard({ session }: { session: SessionSummary }) {
+function SessionCard({ session, onClick }: { session: SessionSummary; onClick: () => void }) {
   return (
-    <div className="p-3 rounded-xl bg-white border border-gray-100 space-y-2">
+    <button
+      onClick={onClick}
+      className="w-full text-left p-3 rounded-xl bg-white border border-gray-100 space-y-2 hover:border-brand-200 hover:shadow-sm transition-all"
+    >
       <div className="flex items-center gap-2 flex-wrap">
         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${subjectColour(session.subject)}`}>
           {session.subject}
@@ -38,7 +43,7 @@ function SessionCard({ session }: { session: SessionSummary }) {
           ))}
         </div>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -58,6 +63,7 @@ function SkeletonCard() {
 export function HistorySidebar({ token, open, onClose }: HistorySidebarProps) {
   const { sessions, loading, loadingMore, error, nextCursor, loadMore } =
     useSessionHistory(token);
+  const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
 
   return (
     <>
@@ -112,7 +118,7 @@ export function HistorySidebar({ token, open, onClose }: HistorySidebarProps) {
           )}
 
           {sessions.map((s) => (
-            <SessionCard key={s.sessionId} session={s} />
+            <SessionCard key={s.sessionId} session={s} onClick={() => setSelectedSession(s)} />
           ))}
 
           {nextCursor && (
@@ -126,6 +132,13 @@ export function HistorySidebar({ token, open, onClose }: HistorySidebarProps) {
           )}
         </div>
       </aside>
+
+      {selectedSession && (
+        <SessionDetailModal
+          session={selectedSession}
+          onClose={() => setSelectedSession(null)}
+        />
+      )}
     </>
   );
 }

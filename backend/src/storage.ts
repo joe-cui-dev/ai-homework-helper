@@ -19,6 +19,10 @@ export interface SessionRecord {
   input: string;
   subject: string;
   difficulty: string;
+  answer: string;
+  steps: string[];
+  explanation: string;
+  hints?: string[];
   imageKeys?: string[];
 }
 
