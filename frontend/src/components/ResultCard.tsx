@@ -2,25 +2,13 @@ import { useState } from "react";
 import type { AgentResult } from "../types";
 import { StepList } from "./StepList";
 import { HintsList } from "./HintsList";
-
-const SUBJECT_COLOURS: Record<string, string> = {
-  maths: "bg-blue-100 text-blue-700",
-  mathematics: "bg-blue-100 text-blue-700",
-  english: "bg-green-100 text-green-700",
-  science: "bg-purple-100 text-purple-700",
-  history: "bg-orange-100 text-orange-700",
-  geography: "bg-teal-100 text-teal-700",
-};
+import { subjectColour } from "../utils/subjectColour";
 
 const DIFFICULTY_COLOURS: Record<string, string> = {
   easy: "bg-green-50 text-green-600",
   medium: "bg-yellow-50 text-yellow-700",
   hard: "bg-red-50 text-red-600",
 };
-
-function subjectColour(subject: string) {
-  return SUBJECT_COLOURS[subject.toLowerCase()] ?? "bg-gray-100 text-gray-600";
-}
 
 function difficultyColour(difficulty: string) {
   return (
