@@ -27,15 +27,6 @@ export function SessionDetailModal({ session, onClose }: SessionDetailModalProps
     };
   }, [onClose]);
 
-  const result = {
-    subject: session.subject,
-    difficulty: session.difficulty,
-    answer: session.answer,
-    steps: session.steps,
-    explanation: session.explanation,
-    hints: session.hints,
-  };
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto"
@@ -45,9 +36,14 @@ export function SessionDetailModal({ session, onClose }: SessionDetailModalProps
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 bg-white/80 backdrop-blur-sm rounded-t-2xl border-b border-gray-100">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${subjectColour(session.subject)}`}>
-              {session.subject}
-            </span>
+            {session.subjects.map((subject) => (
+              <span
+                key={subject}
+                className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${subjectColour(subject)}`}
+              >
+                {subject}
+              </span>
+            ))}
             <span className="text-xs text-gray-400">{formatDate(session.timestamp)}</span>
           </div>
           <button
@@ -66,13 +62,7 @@ export function SessionDetailModal({ session, onClose }: SessionDetailModalProps
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Question */}
-          <div className="bg-white rounded-xl border border-gray-100 p-4">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Question</p>
-            <p className="text-gray-700 text-sm leading-relaxed">{session.input}</p>
-          </div>
-
-          {/* Full-size images */}
+          {/* Full-size uploaded images — shared across all questions */}
           {session.imageUrls.length > 0 && (
             <div className="space-y-3">
               {session.imageUrls.map((url, i) => (
@@ -86,8 +76,20 @@ export function SessionDetailModal({ session, onClose }: SessionDetailModalProps
             </div>
           )}
 
-          {/* Answer / Steps / Explanation / Hints */}
-          <ResultCard result={result} />
+          {/* One ResultCard per question, stacked */}
+          {session.questions.map((q, i) => (
+            <div key={i} className="space-y-2">
+              {session.questions.length > 1 && (
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">
+                  Question {i + 1}
+                </p>
+              )}
+              <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
+                <p className="text-sm text-gray-700 leading-relaxed">{q.input}</p>
+              </div>
+              <ResultCard result={q} />
+            </div>
+          ))}
         </div>
       </div>
     </div>

@@ -19,18 +19,33 @@ function formatDate(iso: string): string {
 }
 
 function SessionCard({ session, onClick }: { session: SessionSummary; onClick: () => void }) {
+  const extraCount = session.questions.length - 1;
+
   return (
     <button
       onClick={onClick}
       className="w-full text-left p-3 rounded-xl bg-white border border-gray-100 space-y-2 hover:border-brand-200 hover:shadow-sm transition-all"
     >
       <div className="flex items-center gap-2 flex-wrap">
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${subjectColour(session.subject)}`}>
-          {session.subject}
-        </span>
+        {session.subjects.map((subject) => (
+          <span
+            key={subject}
+            className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${subjectColour(subject)}`}
+          >
+            {subject}
+          </span>
+        ))}
         <span className="text-xs text-gray-400">{formatDate(session.timestamp)}</span>
       </div>
-      <p className="text-sm text-gray-700 line-clamp-2">{session.input}</p>
+
+      <p className="text-sm text-gray-700 line-clamp-2">{session.questions[0]?.input}</p>
+
+      {extraCount > 0 && (
+        <span className="inline-block text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+          +{extraCount} more
+        </span>
+      )}
+
       {session.imageUrls.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
           {session.imageUrls.map((url, i) => (

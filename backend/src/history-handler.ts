@@ -1,9 +1,13 @@
-import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2, Context } from "aws-lambda";
+import type {
+  APIGatewayProxyEventV2,
+  APIGatewayProxyStructuredResultV2,
+  Context,
+} from "aws-lambda";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { listSessions } from "./storage";
-import type { SessionRecord } from "./storage";
+import type { BatchQuestion } from "./storage";
 import { logger } from "./logger";
 
 const verifier = CognitoJwtVerifier.create({
@@ -15,8 +19,12 @@ const verifier = CognitoJwtVerifier.create({
 const s3 = new S3Client({});
 const PRESIGN_EXPIRES_IN = 3600;
 
-interface SessionSummary extends Omit<SessionRecord, "imageKeys"> {
+interface SessionSummary {
+  sessionId: string;
+  timestamp: string;
+  subjects: string[];
   imageUrls: string[];
+  questions: BatchQuestion[];
 }
 
 export const handler = async (
@@ -25,11 +33,16 @@ export const handler = async (
 ): Promise<APIGatewayProxyStructuredResultV2> => {
   const authHeader =
     event.headers?.["authorization"] ?? event.headers?.["Authorization"] ?? "";
-  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const bearerToken = authHeader.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : "";
 
   if (!bearerToken) {
     logger.warn("history_auth_missing_token");
-    return { statusCode: 401, body: JSON.stringify({ message: "Missing Authorization header" }) };
+    return {
+      statusCode: 401,
+      body: JSON.stringify({ message: "Missing Authorization header" }),
+    };
   }
 
   let studentId: string;
@@ -38,7 +51,10 @@ export const handler = async (
     studentId = payload.sub;
   } catch {
     logger.warn("history_auth_invalid_token");
-    return { statusCode: 401, body: JSON.stringify({ message: "Invalid or expired token" }) };
+    return {
+      statusCode: 401,
+      body: JSON.stringify({ message: "Invalid or expired token" }),
+    };
   }
 
   logger.appendKeys({ studentId });
@@ -51,17 +67,22 @@ export const handler = async (
   const { sessions, nextCursor } = await listSessions(studentId, cursor, limit);
 
   const summaries: SessionSummary[] = await Promise.all(
-    sessions.map(async ({ imageKeys, ...rest }) => {
+    sessions.map(async ({ imageKeys, questions, sessionId, timestamp }) => {
       const imageUrls = imageKeys?.length
         ? await Promise.all(
             imageKeys.map((key) =>
-              getSignedUrl(s3, new GetObjectCommand({ Bucket: bucket, Key: key }), {
-                expiresIn: PRESIGN_EXPIRES_IN,
-              }),
+              getSignedUrl(
+                s3,
+                new GetObjectCommand({ Bucket: bucket, Key: key }),
+                {
+                  expiresIn: PRESIGN_EXPIRES_IN,
+                },
+              ),
             ),
           )
         : [];
-      return { ...rest, imageUrls };
+      const subjects = [...new Set(questions.map((q) => q.subject))];
+      return { sessionId, timestamp, subjects, imageUrls, questions };
     }),
   );
 

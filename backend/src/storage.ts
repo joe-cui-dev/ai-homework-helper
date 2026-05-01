@@ -2,7 +2,7 @@
 // Persists completed sessions to S3 so the agent can personalise responses
 // using a student's recent history via the fetch_session_history tool.
 //
-// Key format: sessions/<studentId>/<sessionId>.json
+// Key format: sessions/<studentId>/<batchId>.json
 // Sessions expire after 30 days (lifecycle rule set in CDK).
 // ─────────────────────────────────────────────────────────────────────────────
 import {
@@ -13,9 +13,30 @@ import {
 } from "@aws-sdk/client-s3";
 import { logger } from "./logger";
 
+export interface BatchQuestion {
+  input: string;
+  subject: string;
+  difficulty: string;
+  answer: string;
+  steps: string[];
+  explanation: string;
+  hints?: string[];
+}
+
 export interface SessionRecord {
   sessionId: string;
   timestamp: string;
+  imageKeys?: string[];
+  questions: BatchQuestion[];
+}
+
+export interface SessionPage {
+  sessions: SessionRecord[];
+  nextCursor: string | null;
+}
+
+// Shape of sessions written before the batch model (one Q&A at top level).
+interface LegacySessionRecord {
   input: string;
   subject: string;
   difficulty: string;
@@ -26,16 +47,11 @@ export interface SessionRecord {
   imageKeys?: string[];
 }
 
-export interface SessionPage {
-  sessions: SessionRecord[];
-  nextCursor: string | null;
-}
-
 const s3 = new S3Client({});
 
 export const saveSession = async (
   sessionId: string,
-  data: object,
+  data: { timestamp: string; questions: BatchQuestion[] },
   studentId?: string,
   imageKeys?: string[],
 ): Promise<void> => {
@@ -111,11 +127,14 @@ export const uploadSessionImages = async (
   if (images.length === 0) return [];
 
   const bucket = process.env.S3_BUCKET_NAME;
-  if (!bucket) throw new Error("S3_BUCKET_NAME environment variable is not set");
+  if (!bucket)
+    throw new Error("S3_BUCKET_NAME environment variable is not set");
 
   const keys = await Promise.all(
     images.map(async (dataUrl, i) => {
-      const match = dataUrl.match(/^data:(image\/(jpeg|png|gif|webp));base64,(.+)$/s);
+      const match = dataUrl.match(
+        /^data:(image\/(jpeg|png|gif|webp));base64,(.+)$/s,
+      );
       if (!match) throw new Error(`Invalid image data URL at index ${i}`);
       const [, mediaType, ext, base64Data] = match;
       const key = `sessions/${studentId}/${sessionId}/image-${i}.${ext}`;
@@ -134,16 +153,35 @@ export const uploadSessionImages = async (
   return keys;
 };
 
+// Normalise legacy sessions that were saved before the batch format was introduced.
+const normaliseLegacy = (raw: LegacySessionRecord): BatchQuestion[] => {
+  return [
+    {
+      input: raw.input ?? "",
+      subject: raw.subject ?? "",
+      difficulty: raw.difficulty ?? "",
+      answer: raw.answer ?? "",
+      steps: raw.steps ?? [],
+      explanation: raw.explanation ?? "",
+      hints: raw.hints,
+    },
+  ];
+};
+
 export const listSessions = async (
   studentId: string,
   cursor?: string,
   limit = 10,
 ): Promise<SessionPage> => {
   const bucket = process.env.S3_BUCKET_NAME;
-  if (!bucket) throw new Error("S3_BUCKET_NAME environment variable is not set");
+  if (!bucket)
+    throw new Error("S3_BUCKET_NAME environment variable is not set");
 
   const list = await s3.send(
-    new ListObjectsV2Command({ Bucket: bucket, Prefix: `sessions/${studentId}/` }),
+    new ListObjectsV2Command({
+      Bucket: bucket,
+      Prefix: `sessions/${studentId}/`,
+    }),
   );
 
   if (!list.Contents || list.Contents.length === 0) {
@@ -152,10 +190,14 @@ export const listSessions = async (
 
   const jsonKeys = list.Contents.filter(
     (obj): obj is typeof obj & { Key: string; LastModified: Date } =>
-      obj.Key !== undefined && obj.Key.endsWith(".json") && obj.LastModified !== undefined,
+      obj.Key !== undefined &&
+      obj.Key.endsWith(".json") &&
+      obj.LastModified !== undefined,
   ).sort((a, b) => b.LastModified.getTime() - a.LastModified.getTime());
 
-  const offset = cursor ? parseInt(Buffer.from(cursor, "base64").toString(), 10) : 0;
+  const offset = cursor
+    ? parseInt(Buffer.from(cursor, "base64").toString(), 10)
+    : 0;
   const page = jsonKeys.slice(offset, offset + limit);
   const nextCursor =
     offset + limit < jsonKeys.length
@@ -164,12 +206,28 @@ export const listSessions = async (
 
   const sessions = await Promise.all(
     page.map(async (obj) => {
-      const response = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: obj.Key }));
+      const response = await s3.send(
+        new GetObjectCommand({ Bucket: bucket, Key: obj.Key }),
+      );
       const body = await response.Body?.transformToString("utf-8");
       if (!body) return null;
-      const data = JSON.parse(body) as Omit<SessionRecord, "sessionId">;
-      const sessionId = obj.Key.replace(`sessions/${studentId}/`, "").replace(".json", "");
-      return { sessionId, ...data } as SessionRecord;
+
+      const sessionId = obj.Key.replace(`sessions/${studentId}/`, "").replace(
+        ".json",
+        "",
+      );
+      const raw = JSON.parse(body) as Record<string, unknown>;
+
+      const questions: BatchQuestion[] = Array.isArray(raw.questions)
+        ? (raw.questions as BatchQuestion[])
+        : normaliseLegacy(raw as unknown as LegacySessionRecord);
+
+      return {
+        sessionId,
+        timestamp: (raw.timestamp as string) ?? "",
+        imageKeys: raw.imageKeys as string[] | undefined,
+        questions,
+      } as SessionRecord;
     }),
   );
 
