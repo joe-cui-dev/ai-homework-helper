@@ -16,7 +16,7 @@ import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { v4 as uuidv4 } from "uuid";
 import { runAgent, AlreadyReportedError } from "./agent";
 import { analyzePages } from "./analyzer";
-import { saveSession } from "./storage";
+import { saveSession, uploadSessionImages } from "./storage";
 import type { StreamEvent, QuestionResult } from "./types";
 import { logger } from "./logger";
 
@@ -223,6 +223,11 @@ export const handler = awslambda.streamifyResponse(
         // Non-critical — a storage failure must not overwrite the answer already
         // shown to the student with an error banner.
         try {
+          const imageKeys = await uploadSessionImages(
+            resolvedStudentId,
+            sessionId,
+            questionImages,
+          );
           await saveSession(
             sessionId,
             {
@@ -236,6 +241,7 @@ export const handler = awslambda.streamifyResponse(
               timestamp: new Date().toISOString(),
             },
             resolvedStudentId,
+            imageKeys.length ? imageKeys : undefined,
           );
         } catch (saveErr) {
           logger.error("save_session_failed", saveErr instanceof Error ? saveErr : String(saveErr));
