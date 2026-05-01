@@ -191,9 +191,17 @@ export const handler = awslambda.streamifyResponse(
       const allResults: QuestionResult[] = [];
       const total = analysis.questions.length;
 
+      // Upload images once for the whole batch before solving any questions.
+      // All questions share the same uploaded images — no duplicates.
+      let batchImageKeys: string[] = [];
+      try {
+        batchImageKeys = await uploadSessionImages(resolvedStudentId, batchId, validatedImages);
+      } catch (uploadErr) {
+        logger.error("upload_images_failed", uploadErr instanceof Error ? uploadErr : String(uploadErr));
+      }
+
       for (const q of analysis.questions) {
-        const sessionId = `${batchId}-q${q.id}`;
-        logger.appendKeys({ sessionId, questionId: q.id });
+        logger.appendKeys({ questionId: q.id });
 
         writeEvent({ type: "question_start", questionId: q.id, total, text: q.text });
 
@@ -219,33 +227,31 @@ export const handler = awslambda.streamifyResponse(
           subject: result.subject,
           difficulty: result.difficulty,
         });
+      }
 
-        // Non-critical — a storage failure must not overwrite the answer already
-        // shown to the student with an error banner.
-        try {
-          const imageKeys = await uploadSessionImages(
-            resolvedStudentId,
-            sessionId,
-            questionImages,
-          );
-          await saveSession(
-            sessionId,
-            {
-              input: q.text,
-              subject: result.subject,
-              difficulty: result.difficulty,
-              answer: result.answer,
-              steps: result.steps,
-              explanation: result.explanation,
-              hints: result.hints,
-              timestamp: new Date().toISOString(),
-            },
-            resolvedStudentId,
-            imageKeys.length ? imageKeys : undefined,
-          );
-        } catch (saveErr) {
-          logger.error("save_session_failed", saveErr instanceof Error ? saveErr : String(saveErr));
-        }
+      // Save one batch session JSON after all questions are solved.
+      // Non-critical — a storage failure must not overwrite the answer already
+      // shown to the student with an error banner.
+      try {
+        await saveSession(
+          batchId,
+          {
+            timestamp: new Date().toISOString(),
+            questions: allResults.map((r) => ({
+              input: r.questionText,
+              subject: r.result.subject,
+              difficulty: r.result.difficulty,
+              answer: r.result.answer,
+              steps: r.result.steps,
+              explanation: r.result.explanation,
+              hints: r.result.hints,
+            })),
+          },
+          resolvedStudentId,
+          batchImageKeys.length ? batchImageKeys : undefined,
+        );
+      } catch (saveErr) {
+        logger.error("save_session_failed", saveErr instanceof Error ? saveErr : String(saveErr));
       }
 
       writeEvent({ type: "complete", results: allResults });

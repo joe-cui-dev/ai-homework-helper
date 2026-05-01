@@ -1,4 +1,5 @@
 import { listSessions, saveSession, uploadSessionImages } from "../storage";
+import type { BatchQuestion } from "../storage";
 
 jest.mock("@aws-sdk/client-s3", () => {
   const sendMock = jest.fn();
@@ -15,7 +16,6 @@ jest.mock("../logger", () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-// Access the shared sendMock through jest.requireMock so we can control it per-test.
 const { _sendMock: mockSend } = jest.requireMock("@aws-sdk/client-s3") as {
   _sendMock: jest.Mock;
 };
@@ -25,23 +25,44 @@ beforeEach(() => {
   process.env.S3_BUCKET_NAME = "test-bucket";
 });
 
+const Q: BatchQuestion = {
+  input: "What is 2+2?",
+  subject: "math",
+  difficulty: "year-1",
+  answer: "4",
+  steps: ["Add 2 and 2"],
+  explanation: "Two plus two equals four.",
+};
+
 // ── saveSession ───────────────────────────────────────────────────────────────
 
 describe("saveSession", () => {
+  it("stores questions array and timestamp", async () => {
+    mockSend.mockResolvedValueOnce({});
+
+    await saveSession("batch-1", { timestamp: "2024-01-01T00:00:00Z", questions: [Q] }, "student-1");
+
+    const [putCall] = mockSend.mock.calls;
+    const body = JSON.parse(putCall[0].Body as string) as { questions: BatchQuestion[]; timestamp: string };
+    expect(body.questions).toHaveLength(1);
+    expect(body.questions[0].input).toBe("What is 2+2?");
+    expect(body.timestamp).toBe("2024-01-01T00:00:00Z");
+  });
+
   it("includes imageKeys in stored JSON when provided", async () => {
     mockSend.mockResolvedValueOnce({});
 
-    await saveSession("sess-1", { input: "q", subject: "math", difficulty: "year-1", timestamp: "t" }, "student-1", ["sessions/student-1/sess-1/image-0.jpeg"]);
+    await saveSession("batch-1", { timestamp: "t", questions: [Q] }, "student-1", ["sessions/student-1/batch-1/image-0.jpeg"]);
 
     const [putCall] = mockSend.mock.calls;
     const body = JSON.parse(putCall[0].Body as string) as { imageKeys?: string[] };
-    expect(body.imageKeys).toEqual(["sessions/student-1/sess-1/image-0.jpeg"]);
+    expect(body.imageKeys).toEqual(["sessions/student-1/batch-1/image-0.jpeg"]);
   });
 
   it("omits imageKeys from stored JSON when not provided", async () => {
     mockSend.mockResolvedValueOnce({});
 
-    await saveSession("sess-1", { input: "q", subject: "math", difficulty: "year-1", timestamp: "t" }, "student-1");
+    await saveSession("batch-1", { timestamp: "t", questions: [Q] }, "student-1");
 
     const [putCall] = mockSend.mock.calls;
     const body = JSON.parse(putCall[0].Body as string) as { imageKeys?: string[] };
@@ -58,17 +79,17 @@ describe("uploadSessionImages", () => {
     const jpegDataUrl = "data:image/jpeg;base64,/9j/abc123";
     const pngDataUrl = "data:image/png;base64,iVBORabc";
 
-    const keys = await uploadSessionImages("student-1", "sess-1", [jpegDataUrl, pngDataUrl]);
+    const keys = await uploadSessionImages("student-1", "batch-1", [jpegDataUrl, pngDataUrl]);
 
     expect(keys).toEqual([
-      "sessions/student-1/sess-1/image-0.jpeg",
-      "sessions/student-1/sess-1/image-1.png",
+      "sessions/student-1/batch-1/image-0.jpeg",
+      "sessions/student-1/batch-1/image-1.png",
     ]);
     expect(mockSend).toHaveBeenCalledTimes(2);
   });
 
   it("returns empty array when no images provided", async () => {
-    const keys = await uploadSessionImages("student-1", "sess-1", []);
+    const keys = await uploadSessionImages("student-1", "batch-1", []);
     expect(keys).toEqual([]);
     expect(mockSend).not.toHaveBeenCalled();
   });
@@ -76,16 +97,33 @@ describe("uploadSessionImages", () => {
   it("uses correct S3 key format and uploads raw bytes", async () => {
     mockSend.mockResolvedValue({});
 
-    await uploadSessionImages("student-1", "sess-1", ["data:image/jpeg;base64,aGVsbG8="]);
+    await uploadSessionImages("student-1", "batch-1", ["data:image/jpeg;base64,aGVsbG8="]);
 
     const [putCall] = mockSend.mock.calls;
-    expect(putCall[0].Key).toBe("sessions/student-1/sess-1/image-0.jpeg");
+    expect(putCall[0].Key).toBe("sessions/student-1/batch-1/image-0.jpeg");
     expect(putCall[0].ContentType).toBe("image/jpeg");
     expect(putCall[0].Body).toBeInstanceOf(Buffer);
   });
 });
 
 // ── listSessions ──────────────────────────────────────────────────────────────
+
+const newFormatSession = (overrides: Partial<BatchQuestion> = {}) =>
+  JSON.stringify({
+    timestamp: "2024-01-01T00:00:00Z",
+    questions: [{ ...Q, ...overrides }],
+  });
+
+const legacyFormatSession = (input = "What is 2+2?") =>
+  JSON.stringify({
+    input,
+    subject: "math",
+    difficulty: "year-1",
+    answer: "4",
+    steps: ["Add 2 and 2"],
+    explanation: "Two plus two equals four.",
+    timestamp: "2024-01-01T00:00:00Z",
+  });
 
 describe("listSessions", () => {
   it("returns empty when student has no sessions", async () => {
@@ -100,39 +138,77 @@ describe("listSessions", () => {
     mockSend
       .mockResolvedValueOnce({
         Contents: [
-          { Key: "sessions/s1/batch-q1.json", LastModified: new Date("2024-01-01") },
-          { Key: "sessions/s1/batch-q2.json", LastModified: new Date("2024-01-03") },
-          { Key: "sessions/s1/batch-q3.json", LastModified: new Date("2024-01-02") },
+          { Key: "sessions/s1/batch-a.json", LastModified: new Date("2024-01-01") },
+          { Key: "sessions/s1/batch-b.json", LastModified: new Date("2024-01-03") },
+          { Key: "sessions/s1/batch-c.json", LastModified: new Date("2024-01-02") },
         ],
         IsTruncated: false,
       })
-      .mockResolvedValueOnce({ Body: { transformToString: async () => JSON.stringify({ input: "newest", subject: "math", difficulty: "year-3", timestamp: "2024-01-03T00:00:00Z" }) } })
-      .mockResolvedValueOnce({ Body: { transformToString: async () => JSON.stringify({ input: "middle", subject: "science", difficulty: "year-4", timestamp: "2024-01-02T00:00:00Z" }) } })
-      .mockResolvedValueOnce({ Body: { transformToString: async () => JSON.stringify({ input: "oldest", subject: "english", difficulty: "year-2", timestamp: "2024-01-01T00:00:00Z" }) } });
+      .mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession({ input: "newest" }) } })
+      .mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession({ input: "middle" }) } })
+      .mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession({ input: "oldest" }) } });
 
     const result = await listSessions("s1");
 
     expect(result.nextCursor).toBeNull();
-    expect(result.sessions.map((s) => s.input)).toEqual(["newest", "middle", "oldest"]);
-    expect(result.sessions[0].sessionId).toBe("batch-q2");
+    expect(result.sessions.map((s) => s.questions[0].input)).toEqual(["newest", "middle", "oldest"]);
+    expect(result.sessions[0].sessionId).toBe("batch-b");
   });
 
   it("filters out image files, only returns .json sessions", async () => {
     mockSend
       .mockResolvedValueOnce({
         Contents: [
-          { Key: "sessions/s1/batch-q1.json", LastModified: new Date("2024-01-01") },
-          { Key: "sessions/s1/batch-q1/image-0.jpeg", LastModified: new Date("2024-01-01") },
-          { Key: "sessions/s1/batch-q1/image-1.jpeg", LastModified: new Date("2024-01-01") },
+          { Key: "sessions/s1/batch-a.json", LastModified: new Date("2024-01-01") },
+          { Key: "sessions/s1/batch-a/image-0.jpeg", LastModified: new Date("2024-01-01") },
+          { Key: "sessions/s1/batch-a/image-1.jpeg", LastModified: new Date("2024-01-01") },
         ],
         IsTruncated: false,
       })
-      .mockResolvedValueOnce({ Body: { transformToString: async () => JSON.stringify({ input: "q1", subject: "math", difficulty: "year-1", timestamp: "2024-01-01T00:00:00Z" }) } });
+      .mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession() } });
 
     const result = await listSessions("s1");
 
     expect(result.sessions).toHaveLength(1);
-    expect(result.sessions[0].sessionId).toBe("batch-q1");
+    expect(result.sessions[0].sessionId).toBe("batch-a");
+  });
+
+  it("normalises legacy single-question sessions to a one-element questions array", async () => {
+    mockSend
+      .mockResolvedValueOnce({
+        Contents: [{ Key: "sessions/s1/batch-q1.json", LastModified: new Date("2024-01-01") }],
+        IsTruncated: false,
+      })
+      .mockResolvedValueOnce({ Body: { transformToString: async () => legacyFormatSession("Old question") } });
+
+    const result = await listSessions("s1");
+
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0].questions).toHaveLength(1);
+    expect(result.sessions[0].questions[0].input).toBe("Old question");
+    expect(result.sessions[0].questions[0].subject).toBe("math");
+  });
+
+  it("returns new-format multi-question sessions intact", async () => {
+    const multiQuestion = JSON.stringify({
+      timestamp: "2024-01-01T00:00:00Z",
+      questions: [
+        { ...Q, input: "Q1", subject: "math" },
+        { ...Q, input: "Q2", subject: "science" },
+      ],
+    });
+    mockSend
+      .mockResolvedValueOnce({
+        Contents: [{ Key: "sessions/s1/batch-a.json", LastModified: new Date("2024-01-01") }],
+        IsTruncated: false,
+      })
+      .mockResolvedValueOnce({ Body: { transformToString: async () => multiQuestion } });
+
+    const result = await listSessions("s1");
+
+    expect(result.sessions[0].questions).toHaveLength(2);
+    expect(result.sessions[0].questions[0].input).toBe("Q1");
+    expect(result.sessions[0].questions[1].input).toBe("Q2");
   });
 
   it("paginates and returns nextCursor when more sessions exist", async () => {
@@ -142,9 +218,7 @@ describe("listSessions", () => {
     }));
     mockSend.mockResolvedValueOnce({ Contents: contents, IsTruncated: false });
     for (let i = 0; i < 10; i++) {
-      mockSend.mockResolvedValueOnce({
-        Body: { transformToString: async () => JSON.stringify({ input: `q${i}`, subject: "math", difficulty: "year-1", timestamp: new Date(2024, 0, i + 1).toISOString() }) },
-      });
+      mockSend.mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession() } });
     }
 
     const result = await listSessions("s1", undefined, 10);
@@ -160,9 +234,7 @@ describe("listSessions", () => {
     }));
     mockSend.mockResolvedValueOnce({ Contents: contents, IsTruncated: false });
     for (let i = 0; i < 5; i++) {
-      mockSend.mockResolvedValueOnce({
-        Body: { transformToString: async () => JSON.stringify({ input: `q${i}`, subject: "math", difficulty: "year-1", timestamp: new Date(2024, 0, i + 1).toISOString() }) },
-      });
+      mockSend.mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession() } });
     }
 
     const result = await listSessions("s1", undefined, 10);
@@ -176,22 +248,16 @@ describe("listSessions", () => {
       Key: `sessions/s1/session-${i}.json`,
       LastModified: new Date(2024, 0, i + 1),
     }));
-    // First page to get the cursor
     mockSend.mockResolvedValueOnce({ Contents: contents, IsTruncated: false });
     for (let i = 0; i < 10; i++) {
-      mockSend.mockResolvedValueOnce({
-        Body: { transformToString: async () => JSON.stringify({ input: `q${i}`, subject: "math", difficulty: "year-1", timestamp: "" }) },
-      });
+      mockSend.mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession() } });
     }
     const firstPage = await listSessions("s1", undefined, 10);
     const cursor = firstPage.nextCursor!;
 
-    // Second page
     mockSend.mockResolvedValueOnce({ Contents: contents, IsTruncated: false });
     for (let i = 0; i < 2; i++) {
-      mockSend.mockResolvedValueOnce({
-        Body: { transformToString: async () => JSON.stringify({ input: `q${i}`, subject: "math", difficulty: "year-1", timestamp: "" }) },
-      });
+      mockSend.mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession() } });
     }
     const secondPage = await listSessions("s1", cursor, 10);
 

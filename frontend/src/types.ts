@@ -1,8 +1,6 @@
 // Mirrored from backend/src/types.ts — kept separate to avoid circular workspace imports.
 
-export interface SessionSummary {
-  sessionId: string;
-  timestamp: string;
+export interface SessionQuestion {
   input: string;
   subject: string;
   difficulty: string;
@@ -10,7 +8,14 @@ export interface SessionSummary {
   steps: string[];
   explanation: string;
   hints?: string[];
+}
+
+export interface SessionSummary {
+  sessionId: string;
+  timestamp: string;
+  subjects: string[];
   imageUrls: string[];
+  questions: SessionQuestion[];
 }
 
 export interface AgentResult {

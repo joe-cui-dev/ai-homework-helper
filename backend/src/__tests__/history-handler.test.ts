@@ -34,6 +34,7 @@ const mockVerify = jest.fn();
 import type { APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { handler } from "../history-handler";
 import { listSessions } from "../storage";
+import type { SessionRecord } from "../storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const mockListSessions = listSessions as jest.MockedFunction<typeof listSessions>;
@@ -56,6 +57,19 @@ function makeEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayP
     ...overrides,
   };
 }
+
+const baseSession: SessionRecord = {
+  sessionId: "batch-abc",
+  timestamp: "2024-01-01T00:00:00Z",
+  questions: [{
+    input: "What is 2+2?",
+    subject: "math",
+    difficulty: "year-1",
+    answer: "4",
+    steps: ["Add 2 and 2"],
+    explanation: "Two plus two equals four.",
+  }],
+};
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -82,22 +96,13 @@ describe("history handler", () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it("returns sessions with pre-signed imageUrls for valid token", async () => {
+  it("returns sessions with pre-signed imageUrls and subjects derived from questions", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
     mockListSessions.mockResolvedValueOnce({
-      sessions: [
-        {
-          sessionId: "batch-q1",
-          timestamp: "2024-01-01T00:00:00Z",
-          input: "What is 2+2?",
-          subject: "math",
-          difficulty: "year-1",
-          answer: "4",
-          steps: ["Add 2 and 2"],
-          explanation: "Two plus two equals four.",
-          imageKeys: ["sessions/student-1/batch-q1/image-0.jpeg"],
-        },
-      ],
+      sessions: [{
+        ...baseSession,
+        imageKeys: ["sessions/student-1/batch-abc/image-0.jpeg"],
+      }],
       nextCursor: null,
     });
     mockGetSignedUrl.mockResolvedValueOnce("https://s3.example.com/presigned-url");
@@ -109,32 +114,63 @@ describe("history handler", () => {
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body as string) as {
-      sessions: { imageUrls: string[]; input: string }[];
+      sessions: { imageUrls: string[]; subjects: string[]; questions: { input: string }[] }[];
       nextCursor: null;
     };
     expect(body.sessions).toHaveLength(1);
     expect(body.sessions[0].imageUrls).toEqual(["https://s3.example.com/presigned-url"]);
-    expect(body.sessions[0].input).toBe("What is 2+2?");
+    expect(body.sessions[0].subjects).toEqual(["math"]);
+    expect(body.sessions[0].questions[0].input).toBe("What is 2+2?");
     expect(body.nextCursor).toBeNull();
+  });
+
+  it("deduplicates subjects when multiple questions share the same subject", async () => {
+    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
+    mockListSessions.mockResolvedValueOnce({
+      sessions: [{
+        ...baseSession,
+        questions: [
+          { ...baseSession.questions[0], subject: "math" },
+          { ...baseSession.questions[0], input: "What is 3+3?", subject: "math" },
+        ],
+      }],
+      nextCursor: null,
+    });
+
+    const response = (await handler(
+      makeEvent({ headers: { authorization: "Bearer valid-token" } }),
+      {} as never,
+    )) as APIGatewayProxyStructuredResultV2;
+
+    const body = JSON.parse(response.body as string) as { sessions: { subjects: string[] }[] };
+    expect(body.sessions[0].subjects).toEqual(["math"]);
+  });
+
+  it("collects distinct subjects from a multi-subject batch", async () => {
+    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
+    mockListSessions.mockResolvedValueOnce({
+      sessions: [{
+        ...baseSession,
+        questions: [
+          { ...baseSession.questions[0], subject: "math" },
+          { ...baseSession.questions[0], input: "What is water?", subject: "science" },
+        ],
+      }],
+      nextCursor: null,
+    });
+
+    const response = (await handler(
+      makeEvent({ headers: { authorization: "Bearer valid-token" } }),
+      {} as never,
+    )) as APIGatewayProxyStructuredResultV2;
+
+    const body = JSON.parse(response.body as string) as { sessions: { subjects: string[] }[] };
+    expect(body.sessions[0].subjects).toEqual(["math", "science"]);
   });
 
   it("returns empty imageUrls for sessions with no images", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
-    mockListSessions.mockResolvedValueOnce({
-      sessions: [
-        {
-          sessionId: "batch-q1",
-          timestamp: "2024-01-01T00:00:00Z",
-          input: "What is 2+2?",
-          subject: "math",
-          difficulty: "year-1",
-          answer: "4",
-          steps: ["Add 2 and 2"],
-          explanation: "Two plus two equals four.",
-        },
-      ],
-      nextCursor: null,
-    });
+    mockListSessions.mockResolvedValueOnce({ sessions: [baseSession], nextCursor: null });
 
     const response = (await handler(
       makeEvent({ headers: { authorization: "Bearer valid-token" } }),
