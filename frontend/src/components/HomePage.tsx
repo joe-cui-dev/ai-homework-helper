@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { QuestionInput } from "./QuestionInput";
 import { QuestionResultList } from "./QuestionResultList";
+import { HistorySidebar } from "./HistorySidebar";
 import { useHomeworkStream } from "../hooks/useHomeworkStream";
 
 interface HomePageProps {
@@ -11,6 +13,7 @@ interface HomePageProps {
 export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
   const { status, toolEvents, results, activeQuestion, totalQuestions, error, submit, stop, reset } =
     useHomeworkStream();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleSubmit = (question: string, images: string[]) => {
     submit(question, token, images.length > 0 ? images : undefined);
@@ -23,10 +26,26 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-indigo-50 to-purple-100">
+      <HistorySidebar token={token} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
+            {/* History toggle */}
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+              aria-label="Open history"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path
+                  fillRule="evenodd"
+                  d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </button>
             <span className="text-2xl">🎒</span>
             <span className="font-extrabold text-base sm:text-xl text-brand-700 tracking-tight">
               AI Homework Helper
@@ -89,7 +108,7 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
               className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 text-red-500 font-semibold text-sm hover:bg-red-100 transition-colors"
               aria-label="Stop processing"
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <rect x="3" y="3" width="10" height="10" rx="1" />
               </svg>
               Stop

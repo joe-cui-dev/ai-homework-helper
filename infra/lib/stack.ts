@@ -222,6 +222,50 @@ export class AiHomeworkHelperStack extends cdk.Stack {
     sessionBucket.grantPut(fn, "sessions/*");
     sessionBucket.grantRead(fn, "sessions/*");
 
+    // ── History Lambda ────────────────────────────────────────────────────
+    // Separate function so the history read path never contends with the
+    // solve path's reserved concurrency slots, and keeps handler.ts clean.
+    const historyLogGroup = new logs.LogGroup(this, "HistoryFunctionLogs", {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const historyFn = new lambdaNodejs.NodejsFunction(this, "HistoryFunction", {
+      logGroup: historyLogGroup,
+      entry: path.join(__dirname, "../../backend/src/history-handler.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(30),
+      environment: {
+        S3_BUCKET_NAME: sessionBucket.bucketName,
+        COGNITO_USER_POOL_ID: userPool.userPoolId,
+        COGNITO_APP_CLIENT_ID: userPoolClient.userPoolClientId,
+        SERVICE_NAME: "ai-homework-helper",
+        LOG_LEVEL: this.node.tryGetContext("logLevel") ?? "DEBUG",
+      },
+      bundling: {
+        minify: true,
+        sourceMap: false,
+      },
+    });
+
+    // Read covers s3:GetObject + s3:ListBucket needed for listSessions and
+    // getSignedUrl (pre-signed URLs are signed with the Lambda role's credentials).
+    sessionBucket.grantRead(historyFn, "sessions/*");
+
+    const historyFnUrl = new lambda.FunctionUrl(this, "HistoryFunctionUrl", {
+      function: historyFn,
+      authType: lambda.FunctionUrlAuthType.NONE,
+      cors: {
+        allowedOrigins: [
+          this.node.tryGetContext("allowedOrigin") ?? "https://joe-cui.com",
+        ],
+        allowedMethods: [lambda.HttpMethod.GET],
+        allowedHeaders: ["Content-Type", "Authorization"],
+      },
+    });
+
     // ── Bedrock Model Invocation Logging ───────────────────────────────────
     // Bedrock invocation logging is a region-level setting with no native CFN
     // resource. We drive it via a CDK custom resource (AwsCustomResource) which
@@ -381,6 +425,11 @@ function handler(event) {
     new cdk.CfnOutput(this, "FunctionUrl", {
       value: fnUrl.url,
       description: "POST to this URL with Authorization: Bearer <token>",
+    });
+
+    new cdk.CfnOutput(this, "HistoryApiUrl", {
+      value: historyFnUrl.url,
+      description: "GET /sessions — history browser endpoint",
     });
 
     new cdk.CfnOutput(this, "UserPoolId", {

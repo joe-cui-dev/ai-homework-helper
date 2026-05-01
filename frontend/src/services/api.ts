@@ -1,4 +1,4 @@
-import type { StreamEvent } from "../types";
+import type { SessionSummary, StreamEvent } from "../types";
 
 // Sanity cap on the raw file before compression runs.
 // Genuine homework photos are never this large; this mainly guards against
@@ -51,6 +51,29 @@ export const compressImage = async (file: File): Promise<string> => {
       outputType === "image/jpeg" ? JPEG_QUALITY : undefined,
     );
   });
+};
+
+export const fetchSessionHistory = async (
+  token: string,
+  cursor?: string,
+  signal?: AbortSignal,
+): Promise<{ sessions: SessionSummary[]; nextCursor: string | null }> => {
+  const historyUrl = import.meta.env.VITE_HISTORY_API_URL as string | undefined;
+  if (!historyUrl) throw new Error("VITE_HISTORY_API_URL is not configured.");
+
+  const url = new URL(historyUrl);
+  if (cursor) url.searchParams.set("cursor", cursor);
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`History fetch failed with status ${response.status}.`);
+  }
+
+  return response.json() as Promise<{ sessions: SessionSummary[]; nextCursor: string | null }>;
 };
 
 // Streams the homework question and optional page images to the backend,
