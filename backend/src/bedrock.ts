@@ -26,17 +26,29 @@ const GUARDRAIL_VERSION = process.env.BEDROCK_GUARDRAIL_VERSION;
 const SYSTEM_PROMPT =
   "You are a helpful homework tutor for school students. Always respond in JSON.";
 
-export function parseDataUrl(dataUrl: string): { mediaType: string; base64Data: string } {
-  const match = dataUrl.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,(.+)$/s);
+export const parseDataUrl = (
+  dataUrl: string,
+): { mediaType: string; base64Data: string } => {
+  // Example data URL format:
+  // data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...
+  // This regex captures the media type (e.g., "image/png") and the base64 data separately.
+  const match = dataUrl.match(
+    /^data:(image\/(?:jpeg|png|gif|webp));base64,(.+)$/s,
+  );
   if (!match) throw new Error("Invalid image data URL");
+  // match[1] is the media type (e.g., "image/png"), match[2] is the base64-encoded data.
   return { mediaType: match[1], base64Data: match[2] };
-}
+};
 
-export async function callClaude(
+// ---------------------------------------------------------------------------
+// Single-turn API wrapper for pipeline skills (solve, explain, hint)
+// ---------------------------------------------------------------------------
+
+export const callClaude = async (
   prompt: string,
   temperature: number = 0,
   image?: string,
-): Promise<string> {
+): Promise<string> => {
   const modelId = process.env.BEDROCK_MODEL_ID;
   if (!modelId) {
     throw new Error("BEDROCK_MODEL_ID environment variable is not set");
@@ -46,7 +58,10 @@ export async function callClaude(
     ? (() => {
         const { mediaType, base64Data } = parseDataUrl(image);
         return [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: base64Data } },
+          {
+            type: "image",
+            source: { type: "base64", media_type: mediaType, data: base64Data },
+          },
           { type: "text", text: prompt },
         ];
       })()
@@ -95,7 +110,7 @@ export async function callClaude(
     );
   }
   return parsed.content[0].text;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Converse API — used by the agent loop (tool use)

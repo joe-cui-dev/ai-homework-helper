@@ -121,6 +121,7 @@ Return ONLY valid JSON with no markdown fences: { "answer": "<concise answer>", 
 Question: ${question}`;
 
   try {
+    // Use a lower temperature for solving to encourage more precise, deterministic answers.
     const raw = await callClaude(prompt, 0);
     logger.debug("pipeline_solve_raw", { raw });
     return JSON.parse(extractJson(raw)) as SolveResult;
@@ -149,6 +150,7 @@ Steps:
 ${steps.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
 
   try {
+    // Use a slightly higher temperature for explanations to encourage more creative, friendly language.
     const raw = await callClaude(prompt, 0.3);
     logger.debug("pipeline_explain_raw", { raw });
     return JSON.parse(extractJson(raw)) as ExplainResult;
@@ -178,6 +180,7 @@ Return ONLY valid JSON with no markdown fences: { "hints": ["<hint 1>", "<hint 2
 Question: ${question}`;
 
   try {
+    // Use a slightly higher temperature for hints to encourage more creative, guiding language.
     const raw = await callClaude(prompt, 0.3);
     logger.debug("pipeline_generate_hint_raw", { raw });
     return JSON.parse(extractJson(raw)) as HintResult;
