@@ -1,25 +1,19 @@
 import { useState, useCallback, useRef } from "react";
 import { streamHomework } from "../services/api";
-import type { QuestionResult, StreamEvent } from "../types";
+import type { BatchPacket, StreamEvent } from "../types";
 
-type Status = "idle" | "streaming" | "done" | "stopped" | "error";
+type Status = "idle" | "analyzing" | "generating" | "done" | "stopped" | "error";
 
-interface ToolEvent {
-  tool: string;
-  done: boolean;
-}
-
-export interface ActiveQuestion {
-  id: number;
+export interface PendingPacket {
+  questionId: number;
   total: number;
   text: string;
 }
 
 interface UseHomeworkStreamReturn {
   status: Status;
-  toolEvents: ToolEvent[];
-  results: QuestionResult[];
-  activeQuestion: ActiveQuestion | null;
+  packets: BatchPacket[];
+  pending: PendingPacket[];
   totalQuestions: number;
   error: string | null;
   submit: (question: string, token: string, images?: string[]) => Promise<void>;
@@ -29,22 +23,21 @@ interface UseHomeworkStreamReturn {
 
 export const useHomeworkStream = (): UseHomeworkStreamReturn => {
   const [status, setStatus] = useState<Status>("idle");
-  const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
-  const [results, setResults] = useState<QuestionResult[]>([]);
-  const [activeQuestion, setActiveQuestion] = useState<ActiveQuestion | null>(null);
+  const [packets, setPackets] = useState<BatchPacket[]>([]);
+  const [pending, setPending] = useState<PendingPacket[]>([]);
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   // abortRef gates stale event processing; abortControllerRef cancels the fetch.
   const abortRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const activeTextRef = useRef<string>("");
+  // Capture text per-question so we can pair it with the packet on packet_complete.
+  const pendingTextRef = useRef<Map<number, string>>(new Map());
 
   const stop = useCallback(() => {
     abortRef.current = true;
     abortControllerRef.current?.abort();
-    setActiveQuestion(null);
-    setToolEvents([]);
+    setPending([]);
     setStatus("stopped");
   }, []);
 
@@ -52,10 +45,11 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     abortRef.current = true;
     abortControllerRef.current?.abort();
     setStatus("idle");
-    setToolEvents([]);
-    setResults([]);
-    setActiveQuestion(null);
+    setPackets([]);
+    setPending([]);
+    setTotalQuestions(0);
     setError(null);
+    pendingTextRef.current.clear();
   }, []);
 
   const submit = useCallback(
@@ -63,39 +57,50 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
       const controller = new AbortController();
       abortControllerRef.current = controller;
       abortRef.current = false;
-      activeTextRef.current = "";
-      setStatus("streaming");
-      setToolEvents([]);
-      setResults([]);
-      setActiveQuestion(null);
+      pendingTextRef.current.clear();
+      setStatus("analyzing");
+      setPackets([]);
+      setPending([]);
       setTotalQuestions(0);
       setError(null);
 
       const handleEvent = (event: StreamEvent) => {
         if (abortRef.current) return;
 
-        if (event.type === "tool_start") {
-          setToolEvents((prev) => [...prev, { tool: event.tool, done: false }]);
-        } else if (event.type === "tool_end") {
-          setToolEvents((prev) =>
-            prev.map((e) =>
-              e.tool === event.tool && !e.done ? { ...e, done: true } : e,
-            ),
-          );
-        } else if (event.type === "question_start") {
-          setToolEvents([]);
-          activeTextRef.current = event.text;
+        if (event.type === "analyzing") {
+          setStatus("analyzing");
+        } else if (event.type === "packet_start") {
+          pendingTextRef.current.set(event.questionId, event.text);
           setTotalQuestions(event.total);
-          setActiveQuestion({ id: event.questionId, total: event.total, text: event.text });
-        } else if (event.type === "question_complete") {
-          setResults((prev) => [
+          setStatus("generating");
+          setPending((prev) => {
+            // Avoid duplicates if the same id is announced twice.
+            if (prev.some((p) => p.questionId === event.questionId)) return prev;
+            return [
+              ...prev,
+              {
+                questionId: event.questionId,
+                total: event.total,
+                text: event.text,
+              },
+            ];
+          });
+        } else if (event.type === "packet_complete") {
+          const text = pendingTextRef.current.get(event.questionId) ?? "";
+          setPackets((prev) => [
             ...prev,
-            { questionId: event.questionId, questionText: activeTextRef.current, result: event.result },
+            {
+              questionId: event.questionId,
+              questionText: text,
+              packet: event.packet,
+            },
           ]);
-          setActiveQuestion(null);
+          setPending((prev) =>
+            prev.filter((p) => p.questionId !== event.questionId),
+          );
         } else if (event.type === "complete") {
-          setResults(event.results);
-          setActiveQuestion(null);
+          setPackets(event.packets);
+          setPending([]);
           setStatus("done");
         } else if (event.type === "error") {
           setError(event.message);
@@ -105,12 +110,14 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
 
       try {
         await streamHomework(question, token, handleEvent, images, controller.signal);
-        // If stop() was already called, leave status as "stopped".
-        setStatus((prev) => (prev === "streaming" ? "done" : prev));
+        setStatus((prev) =>
+          prev === "analyzing" || prev === "generating" ? "done" : prev,
+        );
       } catch (err) {
-        // AbortError means the user clicked Stop — not an unexpected failure.
         if (err instanceof Error && err.name === "AbortError") {
-          setStatus((prev) => (prev === "streaming" ? "stopped" : prev));
+          setStatus((prev) =>
+            prev === "analyzing" || prev === "generating" ? "stopped" : prev,
+          );
           return;
         }
         if (!abortRef.current) {
@@ -122,5 +129,14 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     [],
   );
 
-  return { status, toolEvents, results, activeQuestion, totalQuestions, error, submit, stop, reset };
+  return {
+    status,
+    packets,
+    pending,
+    totalQuestions,
+    error,
+    submit,
+    stop,
+    reset,
+  };
 };

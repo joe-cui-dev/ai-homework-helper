@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { QuestionInput } from "./QuestionInput";
 import { QuestionResultList } from "./QuestionResultList";
+import { ProgressFeed } from "./ProgressFeed";
 import { HistorySidebar } from "./HistorySidebar";
 import { useHomeworkStream } from "../hooks/useHomeworkStream";
 
@@ -11,15 +12,25 @@ interface HomePageProps {
 }
 
 export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
-  const { status, toolEvents, results, activeQuestion, totalQuestions, error, submit, stop, reset } =
-    useHomeworkStream();
+  const {
+    status,
+    packets,
+    pending,
+    totalQuestions,
+    error,
+    submit,
+    stop,
+    reset,
+  } = useHomeworkStream();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleSubmit = (question: string, images: string[]) => {
     submit(question, token, images.length > 0 ? images : undefined);
   };
 
-  const isStreaming = status === "streaming";
+  const isAnalyzing = status === "analyzing";
+  const isGenerating = status === "generating";
+  const isWorking = isAnalyzing || isGenerating;
   const isDone = status === "done";
   const isStopped = status === "stopped";
   const isError = status === "error";
@@ -32,7 +43,6 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {/* History toggle */}
             <button
               onClick={() => setSidebarOpen(true)}
               className="p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
@@ -48,7 +58,7 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
             </button>
             <span className="text-2xl">🎒</span>
             <span className="font-extrabold text-base sm:text-xl text-brand-700 tracking-tight">
-              AI Homework Helper
+              Homework Coach
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -71,37 +81,28 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
         {status === "idle" && (
           <div className="text-center space-y-1 pb-2">
             <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-800">
-              What are we learning today? ✨
+              Coaching packets for parents
             </h1>
             <p className="text-gray-500">
-              Type your question or snap a photo of your homework.
+              Snap a photo of your child's homework. We'll prepare what to teach and what to watch for.
             </p>
           </div>
         )}
 
         {/* Input */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
-          <QuestionInput onSubmit={handleSubmit} disabled={isStreaming} />
+          <QuestionInput onSubmit={handleSubmit} disabled={isWorking} />
         </div>
 
-        {/* Streaming status bar + stop button */}
-        {isStreaming && (
+        {/* Working status bar + stop button */}
+        {isWorking && (
           <div className="bg-white/60 rounded-2xl border border-gray-100 px-5 py-3 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              {activeQuestion && activeQuestion.total > 1 ? (
-                <>
-                  <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-                    Solving question {activeQuestion.id} of {activeQuestion.total}…
-                  </p>
-                  <p className="text-sm text-gray-600 mt-0.5 line-clamp-1">
-                    {activeQuestion.text}
-                  </p>
-                </>
-              ) : (
-                <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-                  Your tutor is working…
-                </p>
-              )}
+            <div className="min-w-0 flex-1">
+              <ProgressFeed
+                phase={isAnalyzing ? "analyzing" : "generating"}
+                totalQuestions={totalQuestions}
+                remaining={pending.length}
+              />
             </div>
             <button
               onClick={stop}
@@ -116,21 +117,21 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
           </div>
         )}
 
-        {/* Results list (progressive — cards appear as each question completes) */}
-        {(isStreaming || isDone || isStopped) && (results.length > 0 || activeQuestion) && (
-          <QuestionResultList
-            results={results}
-            activeQuestion={activeQuestion}
-            toolEvents={toolEvents}
-            total={totalQuestions}
-          />
-        )}
+        {/* Results list */}
+        {(isWorking || isDone || isStopped) &&
+          (packets.length > 0 || pending.length > 0) && (
+            <QuestionResultList
+              packets={packets}
+              pending={pending}
+              total={totalQuestions}
+            />
+          )}
 
         {/* Error */}
         {isError && (
           <div className="bg-red-50 border border-red-200 rounded-2xl p-5 text-center space-y-3">
             <p className="text-red-600 font-semibold">
-              😕 Something went wrong
+              Something went wrong
             </p>
             <p className="text-red-500 text-sm">{error}</p>
             <button
@@ -146,9 +147,9 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
         {isStopped && (
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center space-y-1">
             <p className="text-amber-700 font-semibold text-sm">Stopped early</p>
-            {results.length > 0 && (
+            {packets.length > 0 && (
               <p className="text-amber-600 text-xs">
-                {results.length} question{results.length !== 1 ? "s" : ""} answered above.
+                {packets.length} packet{packets.length !== 1 ? "s" : ""} ready above.
               </p>
             )}
           </div>
@@ -161,7 +162,7 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
               onClick={reset}
               className="px-6 py-2.5 rounded-2xl bg-white border-2 border-brand-200 text-brand-600 font-bold hover:bg-brand-50 transition-colors shadow-sm"
             >
-              Ask another question 🔁
+              Coach another question
             </button>
           </div>
         )}

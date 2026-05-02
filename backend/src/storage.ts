@@ -1,9 +1,12 @@
 // ── Session storage ───────────────────────────────────────────────────────────
-// Persists completed sessions to S3 so the agent can personalise responses
-// using a student's recent history via the fetch_session_history tool.
+// Persists completed batch sessions to S3.
 //
 // Key format: sessions/<studentId>/<batchId>.json
 // Sessions expire after 30 days (lifecycle rule set in CDK).
+//
+// Phase 1 redesign: legacy single-question session shape has been retired.
+// All sessions in S3 use the CoachingPacket shape. Older sessions written
+// before the redesign are wiped at deploy time (manual aws s3 rm step).
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   S3Client,
@@ -11,16 +14,13 @@ import {
   ListObjectsV2Command,
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
+import type { CoachingPacket } from "./types";
 import { logger } from "./logger";
 
 export interface BatchQuestion {
+  questionId: number;
   input: string;
-  subject: string;
-  difficulty: string;
-  answer: string;
-  steps: string[];
-  explanation: string;
-  hints?: string[];
+  packet: CoachingPacket;
 }
 
 export interface SessionRecord {
@@ -33,18 +33,6 @@ export interface SessionRecord {
 export interface SessionPage {
   sessions: SessionRecord[];
   nextCursor: string | null;
-}
-
-// Shape of sessions written before the batch model (one Q&A at top level).
-interface LegacySessionRecord {
-  input: string;
-  subject: string;
-  difficulty: string;
-  answer: string;
-  steps: string[];
-  explanation: string;
-  hints?: string[];
-  imageKeys?: string[];
 }
 
 const s3 = new S3Client({});
@@ -77,10 +65,12 @@ export const saveSession = async (
   logger.info("session_save", { key });
 };
 
+// Kept exported for Phase 2 (Coaching Dialogue) which may surface recent
+// sessions as agent context. Unused in Phase 1.
 export const getRecentSessions = async (
   studentId: string,
   limit = 3,
-): Promise<object[]> => {
+): Promise<SessionRecord[]> => {
   const bucket = process.env.S3_BUCKET_NAME;
   if (!bucket) {
     throw new Error("S3_BUCKET_NAME environment variable is not set");
@@ -95,14 +85,14 @@ export const getRecentSessions = async (
 
   if (!list.Contents || list.Contents.length === 0) return [];
 
-  const recentKeys = list.Contents.sort(
-    (a, b) =>
-      (b.LastModified?.getTime() ?? 0) - (a.LastModified?.getTime() ?? 0),
+  const recentKeys = list.Contents.filter(
+    (obj): obj is typeof obj & { Key: string; LastModified: Date } =>
+      obj.Key !== undefined &&
+      obj.Key.endsWith(".json") &&
+      obj.LastModified !== undefined,
   )
-    .slice(0, limit)
-    .filter(
-      (obj): obj is typeof obj & { Key: string } => obj.Key !== undefined,
-    );
+    .sort((a, b) => b.LastModified.getTime() - a.LastModified.getTime())
+    .slice(0, limit);
 
   const sessions = await Promise.all(
     recentKeys.map(async (obj) => {
@@ -110,11 +100,22 @@ export const getRecentSessions = async (
         new GetObjectCommand({ Bucket: bucket, Key: obj.Key }),
       );
       const body = await response.Body?.transformToString("utf-8");
-      return body ? (JSON.parse(body) as object) : null;
+      if (!body) return null;
+      const raw = JSON.parse(body) as Record<string, unknown>;
+      const sessionId = obj.Key.replace(`sessions/${studentId}/`, "").replace(
+        ".json",
+        "",
+      );
+      return {
+        sessionId,
+        timestamp: (raw.timestamp as string) ?? "",
+        imageKeys: raw.imageKeys as string[] | undefined,
+        questions: (raw.questions as BatchQuestion[] | undefined) ?? [],
+      } as SessionRecord;
     }),
   );
 
-  const result = sessions.filter((s): s is object => s !== null);
+  const result = sessions.filter((s): s is SessionRecord => s !== null);
   logger.info("sessions_fetched", { studentId, count: result.length });
   return result;
 };
@@ -151,21 +152,6 @@ export const uploadSessionImages = async (
   );
 
   return keys;
-};
-
-// Normalise legacy sessions that were saved before the batch format was introduced.
-const normaliseLegacy = (raw: LegacySessionRecord): BatchQuestion[] => {
-  return [
-    {
-      input: raw.input ?? "",
-      subject: raw.subject ?? "",
-      difficulty: raw.difficulty ?? "",
-      answer: raw.answer ?? "",
-      steps: raw.steps ?? [],
-      explanation: raw.explanation ?? "",
-      hints: raw.hints,
-    },
-  ];
 };
 
 export const listSessions = async (
@@ -218,15 +204,11 @@ export const listSessions = async (
       );
       const raw = JSON.parse(body) as Record<string, unknown>;
 
-      const questions: BatchQuestion[] = Array.isArray(raw.questions)
-        ? (raw.questions as BatchQuestion[])
-        : normaliseLegacy(raw as unknown as LegacySessionRecord);
-
       return {
         sessionId,
         timestamp: (raw.timestamp as string) ?? "",
         imageKeys: raw.imageKeys as string[] | undefined,
-        questions,
+        questions: (raw.questions as BatchQuestion[] | undefined) ?? [],
       } as SessionRecord;
     }),
   );

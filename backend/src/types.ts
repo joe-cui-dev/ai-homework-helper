@@ -1,26 +1,42 @@
 // ── Shared types ──────────────────────────────────────────────────────────────
-// StreamEvent is the wire format for the NDJSON stream sent to the browser.
-// The frontend processes each event as it arrives:
-//   tool_start / tool_end      → display live progress (which tool is running)
-//   question_start             → a new question is being solved (id, total, text)
-//   question_complete          → one question finished (id + result)
-//   complete                   → all questions done; carries full results array
-//   error                      → show an error message
+// Phase 1 (Coaching Packet) wire format. Phase 2 (Coaching Dialogue) will
+// define its own event types in a separate handler.
 // ─────────────────────────────────────────────────────────────────────────────
-export interface AgentResult {
-  subject: string;
-  difficulty: string;
-  answer: string;
-  steps: string[];
-  explanation: string;
-  hints?: string[];
+
+export type Subject = "math" | "science" | "english" | "other";
+export type YearLevel =
+  | "year-1"
+  | "year-2"
+  | "year-3"
+  | "year-4"
+  | "year-5"
+  | "year-6";
+
+// One coaching packet per identified question. The reader is the parent.
+// Parent-facing fields (whyItWorks, howToCoach, watchFor) are adult-to-adult
+// regardless of yearLevel. Only childHint is calibrated to the year level.
+export interface CoachingPacket {
+  questionId: number;
+  subject: Subject;
+  yearLevel: YearLevel;
+  tldrAnswer: string;
+  whyItWorks: string;
+  howToCoach: string;
+  watchFor: string[];
+  childHint: string;
+}
+
+export interface BatchPacket {
+  questionId: number;
+  questionText: string;
+  packet: CoachingPacket;
 }
 
 export interface IdentifiedQuestion {
   id: number;
   text: string;
   usesArticle: boolean;
-  sourcePage?: number; // 0-based index into the images array
+  sourcePage?: number;
 }
 
 export interface PageAnalysis {
@@ -28,16 +44,9 @@ export interface PageAnalysis {
   questions: IdentifiedQuestion[];
 }
 
-export interface QuestionResult {
-  questionId: number;
-  questionText: string;
-  result: AgentResult;
-}
-
 export type StreamEvent =
-  | { type: "tool_start"; tool: string }
-  | { type: "tool_end"; tool: string }
-  | { type: "question_start"; questionId: number; total: number; text: string }
-  | { type: "question_complete"; questionId: number; result: AgentResult }
-  | { type: "complete"; results: QuestionResult[] }
+  | { type: "analyzing" }
+  | { type: "packet_start"; questionId: number; total: number; text: string }
+  | { type: "packet_complete"; questionId: number; packet: CoachingPacket }
+  | { type: "complete"; packets: BatchPacket[] }
   | { type: "error"; message: string };

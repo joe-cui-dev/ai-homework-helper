@@ -121,7 +121,7 @@ export const streamHomework = async (
       try {
         const event = JSON.parse(trimmed) as StreamEvent;
         onEvent(event);
-        // Only stop early on error — complete arrives after all question_complete events.
+        // Only stop early on error — complete arrives after all packet_complete events.
         if (event.type === "error") return;
       } catch {
         // Ignore malformed lines.

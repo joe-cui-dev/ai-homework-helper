@@ -87,7 +87,7 @@ export function SessionDetailModal({ session, onClose }: SessionDetailModalProps
               <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
                 <p className="text-sm text-gray-700 leading-relaxed">{q.input}</p>
               </div>
-              <ResultCard result={q} />
+              <ResultCard packet={q.packet} />
             </div>
           ))}
         </div>

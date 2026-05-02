@@ -1,5 +1,6 @@
 import { listSessions, saveSession, uploadSessionImages } from "../storage";
 import type { BatchQuestion } from "../storage";
+import type { CoachingPacket } from "../types";
 
 jest.mock("@aws-sdk/client-s3", () => {
   const sendMock = jest.fn();
@@ -13,7 +14,12 @@ jest.mock("@aws-sdk/client-s3", () => {
 });
 
 jest.mock("../logger", () => ({
-  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+  logger: {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  },
 }));
 
 const { _sendMock: mockSend } = jest.requireMock("@aws-sdk/client-s3") as {
@@ -25,13 +31,21 @@ beforeEach(() => {
   process.env.S3_BUCKET_NAME = "test-bucket";
 });
 
-const Q: BatchQuestion = {
-  input: "What is 2+2?",
+const PACKET: CoachingPacket = {
+  questionId: 1,
   subject: "math",
-  difficulty: "year-1",
-  answer: "4",
-  steps: ["Add 2 and 2"],
-  explanation: "Two plus two equals four.",
+  yearLevel: "year-1",
+  tldrAnswer: "4",
+  whyItWorks: "Adding two pairs of items totals four.",
+  howToCoach: "Use counters: lay out two, then two more, count together.",
+  watchFor: ["Skipping a counter", "Counting one twice"],
+  childHint: "What number comes after three?",
+};
+
+const Q: BatchQuestion = {
+  questionId: 1,
+  input: "What is 2+2?",
+  packet: PACKET,
 };
 
 // ── saveSession ───────────────────────────────────────────────────────────────
@@ -40,32 +54,55 @@ describe("saveSession", () => {
   it("stores questions array and timestamp", async () => {
     mockSend.mockResolvedValueOnce({});
 
-    await saveSession("batch-1", { timestamp: "2024-01-01T00:00:00Z", questions: [Q] }, "student-1");
+    await saveSession(
+      "batch-1",
+      { timestamp: "2024-01-01T00:00:00Z", questions: [Q] },
+      "student-1",
+    );
 
     const [putCall] = mockSend.mock.calls;
-    const body = JSON.parse(putCall[0].Body as string) as { questions: BatchQuestion[]; timestamp: string };
+    const body = JSON.parse(putCall[0].Body as string) as {
+      questions: BatchQuestion[];
+      timestamp: string;
+    };
     expect(body.questions).toHaveLength(1);
     expect(body.questions[0].input).toBe("What is 2+2?");
+    expect(body.questions[0].packet.subject).toBe("math");
     expect(body.timestamp).toBe("2024-01-01T00:00:00Z");
   });
 
   it("includes imageKeys in stored JSON when provided", async () => {
     mockSend.mockResolvedValueOnce({});
 
-    await saveSession("batch-1", { timestamp: "t", questions: [Q] }, "student-1", ["sessions/student-1/batch-1/image-0.jpeg"]);
+    await saveSession(
+      "batch-1",
+      { timestamp: "t", questions: [Q] },
+      "student-1",
+      ["sessions/student-1/batch-1/image-0.jpeg"],
+    );
 
     const [putCall] = mockSend.mock.calls;
-    const body = JSON.parse(putCall[0].Body as string) as { imageKeys?: string[] };
-    expect(body.imageKeys).toEqual(["sessions/student-1/batch-1/image-0.jpeg"]);
+    const body = JSON.parse(putCall[0].Body as string) as {
+      imageKeys?: string[];
+    };
+    expect(body.imageKeys).toEqual([
+      "sessions/student-1/batch-1/image-0.jpeg",
+    ]);
   });
 
   it("omits imageKeys from stored JSON when not provided", async () => {
     mockSend.mockResolvedValueOnce({});
 
-    await saveSession("batch-1", { timestamp: "t", questions: [Q] }, "student-1");
+    await saveSession(
+      "batch-1",
+      { timestamp: "t", questions: [Q] },
+      "student-1",
+    );
 
     const [putCall] = mockSend.mock.calls;
-    const body = JSON.parse(putCall[0].Body as string) as { imageKeys?: string[] };
+    const body = JSON.parse(putCall[0].Body as string) as {
+      imageKeys?: string[];
+    };
     expect(body.imageKeys).toBeUndefined();
   });
 });
@@ -79,7 +116,10 @@ describe("uploadSessionImages", () => {
     const jpegDataUrl = "data:image/jpeg;base64,/9j/abc123";
     const pngDataUrl = "data:image/png;base64,iVBORabc";
 
-    const keys = await uploadSessionImages("student-1", "batch-1", [jpegDataUrl, pngDataUrl]);
+    const keys = await uploadSessionImages("student-1", "batch-1", [
+      jpegDataUrl,
+      pngDataUrl,
+    ]);
 
     expect(keys).toEqual([
       "sessions/student-1/batch-1/image-0.jpeg",
@@ -97,7 +137,9 @@ describe("uploadSessionImages", () => {
   it("uses correct S3 key format and uploads raw bytes", async () => {
     mockSend.mockResolvedValue({});
 
-    await uploadSessionImages("student-1", "batch-1", ["data:image/jpeg;base64,aGVsbG8="]);
+    await uploadSessionImages("student-1", "batch-1", [
+      "data:image/jpeg;base64,aGVsbG8=",
+    ]);
 
     const [putCall] = mockSend.mock.calls;
     expect(putCall[0].Key).toBe("sessions/student-1/batch-1/image-0.jpeg");
@@ -108,21 +150,10 @@ describe("uploadSessionImages", () => {
 
 // ── listSessions ──────────────────────────────────────────────────────────────
 
-const newFormatSession = (overrides: Partial<BatchQuestion> = {}) =>
+const sessionJson = (overrides: Partial<BatchQuestion> = {}) =>
   JSON.stringify({
     timestamp: "2024-01-01T00:00:00Z",
     questions: [{ ...Q, ...overrides }],
-  });
-
-const legacyFormatSession = (input = "What is 2+2?") =>
-  JSON.stringify({
-    input,
-    subject: "math",
-    difficulty: "year-1",
-    answer: "4",
-    steps: ["Add 2 and 2"],
-    explanation: "Two plus two equals four.",
-    timestamp: "2024-01-01T00:00:00Z",
   });
 
 describe("listSessions", () => {
@@ -138,20 +169,39 @@ describe("listSessions", () => {
     mockSend
       .mockResolvedValueOnce({
         Contents: [
-          { Key: "sessions/s1/batch-a.json", LastModified: new Date("2024-01-01") },
-          { Key: "sessions/s1/batch-b.json", LastModified: new Date("2024-01-03") },
-          { Key: "sessions/s1/batch-c.json", LastModified: new Date("2024-01-02") },
+          {
+            Key: "sessions/s1/batch-a.json",
+            LastModified: new Date("2024-01-01"),
+          },
+          {
+            Key: "sessions/s1/batch-b.json",
+            LastModified: new Date("2024-01-03"),
+          },
+          {
+            Key: "sessions/s1/batch-c.json",
+            LastModified: new Date("2024-01-02"),
+          },
         ],
         IsTruncated: false,
       })
-      .mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession({ input: "newest" }) } })
-      .mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession({ input: "middle" }) } })
-      .mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession({ input: "oldest" }) } });
+      .mockResolvedValueOnce({
+        Body: { transformToString: async () => sessionJson({ input: "newest" }) },
+      })
+      .mockResolvedValueOnce({
+        Body: { transformToString: async () => sessionJson({ input: "middle" }) },
+      })
+      .mockResolvedValueOnce({
+        Body: { transformToString: async () => sessionJson({ input: "oldest" }) },
+      });
 
     const result = await listSessions("s1");
 
     expect(result.nextCursor).toBeNull();
-    expect(result.sessions.map((s) => s.questions[0].input)).toEqual(["newest", "middle", "oldest"]);
+    expect(result.sessions.map((s) => s.questions[0].input)).toEqual([
+      "newest",
+      "middle",
+      "oldest",
+    ]);
     expect(result.sessions[0].sessionId).toBe("batch-b");
   });
 
@@ -159,13 +209,24 @@ describe("listSessions", () => {
     mockSend
       .mockResolvedValueOnce({
         Contents: [
-          { Key: "sessions/s1/batch-a.json", LastModified: new Date("2024-01-01") },
-          { Key: "sessions/s1/batch-a/image-0.jpeg", LastModified: new Date("2024-01-01") },
-          { Key: "sessions/s1/batch-a/image-1.jpeg", LastModified: new Date("2024-01-01") },
+          {
+            Key: "sessions/s1/batch-a.json",
+            LastModified: new Date("2024-01-01"),
+          },
+          {
+            Key: "sessions/s1/batch-a/image-0.jpeg",
+            LastModified: new Date("2024-01-01"),
+          },
+          {
+            Key: "sessions/s1/batch-a/image-1.jpeg",
+            LastModified: new Date("2024-01-01"),
+          },
         ],
         IsTruncated: false,
       })
-      .mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession() } });
+      .mockResolvedValueOnce({
+        Body: { transformToString: async () => sessionJson() },
+      });
 
     const result = await listSessions("s1");
 
@@ -173,42 +234,39 @@ describe("listSessions", () => {
     expect(result.sessions[0].sessionId).toBe("batch-a");
   });
 
-  it("normalises legacy single-question sessions to a one-element questions array", async () => {
-    mockSend
-      .mockResolvedValueOnce({
-        Contents: [{ Key: "sessions/s1/batch-q1.json", LastModified: new Date("2024-01-01") }],
-        IsTruncated: false,
-      })
-      .mockResolvedValueOnce({ Body: { transformToString: async () => legacyFormatSession("Old question") } });
-
-    const result = await listSessions("s1");
-
-    expect(result.sessions).toHaveLength(1);
-    expect(result.sessions[0].questions).toHaveLength(1);
-    expect(result.sessions[0].questions[0].input).toBe("Old question");
-    expect(result.sessions[0].questions[0].subject).toBe("math");
-  });
-
-  it("returns new-format multi-question sessions intact", async () => {
+  it("returns multi-question sessions intact", async () => {
     const multiQuestion = JSON.stringify({
       timestamp: "2024-01-01T00:00:00Z",
       questions: [
-        { ...Q, input: "Q1", subject: "math" },
-        { ...Q, input: "Q2", subject: "science" },
+        { ...Q, input: "Q1", packet: { ...PACKET, subject: "math" } },
+        {
+          ...Q,
+          questionId: 2,
+          input: "Q2",
+          packet: { ...PACKET, questionId: 2, subject: "science" },
+        },
       ],
     });
     mockSend
       .mockResolvedValueOnce({
-        Contents: [{ Key: "sessions/s1/batch-a.json", LastModified: new Date("2024-01-01") }],
+        Contents: [
+          {
+            Key: "sessions/s1/batch-a.json",
+            LastModified: new Date("2024-01-01"),
+          },
+        ],
         IsTruncated: false,
       })
-      .mockResolvedValueOnce({ Body: { transformToString: async () => multiQuestion } });
+      .mockResolvedValueOnce({
+        Body: { transformToString: async () => multiQuestion },
+      });
 
     const result = await listSessions("s1");
 
     expect(result.sessions[0].questions).toHaveLength(2);
     expect(result.sessions[0].questions[0].input).toBe("Q1");
     expect(result.sessions[0].questions[1].input).toBe("Q2");
+    expect(result.sessions[0].questions[1].packet.subject).toBe("science");
   });
 
   it("paginates and returns nextCursor when more sessions exist", async () => {
@@ -218,7 +276,9 @@ describe("listSessions", () => {
     }));
     mockSend.mockResolvedValueOnce({ Contents: contents, IsTruncated: false });
     for (let i = 0; i < 10; i++) {
-      mockSend.mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession() } });
+      mockSend.mockResolvedValueOnce({
+        Body: { transformToString: async () => sessionJson() },
+      });
     }
 
     const result = await listSessions("s1", undefined, 10);
@@ -234,7 +294,9 @@ describe("listSessions", () => {
     }));
     mockSend.mockResolvedValueOnce({ Contents: contents, IsTruncated: false });
     for (let i = 0; i < 5; i++) {
-      mockSend.mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession() } });
+      mockSend.mockResolvedValueOnce({
+        Body: { transformToString: async () => sessionJson() },
+      });
     }
 
     const result = await listSessions("s1", undefined, 10);
@@ -250,14 +312,18 @@ describe("listSessions", () => {
     }));
     mockSend.mockResolvedValueOnce({ Contents: contents, IsTruncated: false });
     for (let i = 0; i < 10; i++) {
-      mockSend.mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession() } });
+      mockSend.mockResolvedValueOnce({
+        Body: { transformToString: async () => sessionJson() },
+      });
     }
     const firstPage = await listSessions("s1", undefined, 10);
     const cursor = firstPage.nextCursor!;
 
     mockSend.mockResolvedValueOnce({ Contents: contents, IsTruncated: false });
     for (let i = 0; i < 2; i++) {
-      mockSend.mockResolvedValueOnce({ Body: { transformToString: async () => newFormatSession() } });
+      mockSend.mockResolvedValueOnce({
+        Body: { transformToString: async () => sessionJson() },
+      });
     }
     const secondPage = await listSessions("s1", cursor, 10);
 

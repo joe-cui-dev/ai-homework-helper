@@ -1,73 +1,108 @@
 import { useState } from "react";
-import type { AgentResult } from "../types";
-import { StepList } from "./StepList";
-import { HintsList } from "./HintsList";
+import type { CoachingPacket } from "../types";
 import { subjectColour } from "../utils/subjectColour";
 
-const DIFFICULTY_COLOURS: Record<string, string> = {
-  easy: "bg-green-50 text-green-600",
-  medium: "bg-yellow-50 text-yellow-700",
-  hard: "bg-red-50 text-red-600",
+const YEAR_LEVEL_LABEL: Record<string, string> = {
+  "year-1": "Year 1",
+  "year-2": "Year 2",
+  "year-3": "Year 3",
+  "year-4": "Year 4",
+  "year-5": "Year 5",
+  "year-6": "Year 6",
 };
 
-function difficultyColour(difficulty: string) {
-  return (
-    DIFFICULTY_COLOURS[difficulty.toLowerCase()] ?? "bg-gray-50 text-gray-500"
-  );
-}
-
 interface ResultCardProps {
-  result: AgentResult;
+  packet: CoachingPacket;
 }
 
-export function ResultCard({ result }: ResultCardProps) {
-  const [showExplanation, setShowExplanation] = useState(false);
+export function ResultCard({ packet }: ResultCardProps) {
+  const [hintOpen, setHintOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyHint = async () => {
+    try {
+      await navigator.clipboard.writeText(packet.childHint);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard not available — silent.
+    }
+  };
 
   return (
     <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-4 sm:p-6 space-y-5">
       {/* Badges */}
       <div className="flex flex-wrap gap-2">
         <span
-          className={`px-3 py-1 rounded-full text-sm font-bold capitalize ${subjectColour(result.subject)}`}
+          className={`px-3 py-1 rounded-full text-sm font-bold capitalize ${subjectColour(packet.subject)}`}
         >
-          {result.subject}
+          {packet.subject}
         </span>
-        <span
-          className={`px-3 py-1 rounded-full text-sm font-semibold capitalize ${difficultyColour(result.difficulty)}`}
-        >
-          {result.difficulty}
+        <span className="px-3 py-1 rounded-full text-sm font-semibold bg-gray-100 text-gray-600">
+          {YEAR_LEVEL_LABEL[packet.yearLevel] ?? packet.yearLevel}
         </span>
       </div>
 
-      {/* Answer */}
+      {/* TL;DR Answer */}
       <div>
-        <h2 className="text-lg font-bold text-gray-800 mb-1">Answer</h2>
-        <p className="text-gray-700 leading-relaxed text-base">
-          {result.answer}
+        <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">
+          Answer
+        </h2>
+        <p className="text-gray-800 leading-relaxed text-base font-semibold">
+          {packet.tldrAnswer}
         </p>
       </div>
 
-      {/* Steps */}
-      {result.steps.length > 0 && (
+      {/* Why it works */}
+      <div>
+        <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">
+          Why it works
+        </h2>
+        <p className="text-gray-700 leading-relaxed text-sm whitespace-pre-line">
+          {packet.whyItWorks}
+        </p>
+      </div>
+
+      {/* How to coach */}
+      <div>
+        <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">
+          How to coach
+        </h2>
+        <p className="text-gray-700 leading-relaxed text-sm whitespace-pre-line">
+          {packet.howToCoach}
+        </p>
+      </div>
+
+      {/* Watch for */}
+      {packet.watchFor.length > 0 && (
         <div>
-          <h2 className="text-lg font-bold text-gray-800 mb-3">
-            How we got there
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+            Watch for
           </h2>
-          <StepList steps={result.steps} />
+          <ul className="space-y-1.5">
+            {packet.watchFor.map((item, i) => (
+              <li
+                key={i}
+                className="flex items-start gap-2 text-sm text-gray-700 leading-relaxed"
+              >
+                <span className="text-amber-500 mt-1 flex-shrink-0">•</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {/* Explanation (collapsible) */}
-      {result.explanation && (
-        <div>
+      {/* Child hint (collapsible, copy-to-clipboard) */}
+      {packet.childHint && (
+        <div className="border-t border-gray-100 pt-4">
           <button
-            onClick={() => setShowExplanation((v) => !v)}
+            onClick={() => setHintOpen((v) => !v)}
             className="flex items-center gap-2 text-brand-600 font-semibold hover:text-brand-800 transition-colors text-sm"
           >
-            <span>🔍</span>
-            {showExplanation ? "Hide explanation" : "Simpler explanation"}
+            {hintOpen ? "Hide hint for child" : "Show hint to read aloud"}
             <svg
-              className={`w-4 h-4 transition-transform ${showExplanation ? "rotate-180" : ""}`}
+              className={`w-4 h-4 transition-transform ${hintOpen ? "rotate-180" : ""}`}
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -80,17 +115,20 @@ export function ResultCard({ result }: ResultCardProps) {
               />
             </svg>
           </button>
-          {showExplanation && (
-            <p className="mt-3 text-gray-600 leading-relaxed text-sm bg-blue-50 rounded-xl p-4">
-              {result.explanation}
-            </p>
+          {hintOpen && (
+            <div className="mt-3 bg-blue-50 rounded-xl p-4 space-y-3">
+              <p className="text-gray-700 leading-relaxed text-sm italic">
+                "{packet.childHint}"
+              </p>
+              <button
+                onClick={copyHint}
+                className="text-xs font-semibold text-brand-600 hover:text-brand-800 transition-colors"
+              >
+                {copied ? "Copied" : "Copy hint"}
+              </button>
+            </div>
           )}
         </div>
-      )}
-
-      {/* Hints */}
-      {result.hints && result.hints.length > 0 && (
-        <HintsList hints={result.hints} />
       )}
     </div>
   );

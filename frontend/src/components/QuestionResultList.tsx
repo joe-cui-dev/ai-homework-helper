@@ -1,67 +1,58 @@
-import type { QuestionResult } from "../types";
-import type { ActiveQuestion } from "../hooks/useHomeworkStream";
+import type { BatchPacket } from "../types";
+import type { PendingPacket } from "../hooks/useHomeworkStream";
 import { ResultCard } from "./ResultCard";
 import { LoadingState } from "./LoadingState";
-import { ProgressFeed } from "./ProgressFeed";
-
-interface ToolEvent {
-  tool: string;
-  done: boolean;
-}
 
 interface QuestionResultListProps {
-  results: QuestionResult[];
-  activeQuestion: ActiveQuestion | null;
-  toolEvents: ToolEvent[];
+  packets: BatchPacket[];
+  pending: PendingPacket[];
   total: number;
 }
 
 export function QuestionResultList({
-  results,
-  activeQuestion,
-  toolEvents,
+  packets,
+  pending,
   total,
 }: QuestionResultListProps) {
   const showHeader = total > 1;
 
   return (
     <div className="space-y-4">
-      {/* Completed question cards */}
-      {results.map((qr) => (
-        <div key={qr.questionId} className="space-y-2">
+      {/* Completed coaching packets */}
+      {packets.map((bp) => (
+        <div key={bp.questionId} className="space-y-2">
           {showHeader && (
             <p className="text-xs font-bold uppercase tracking-widest text-gray-400 px-1">
-              Question {qr.questionId} of {total}
+              Question {bp.questionId} of {total}
             </p>
           )}
-          {qr.questionText && (
+          {bp.questionText && (
             <p className="text-sm text-gray-500 italic px-1 line-clamp-2">
-              {qr.questionText}
+              {bp.questionText}
             </p>
           )}
-          <ResultCard result={qr.result} />
+          <ResultCard packet={bp.packet} />
         </div>
       ))}
 
-      {/* In-progress question skeleton */}
-      {activeQuestion && (
-        <div className="space-y-2">
+      {/* Optimistic placeholders for packets still being generated */}
+      {pending.map((p) => (
+        <div key={`pending-${p.questionId}`} className="space-y-2">
           {showHeader && (
             <p className="text-xs font-bold uppercase tracking-widest text-gray-400 px-1">
-              Question {activeQuestion.id} of {activeQuestion.total}
+              Question {p.questionId} of {total}
             </p>
           )}
-          {activeQuestion.text && (
+          {p.text && (
             <p className="text-sm text-gray-500 italic px-1 line-clamp-2">
-              {activeQuestion.text}
+              {p.text}
             </p>
           )}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-3">
-            {toolEvents.length > 0 && <ProgressFeed events={toolEvents} />}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
             <LoadingState />
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
