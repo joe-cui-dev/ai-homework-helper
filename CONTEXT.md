@@ -30,3 +30,16 @@ The unique identifier for a student, extracted exclusively from the `sub` claim 
 
 ### Batch
 Synonym for Session — one user submission. The `batchId` (a UUID) is the session's stable identifier and is used as the S3 key stem.
+
+### Parent-as-Coach
+The primary reader of the app's output. The parent reads the answer privately and then teaches the child in their own words. The student is the *subject* of the homework but not the direct reader of the AI output. This shapes tone (adult-to-adult, concise), structure (must include teaching guidance, not just answers), and what success looks like (the child learns from the parent, not from the screen).
+
+### Coaching Packet
+The per-question output delivered to the Parent-as-Coach. Replaces the old `{ answer, steps, explanation, hints }` shape. Fields:
+- `tldrAnswer` — the answer in one short sentence
+- `whyItWorks` — the underlying concept the question is testing (one paragraph, adult-to-adult)
+- `howToCoach` — what the parent should *do/say* with the child (instructional, not narration)
+- `watchFor` — common wrong answers and misconceptions a child of this year level might fall into (array)
+- `childHint` — a Socratic prompt the parent can read aloud verbatim if the child is stuck
+
+Year level still drives complexity calibration (a Year-1 `childHint` is concrete and short; a Year-6 one can use subject vocabulary), but the parent-facing fields stay in adult voice regardless.

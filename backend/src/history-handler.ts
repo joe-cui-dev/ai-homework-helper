@@ -74,14 +74,12 @@ export const handler = async (
               getSignedUrl(
                 s3,
                 new GetObjectCommand({ Bucket: bucket, Key: key }),
-                {
-                  expiresIn: PRESIGN_EXPIRES_IN,
-                },
+                { expiresIn: PRESIGN_EXPIRES_IN },
               ),
             ),
           )
         : [];
-      const subjects = [...new Set(questions.map((q) => q.subject))];
+      const subjects = [...new Set(questions.map((q) => q.packet.subject))];
       return { sessionId, timestamp, subjects, imageUrls, questions };
     }),
   );
