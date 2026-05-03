@@ -151,6 +151,7 @@ export function HistorySidebar({ token, open, onClose }: HistorySidebarProps) {
       {selectedSession && (
         <SessionDetailModal
           session={selectedSession}
+          token={token}
           onClose={() => setSelectedSession(null)}
         />
       )}

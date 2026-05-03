@@ -13,9 +13,11 @@ const YEAR_LEVEL_LABEL: Record<string, string> = {
 
 interface ResultCardProps {
   packet: CoachingPacket;
+  onPractise?: () => void;
+  practiceStatus?: "active" | "ended";
 }
 
-export function ResultCard({ packet }: ResultCardProps) {
+export function ResultCard({ packet, onPractise, practiceStatus }: ResultCardProps) {
   const [hintOpen, setHintOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -91,6 +93,20 @@ export function ResultCard({ packet }: ResultCardProps) {
             ))}
           </ul>
         </div>
+      )}
+
+      {/* Practise this — entry point to the Phase 2 Practice Tutor Loop */}
+      {onPractise && (
+        <button
+          onClick={onPractise}
+          className="w-full py-2 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 transition-colors"
+        >
+          {practiceStatus === "active"
+            ? "Resume practice"
+            : practiceStatus === "ended"
+              ? "Start a new practice"
+              : "Practise this with my child"}
+        </button>
       )}
 
       {/* Child hint (collapsible, copy-to-clipboard) */}

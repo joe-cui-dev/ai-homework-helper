@@ -12,6 +12,7 @@ export interface PendingPacket {
 
 interface UseHomeworkStreamReturn {
   status: Status;
+  batchId: string | null;
   packets: BatchPacket[];
   pending: PendingPacket[];
   totalQuestions: number;
@@ -23,6 +24,7 @@ interface UseHomeworkStreamReturn {
 
 export const useHomeworkStream = (): UseHomeworkStreamReturn => {
   const [status, setStatus] = useState<Status>("idle");
+  const [batchId, setBatchId] = useState<string | null>(null);
   const [packets, setPackets] = useState<BatchPacket[]>([]);
   const [pending, setPending] = useState<PendingPacket[]>([]);
   const [totalQuestions, setTotalQuestions] = useState(0);
@@ -45,6 +47,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     abortRef.current = true;
     abortControllerRef.current?.abort();
     setStatus("idle");
+    setBatchId(null);
     setPackets([]);
     setPending([]);
     setTotalQuestions(0);
@@ -59,6 +62,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
       abortRef.current = false;
       pendingTextRef.current.clear();
       setStatus("analyzing");
+      setBatchId(null);
       setPackets([]);
       setPending([]);
       setTotalQuestions(0);
@@ -72,6 +76,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
         } else if (event.type === "packet_start") {
           pendingTextRef.current.set(event.questionId, event.text);
           setTotalQuestions(event.total);
+          setBatchId(event.batchId);
           setStatus("generating");
           setPending((prev) => {
             // Avoid duplicates if the same id is announced twice.
@@ -99,6 +104,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
             prev.filter((p) => p.questionId !== event.questionId),
           );
         } else if (event.type === "complete") {
+          setBatchId(event.batchId);
           setPackets(event.packets);
           setPending([]);
           setStatus("done");
@@ -131,6 +137,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
 
   return {
     status,
+    batchId,
     packets,
     pending,
     totalQuestions,

@@ -334,6 +334,83 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       ]),
     });
 
+    // ── Practice Lambda (Phase 2: Practice Tutor Loop) ─────────────────────
+    // Multi-turn agentic loop. Each parent turn = one POST. State lives in S3
+    // (sessions/{studentId}/{batchId}/practice-{questionId}.json), Lambda is
+    // stateless between turns.
+    const practiceLogGroup = new logs.LogGroup(this, "PracticeFunctionLogs", {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const practiceFn = new lambdaNodejs.NodejsFunction(this, "PracticeFunction", {
+      logGroup: practiceLogGroup,
+      entry: path.join(__dirname, "../../backend/src/practice-handler.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 1024,
+      timeout: cdk.Duration.minutes(5),
+      // Smaller cap than Solve — practice turns are individually shorter
+      // (no vision call), but each session generates many turns over time.
+      reservedConcurrentExecutions: 5,
+      environment: {
+        BEDROCK_MODEL_ID: HAIKU_45_MODEL_ID,
+        S3_BUCKET_NAME: sessionBucket.bucketName,
+        BEDROCK_GUARDRAIL_ID: guardrail.attrGuardrailId,
+        BEDROCK_GUARDRAIL_VERSION: guardrailVersion.attrVersion,
+        COGNITO_USER_POOL_ID: userPool.userPoolId,
+        COGNITO_APP_CLIENT_ID: userPoolClient.userPoolClientId,
+        SERVICE_NAME: "ai-homework-helper",
+        LOG_LEVEL: this.node.tryGetContext("logLevel") ?? "DEBUG",
+      },
+      bundling: {
+        minify: true,
+        sourceMap: false,
+      },
+    });
+
+    practiceFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream",
+        ],
+        resources: [
+          `arn:aws:bedrock:*::foundation-model/${HAIKU_45_BASE_MODEL_ID}`,
+          `arn:aws:bedrock:*:*:inference-profile/${HAIKU_45_MODEL_ID}`,
+        ],
+      }),
+    );
+
+    practiceFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["bedrock:ApplyGuardrail"],
+        resources: [guardrail.attrGuardrailArn],
+      }),
+    );
+
+    // Practice Lambda needs read+write on sessions/* (load source packet, list
+    // practice siblings, write practice session JSON).
+    sessionBucket.grantPut(practiceFn, "sessions/*");
+    sessionBucket.grantRead(practiceFn, "sessions/*");
+
+    // History Lambda now also reads the practice-*.json siblings to surface
+    // "Practice ✓" pills — no extra IAM needed since it already has Read on
+    // sessions/*.
+
+    const practiceFnUrl = new lambda.FunctionUrl(this, "PracticeFunctionUrl", {
+      function: practiceFn,
+      authType: lambda.FunctionUrlAuthType.NONE,
+      invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
+      cors: {
+        allowedOrigins: [
+          this.node.tryGetContext("allowedOrigin") ?? "https://joe-cui.com",
+        ],
+        allowedMethods: [lambda.HttpMethod.POST],
+        allowedHeaders: ["Content-Type", "Authorization"],
+      },
+    });
+
     // ── Lambda Function URL (streaming) ───────────────────────────────────
     // Response streaming removes the API Gateway timeout ceiling and lets the
     // client receive tool-progress events incrementally before the final result.
@@ -430,6 +507,12 @@ function handler(event) {
     new cdk.CfnOutput(this, "HistoryApiUrl", {
       value: historyFnUrl.url,
       description: "GET /sessions — history browser endpoint",
+    });
+
+    new cdk.CfnOutput(this, "PracticeApiUrl", {
+      value: practiceFnUrl.url,
+      description:
+        "POST /practice/start | /practice/turn | /practice/end — Phase 2 Practice Tutor Loop",
     });
 
     new cdk.CfnOutput(this, "UserPoolId", {

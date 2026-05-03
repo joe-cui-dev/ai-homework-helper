@@ -202,6 +202,7 @@ export const handler = awslambda.streamifyResponse(
       for (const q of analysis.questions) {
         writeEvent({
           type: "packet_start",
+          batchId,
           questionId: q.id,
           total,
           text: q.text,
@@ -274,7 +275,7 @@ export const handler = awslambda.streamifyResponse(
         );
       }
 
-      writeEvent({ type: "complete", packets: allBatchPackets });
+      writeEvent({ type: "complete", batchId, packets: allBatchPackets });
       logger.info("request_complete", { packetCount: allBatchPackets.length });
     } catch (err) {
       logger.error(

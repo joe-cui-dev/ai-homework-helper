@@ -3,7 +3,16 @@ import { QuestionInput } from "./QuestionInput";
 import { QuestionResultList } from "./QuestionResultList";
 import { ProgressFeed } from "./ProgressFeed";
 import { HistorySidebar } from "./HistorySidebar";
+import { PracticeModal } from "./PracticeModal";
 import { useHomeworkStream } from "../hooks/useHomeworkStream";
+import type { CoachingPacket } from "../types";
+
+interface PracticeModalState {
+  batchId: string;
+  questionId: number;
+  questionText: string;
+  packet: CoachingPacket;
+}
 
 interface HomePageProps {
   email: string;
@@ -14,6 +23,7 @@ interface HomePageProps {
 export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
   const {
     status,
+    batchId,
     packets,
     pending,
     totalQuestions,
@@ -23,6 +33,16 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
     reset,
   } = useHomeworkStream();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [practice, setPractice] = useState<PracticeModalState | null>(null);
+
+  const openPractice = (
+    questionId: number,
+    questionText: string,
+    packet: CoachingPacket,
+  ) => {
+    if (!batchId) return;
+    setPractice({ batchId, questionId, questionText, packet });
+  };
 
   const handleSubmit = (question: string, images: string[]) => {
     submit(question, token, images.length > 0 ? images : undefined);
@@ -124,6 +144,7 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
               packets={packets}
               pending={pending}
               total={totalQuestions}
+              onPractise={openPractice}
             />
           )}
 
@@ -167,6 +188,17 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
           </div>
         )}
       </main>
+
+      {practice && (
+        <PracticeModal
+          batchId={practice.batchId}
+          questionId={practice.questionId}
+          questionText={practice.questionText}
+          packet={practice.packet}
+          token={token}
+          onClose={() => setPractice(null)}
+        />
+      )}
     </div>
   );
 };
