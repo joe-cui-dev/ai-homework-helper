@@ -17,8 +17,14 @@ interface ResultCardProps {
   practiceStatus?: "active" | "ended";
 }
 
-export function ResultCard({ packet, onPractise, practiceStatus }: ResultCardProps) {
+export function ResultCard({
+  packet,
+  onPractise,
+  practiceStatus,
+}: ResultCardProps) {
   const [hintOpen, setHintOpen] = useState(false);
+  const [coachOpen, setCoachOpen] = useState(false);
+  const [watchOpen, setWatchOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const copyHint = async () => {
@@ -66,47 +72,69 @@ export function ResultCard({ packet, onPractise, practiceStatus }: ResultCardPro
       </div>
 
       {/* How to coach */}
-      <div>
-        <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">
+      <div className="border-t border-gray-100 pt-4">
+        <button
+          onClick={() => setCoachOpen((v) => !v)}
+          className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors"
+        >
           How to coach
-        </h2>
-        <p className="text-gray-700 leading-relaxed text-sm whitespace-pre-line">
-          {packet.howToCoach}
-        </p>
+          <svg
+            className={`w-3 h-3 transition-transform ${coachOpen ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        </button>
+        {coachOpen && (
+          <p className="mt-2 text-gray-700 leading-relaxed text-sm whitespace-pre-line">
+            {packet.howToCoach}
+          </p>
+        )}
       </div>
 
       {/* Watch for */}
       {packet.watchFor.length > 0 && (
-        <div>
-          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+        <div className="border-t border-gray-100 pt-4">
+          <button
+            onClick={() => setWatchOpen((v) => !v)}
+            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors"
+          >
             Watch for
-          </h2>
-          <ul className="space-y-1.5">
-            {packet.watchFor.map((item, i) => (
-              <li
-                key={i}
-                className="flex items-start gap-2 text-sm text-gray-700 leading-relaxed"
-              >
-                <span className="text-amber-500 mt-1 flex-shrink-0">•</span>
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
+            <svg
+              className={`w-3 h-3 transition-transform ${watchOpen ? "rotate-180" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </button>
+          {watchOpen && (
+            <ul className="mt-2 space-y-1.5">
+              {packet.watchFor.map((item, i) => (
+                <li
+                  key={i}
+                  className="flex items-start gap-2 text-sm text-gray-700 leading-relaxed"
+                >
+                  <span className="text-amber-500 mt-1 flex-shrink-0">•</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
-
-      {/* Practise this — entry point to the Phase 2 Practice Tutor Loop */}
-      {onPractise && (
-        <button
-          onClick={onPractise}
-          className="w-full py-2 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 transition-colors"
-        >
-          {practiceStatus === "active"
-            ? "Resume practice"
-            : practiceStatus === "ended"
-              ? "Start a new practice"
-              : "Practise this with my child"}
-        </button>
       )}
 
       {/* Child hint (collapsible, copy-to-clipboard) */}
@@ -145,6 +173,20 @@ export function ResultCard({ packet, onPractise, practiceStatus }: ResultCardPro
             </div>
           )}
         </div>
+      )}
+
+      {/* Practise this — entry point to the Phase 2 Practice Tutor Loop */}
+      {onPractise && (
+        <button
+          onClick={onPractise}
+          className="w-full py-2 rounded-xl bg-brand-600 text-white text-sm font-bold hover:bg-brand-700 transition-colors"
+        >
+          {practiceStatus === "active"
+            ? "Resume practice"
+            : practiceStatus === "ended"
+              ? "Start a new practice"
+              : "Practise this with my child"}
+        </button>
       )}
     </div>
   );

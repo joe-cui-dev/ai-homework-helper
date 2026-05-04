@@ -15,7 +15,10 @@ import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { v4 as uuidv4 } from "uuid";
 import { analyzePages } from "./analyzer";
-import { generateCoachingPackets } from "./coachingPacket";
+import {
+  chunkQuestionsForPacketCall,
+  generateCoachingPackets,
+} from "./coachingPacket";
 import { saveSession, uploadSessionImages } from "./storage";
 import type { BatchPacket, StreamEvent } from "./types";
 import { logger } from "./logger";
@@ -224,12 +227,29 @@ export const handler = awslambda.streamifyResponse(
         );
       }
 
-      // ── Single coaching-packet generation call ──────────────────────────
-      const packets = await generateCoachingPackets(
-        validatedImages,
+      // ── Coaching-packet generation (chunked, parallel) ──────────────────
+      // Splits questions into chunks (by source page, then by size cap) so
+      // that each Bedrock call stays under the output-token ceiling. All
+      // chunks share the same article context.
+      const chunks = chunkQuestionsForPacketCall(
         analysis.questions,
-        analysis.articleContext,
+        validatedImages,
       );
+      logger.info("packet_chunks", {
+        chunkCount: chunks.length,
+        chunkSizes: chunks.map((c) => c.questions.length),
+      });
+
+      const chunkResults = await Promise.all(
+        chunks.map((chunk) =>
+          generateCoachingPackets(
+            chunk.images,
+            chunk.questions,
+            analysis.articleContext,
+          ),
+        ),
+      );
+      const packets = chunkResults.flat();
 
       // Index packets by questionId so we can join with the source question text.
       const packetsById = new Map(packets.map((p) => [p.questionId, p]));
