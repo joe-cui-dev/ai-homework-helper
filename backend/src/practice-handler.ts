@@ -183,6 +183,8 @@ export const handler = awslambda.streamifyResponse(
         isSessionEnded: result.isSessionEnded,
         endedReason: result.endedReason,
         finalSummary: result.finalSummary,
+        turnUsage: result.turnUsage,
+        sessionUsage: result.session.totalUsage,
       });
 
       logger.info("practice_turn_complete", {

@@ -5,6 +5,7 @@ import { ProgressFeed } from "./ProgressFeed";
 import { HistorySidebar } from "./HistorySidebar";
 import { PracticeModal } from "./PracticeModal";
 import { useHomeworkStream } from "../hooks/useHomeworkStream";
+import { formatUsage } from "../utils/formatUsage";
 import type { CoachingPacket } from "../types";
 
 interface PracticeModalState {
@@ -27,6 +28,7 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
     packets,
     pending,
     totalQuestions,
+    usage,
     error,
     submit,
     stop,
@@ -147,6 +149,12 @@ export const HomePage = ({ email, token, onLogout }: HomePageProps) => {
               onPractise={openPractice}
             />
           )}
+
+        {(isDone || isStopped) && usage && (
+          <p className="text-xs text-gray-500 text-center px-1">
+            Batch usage: {formatUsage(usage)}
+          </p>
+        )}
 
         {/* Error */}
         {isError && (

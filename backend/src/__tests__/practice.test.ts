@@ -9,6 +9,20 @@ import type { CoachingPacket, PracticeSession } from "../types";
 jest.mock("../bedrock", () => ({
   converseWithTools: jest.fn(),
   callClaude: jest.fn(),
+  buildUsage: (i: number, o: number) => ({
+    inputTokens: i,
+    outputTokens: o,
+    costUsd: 0,
+  }),
+  sumUsage: (...usages: { inputTokens: number; outputTokens: number }[]) => {
+    let i = 0;
+    let o = 0;
+    for (const u of usages) {
+      i += u.inputTokens;
+      o += u.outputTokens;
+    }
+    return { inputTokens: i, outputTokens: o, costUsd: 0 };
+  },
 }));
 
 jest.mock("../logger", () => ({
@@ -50,13 +64,17 @@ const blankSession = (overrides: Partial<PracticeSession> = {}): PracticeSession
   problems: [],
   messages: [],
   toolLog: [],
+  totalUsage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   ...overrides,
 });
+
+const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
 const toolUseResponse = (
   blocks: Array<{ name: string; input: unknown; toolUseId?: string }>,
 ) => ({
   stopReason: "tool_use",
+  usage: ZERO_USAGE,
   message: {
     role: "assistant",
     content: blocks.map((b, i) => ({
@@ -68,6 +86,9 @@ const toolUseResponse = (
     })),
   },
 });
+
+// Wrap a JSON-string Claude response in the new { text, usage } shape.
+const claudeResult = (text: string) => ({ text, usage: ZERO_USAGE });
 
 beforeEach(() => {
   converseWithTools.mockReset();
@@ -96,7 +117,9 @@ describe("TOOL_SCHEMA", () => {
 describe("runPracticeTurn — cold start", () => {
   it("seeds messages with a kickoff and runs generate_problem → end_turn", async () => {
     callClaude.mockResolvedValueOnce(
-      JSON.stringify({ problem: "What is 5 + 7?", expectedAnswer: "12" }),
+      claudeResult(
+        JSON.stringify({ problem: "What is 5 + 7?", expectedAnswer: "12" }),
+      ),
     );
     converseWithTools
       .mockResolvedValueOnce(
@@ -151,18 +174,22 @@ describe("runPracticeTurn — recovery branching", () => {
     callClaude
       .mockResolvedValueOnce(
         // evaluate_attempt
-        JSON.stringify({
-          verdict: "concept_gap",
-          explanation: "Used subtraction instead of addition.",
-        }),
+        claudeResult(
+          JSON.stringify({
+            verdict: "concept_gap",
+            explanation: "Used subtraction instead of addition.",
+          }),
+        ),
       )
       .mockResolvedValueOnce(
         // worked_example
-        JSON.stringify({ example: "Worked: 4+3=7. Add 4 and 3 together." }),
+        claudeResult(
+          JSON.stringify({ example: "Worked: 4+3=7. Add 4 and 3 together." }),
+        ),
       )
       .mockResolvedValueOnce(
         // generate_problem
-        JSON.stringify({ problem: "3+4", expectedAnswer: "7" }),
+        claudeResult(JSON.stringify({ problem: "3+4", expectedAnswer: "7" })),
       );
 
     converseWithTools
@@ -219,7 +246,9 @@ describe("runPracticeTurn — mastery", () => {
     });
 
     callClaude.mockResolvedValueOnce(
-      JSON.stringify({ verdict: "correct", explanation: "Right." }),
+      claudeResult(
+        JSON.stringify({ verdict: "correct", explanation: "Right." }),
+      ),
     );
     converseWithTools
       .mockResolvedValueOnce(
@@ -383,6 +412,7 @@ describe("runPracticeTurn — guardrail", () => {
   it("throws with the guardrail message", async () => {
     converseWithTools.mockResolvedValueOnce({
       stopReason: "guardrail_intervened",
+      usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
       message: {
         role: "assistant",
         content: [{ text: "Blocked by content filter." }],

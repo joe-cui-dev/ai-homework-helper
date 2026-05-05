@@ -14,7 +14,7 @@ import {
   ListObjectsV2Command,
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
-import type { CoachingPacket } from "./types";
+import type { CoachingPacket, TokenUsage } from "./types";
 import { logger } from "./logger";
 
 export interface BatchQuestion {
@@ -28,6 +28,10 @@ export interface SessionRecord {
   timestamp: string;
   imageKeys?: string[];
   questions: BatchQuestion[];
+  // Total tokens used to produce the entire batch (analyze + chunked packet
+  // calls). Optional for backward compatibility with sessions written before
+  // usage tracking landed.
+  usage?: TokenUsage;
 }
 
 export interface SessionPage {
@@ -42,6 +46,7 @@ export const saveSession = async (
   data: { timestamp: string; questions: BatchQuestion[] },
   studentId?: string,
   imageKeys?: string[],
+  usage?: TokenUsage,
 ): Promise<void> => {
   const bucket = process.env.S3_BUCKET_NAME;
   if (!bucket) {
@@ -52,7 +57,9 @@ export const saveSession = async (
     ? `sessions/${studentId}/${sessionId}.json`
     : `sessions/${sessionId}.json`;
 
-  const body = imageKeys?.length ? { ...data, imageKeys } : data;
+  const body: Record<string, unknown> = { ...data };
+  if (imageKeys?.length) body.imageKeys = imageKeys;
+  if (usage) body.usage = usage;
 
   await s3.send(
     new PutObjectCommand({
@@ -111,6 +118,7 @@ export const getRecentSessions = async (
         timestamp: (raw.timestamp as string) ?? "",
         imageKeys: raw.imageKeys as string[] | undefined,
         questions: (raw.questions as BatchQuestion[] | undefined) ?? [],
+        usage: raw.usage as TokenUsage | undefined,
       } as SessionRecord;
     }),
   );
@@ -209,6 +217,7 @@ export const listSessions = async (
         timestamp: (raw.timestamp as string) ?? "",
         imageKeys: raw.imageKeys as string[] | undefined,
         questions: (raw.questions as BatchQuestion[] | undefined) ?? [],
+        usage: raw.usage as TokenUsage | undefined,
       } as SessionRecord;
     }),
   );

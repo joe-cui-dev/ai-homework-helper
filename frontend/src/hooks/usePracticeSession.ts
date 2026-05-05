@@ -6,6 +6,7 @@ import {
 } from "../services/practiceApi";
 import type {
   PracticeStreamEvent,
+  TokenUsage,
   TranscriptEntry,
 } from "../types";
 
@@ -27,6 +28,8 @@ interface UsePracticeSessionReturn {
   practiceSessionId: string | null;
   transcript: TranscriptEntry[];
   toolEvents: ToolEvent[];
+  sessionUsage: TokenUsage | null;
+  turnCount: number;
   finalSummary: string | null;
   error: string | null;
   start: (batchId: string, questionId: number, token: string) => Promise<void>;
@@ -40,6 +43,8 @@ export const usePracticeSession = (): UsePracticeSessionReturn => {
   const [practiceSessionId, setPracticeSessionId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
+  const [sessionUsage, setSessionUsage] = useState<TokenUsage | null>(null);
+  const [turnCount, setTurnCount] = useState(0);
   const [finalSummary, setFinalSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +56,8 @@ export const usePracticeSession = (): UsePracticeSessionReturn => {
     setPracticeSessionId(null);
     setTranscript([]);
     setToolEvents([]);
+    setSessionUsage(null);
+    setTurnCount(0);
     setFinalSummary(null);
     setError(null);
   }, []);
@@ -76,6 +83,8 @@ export const usePracticeSession = (): UsePracticeSessionReturn => {
           finalSummary: event.finalSummary,
         },
       ]);
+      setSessionUsage(event.sessionUsage);
+      setTurnCount((n) => n + 1);
       setToolEvents([]);
       if (event.isSessionEnded) {
         setFinalSummary(event.finalSummary ?? null);
@@ -154,6 +163,8 @@ export const usePracticeSession = (): UsePracticeSessionReturn => {
     practiceSessionId,
     transcript,
     toolEvents,
+    sessionUsage,
+    turnCount,
     finalSummary,
     error,
     start,

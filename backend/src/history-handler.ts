@@ -10,6 +10,7 @@ import { listSessions } from "./storage";
 import type { BatchQuestion } from "./storage";
 import { listPracticeSessionsForBatch } from "./practiceStorage";
 import type { PracticeSessionSummary } from "./practiceStorage";
+import type { TokenUsage } from "./types";
 import { logger } from "./logger";
 
 const verifier = CognitoJwtVerifier.create({
@@ -31,6 +32,7 @@ interface SessionSummary {
   subjects: string[];
   imageUrls: string[];
   questions: QuestionWithPractice[];
+  usage?: TokenUsage;
 }
 
 export const handler = async (
@@ -73,7 +75,7 @@ export const handler = async (
   const { sessions, nextCursor } = await listSessions(studentId, cursor, limit);
 
   const summaries: SessionSummary[] = await Promise.all(
-    sessions.map(async ({ imageKeys, questions, sessionId, timestamp }) => {
+    sessions.map(async ({ imageKeys, questions, sessionId, timestamp, usage }) => {
       const [imageUrls, practiceSummaries] = await Promise.all([
         imageKeys?.length
           ? Promise.all(
@@ -104,6 +106,7 @@ export const handler = async (
         subjects,
         imageUrls,
         questions: questionsWithPractice,
+        usage,
       };
     }),
   );

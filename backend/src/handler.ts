@@ -14,6 +14,7 @@
 import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { v4 as uuidv4 } from "uuid";
+import { sumUsage } from "./bedrock";
 import { analyzePages } from "./analyzer";
 import {
   chunkQuestionsForPacketCall,
@@ -183,7 +184,10 @@ export const handler = awslambda.streamifyResponse(
 
       // ── Page analysis ───────────────────────────────────────────────────
       writeEvent({ type: "analyzing" });
-      const analysis = await analyzePages(validatedImages, trimmedQuestion);
+      const { analysis, usage: analyzeUsage } = await analyzePages(
+        validatedImages,
+        trimmedQuestion,
+      );
 
       if (analysis.questions.length === 0) {
         logger.warn("analyzer_no_questions_found");
@@ -249,7 +253,16 @@ export const handler = awslambda.streamifyResponse(
           ),
         ),
       );
-      const packets = chunkResults.flat();
+      const packets = chunkResults.flatMap((r) => r.packets);
+      const batchUsage = sumUsage(
+        analyzeUsage,
+        ...chunkResults.map((r) => r.usage),
+      );
+      logger.info("batch_usage", {
+        inputTokens: batchUsage.inputTokens,
+        outputTokens: batchUsage.outputTokens,
+        costUsd: batchUsage.costUsd,
+      });
 
       // Index packets by questionId so we can join with the source question text.
       const packetsById = new Map(packets.map((p) => [p.questionId, p]));
@@ -287,6 +300,7 @@ export const handler = awslambda.streamifyResponse(
           },
           studentId,
           batchImageKeys.length ? batchImageKeys : undefined,
+          batchUsage,
         );
       } catch (saveErr) {
         logger.error(
@@ -295,7 +309,12 @@ export const handler = awslambda.streamifyResponse(
         );
       }
 
-      writeEvent({ type: "complete", batchId, packets: allBatchPackets });
+      writeEvent({
+        type: "complete",
+        batchId,
+        packets: allBatchPackets,
+        usage: batchUsage,
+      });
       logger.info("request_complete", { packetCount: allBatchPackets.length });
     } catch (err) {
       logger.error(

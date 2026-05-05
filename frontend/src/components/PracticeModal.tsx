@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { usePracticeSession } from "../hooks/usePracticeSession";
+import { formatUsageCompact } from "../utils/formatUsage";
 import type { CoachingPacket } from "../types";
 
 const TOOL_LABEL: Record<string, string> = {
@@ -33,6 +34,8 @@ export function PracticeModal({
     status,
     transcript,
     toolEvents,
+    sessionUsage,
+    turnCount,
     finalSummary,
     error,
     start,
@@ -94,6 +97,12 @@ export function PracticeModal({
               Practice
             </p>
             <p className="text-sm text-gray-700 truncate">{questionText}</p>
+            {sessionUsage && (
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                {turnCount} turn{turnCount === 1 ? "" : "s"} ·{" "}
+                {formatUsageCompact(sessionUsage)}
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}

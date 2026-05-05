@@ -23,6 +23,57 @@ const client = new BedrockRuntimeClient({});
 const GUARDRAIL_ID = process.env.BEDROCK_GUARDRAIL_ID;
 const GUARDRAIL_VERSION = process.env.BEDROCK_GUARDRAIL_VERSION;
 
+// ── Pricing ──────────────────────────────────────────────────────────────────
+// Colocated with the model id in CDK (infra/lib/stack.ts) and passed in via
+// env vars so future model swaps update price + id together. Defaults ensure
+// the backend doesn't crash if env vars are missing in local dev — it just
+// reports cost as 0.
+const INPUT_PRICE_PER_MTOK = parseFloat(
+  process.env.BEDROCK_INPUT_PRICE_PER_MTOK ?? "0",
+);
+const OUTPUT_PRICE_PER_MTOK = parseFloat(
+  process.env.BEDROCK_OUTPUT_PRICE_PER_MTOK ?? "0",
+);
+
+export const computeCostUsd = (
+  inputTokens: number,
+  outputTokens: number,
+): number => {
+  const cost =
+    (inputTokens / 1_000_000) * INPUT_PRICE_PER_MTOK +
+    (outputTokens / 1_000_000) * OUTPUT_PRICE_PER_MTOK;
+  // Round to 4 decimals — sub-cent precision is enough for display.
+  return Math.round(cost * 10_000) / 10_000;
+};
+
+// Helper: build a TokenUsage from raw counts using current price constants.
+export interface RawTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
+export const buildUsage = (
+  inputTokens: number,
+  outputTokens: number,
+): RawTokenUsage => ({
+  inputTokens,
+  outputTokens,
+  costUsd: computeCostUsd(inputTokens, outputTokens),
+});
+
+export const sumUsage = (
+  ...usages: RawTokenUsage[]
+): RawTokenUsage => {
+  let i = 0;
+  let o = 0;
+  for (const u of usages) {
+    i += u.inputTokens;
+    o += u.outputTokens;
+  }
+  return buildUsage(i, o);
+};
+
 const SYSTEM_PROMPT =
   "You are a helpful homework tutor for school students. Always respond in JSON.";
 
@@ -44,11 +95,16 @@ export const parseDataUrl = (
 // Single-turn API wrapper for pipeline skills (solve, explain, hint)
 // ---------------------------------------------------------------------------
 
+export interface CallClaudeResult {
+  text: string;
+  usage: RawTokenUsage;
+}
+
 export const callClaude = async (
   prompt: string,
   temperature: number = 0,
   image?: string,
-): Promise<string> => {
+): Promise<CallClaudeResult> => {
   const modelId = process.env.BEDROCK_MODEL_ID;
   if (!modelId) {
     throw new Error("BEDROCK_MODEL_ID environment variable is not set");
@@ -103,13 +159,20 @@ export const callClaude = async (
 
   const parsed = JSON.parse(Buffer.from(response.body).toString("utf-8")) as {
     content: Array<{ type: string; text: string }>;
+    usage?: { input_tokens?: number; output_tokens?: number };
   };
   if (!parsed.content?.length || !parsed.content[0]?.text) {
     throw new Error(
       "The content filter blocked this response. Please rephrase the question.",
     );
   }
-  return parsed.content[0].text;
+  return {
+    text: parsed.content[0].text,
+    usage: buildUsage(
+      parsed.usage?.input_tokens ?? 0,
+      parsed.usage?.output_tokens ?? 0,
+    ),
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -126,6 +189,7 @@ export interface BedrockMessage {
 export interface ConverseResponse {
   stopReason: string;
   message: BedrockMessage;
+  usage: RawTokenUsage;
 }
 
 export const converseWithTools = async (
@@ -176,6 +240,10 @@ export const converseWithTools = async (
   return {
     stopReason: response.stopReason ?? "end_turn",
     message: response.output!.message! as unknown as BedrockMessage,
+    usage: buildUsage(
+      response.usage?.inputTokens ?? 0,
+      response.usage?.outputTokens ?? 0,
+    ),
   };
 };
 

@@ -3,6 +3,17 @@
 // define its own event types in a separate handler.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Token usage / cost ───────────────────────────────────────────────────────
+// Returned by every Bedrock call wrapper. Aggregated server-side and surfaced
+// to the frontend in stream events and persisted in S3 alongside session JSON.
+// costUsd is computed server-side from price constants colocated with the
+// model id in CDK (passed via env vars to each Lambda).
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
 export type Subject = "math" | "science" | "english" | "other";
 export type YearLevel =
   | "year-1"
@@ -54,7 +65,12 @@ export type StreamEvent =
       text: string;
     }
   | { type: "packet_complete"; questionId: number; packet: CoachingPacket }
-  | { type: "complete"; batchId: string; packets: BatchPacket[] }
+  | {
+      type: "complete";
+      batchId: string;
+      packets: BatchPacket[];
+      usage: TokenUsage;
+    }
   | { type: "error"; message: string };
 
 // ── Phase 2: Practice Tutor Loop ─────────────────────────────────────────────
@@ -109,6 +125,8 @@ export interface PracticeSession {
   messages: BedrockMessage[];
   toolLog: PracticeToolLogEntry[];
   finalSummary?: string;
+  // Cumulative usage across every turn in this practice session.
+  totalUsage: TokenUsage;
 }
 
 // Wire format from /practice/start, /practice/turn, /practice/end.
@@ -124,5 +142,9 @@ export type PracticeStreamEvent =
       isSessionEnded: boolean;
       endedReason?: EndedReason;
       finalSummary?: string;
+      // Usage for THIS turn only.
+      turnUsage: TokenUsage;
+      // Cumulative usage across the entire practice session so far.
+      sessionUsage: TokenUsage;
     }
   | { type: "error"; message: string };

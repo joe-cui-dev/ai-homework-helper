@@ -3,6 +3,7 @@ import type { CoachingPacket, SessionSummary } from "../types";
 import { ResultCard } from "./ResultCard";
 import { PracticeModal } from "./PracticeModal";
 import { subjectColour } from "../utils/subjectColour";
+import { formatUsageCompact } from "../utils/formatUsage";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-AU", {
@@ -54,6 +55,11 @@ export function SessionDetailModal({ session, token, onClose }: SessionDetailMod
               </span>
             ))}
             <span className="text-xs text-gray-400">{formatDate(session.timestamp)}</span>
+            {session.usage && (
+              <span className="text-xs text-gray-400">
+                · {formatUsageCompact(session.usage)}
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}

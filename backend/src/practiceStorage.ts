@@ -13,7 +13,7 @@ import {
   ListObjectsV2Command,
   NoSuchKey,
 } from "@aws-sdk/client-s3";
-import type { CoachingPacket, PracticeSession } from "./types";
+import type { CoachingPacket, PracticeSession, TokenUsage } from "./types";
 import { logger } from "./logger";
 
 const s3 = new S3Client({});
@@ -120,6 +120,7 @@ export const createPracticeSession = async (
     problems: [],
     messages: [],
     toolLog: [],
+    totalUsage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   };
   await savePracticeSession(session);
   return session;
@@ -137,6 +138,10 @@ export const loadPracticeSession = async (
   const body = await response.Body?.transformToString("utf-8");
   if (!body) throw new Error("Practice session is empty.");
   const session = JSON.parse(body) as PracticeSession;
+  // Defensive: older sessions written before usage tracking landed.
+  if (!session.totalUsage) {
+    session.totalUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  }
 
   if (isStale(session)) {
     session.status = "ended";
@@ -181,6 +186,7 @@ export interface PracticeSessionSummary {
   endedReason?: PracticeSession["endedReason"];
   problemCount: number;
   updatedAt: string;
+  totalUsage?: TokenUsage;
 }
 
 export const listPracticeSessionsForBatch = async (
@@ -210,6 +216,7 @@ export const listPracticeSessionsForBatch = async (
         endedReason: session.endedReason,
         problemCount: session.problemCount,
         updatedAt: session.updatedAt,
+        totalUsage: session.totalUsage,
       };
     }),
   );

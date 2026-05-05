@@ -18,6 +18,13 @@ import * as path from "path";
 const HAIKU_45_MODEL_ID = "au.anthropic.claude-haiku-4-5-20251001-v1:0";
 const HAIKU_45_BASE_MODEL_ID = "anthropic.claude-haiku-4-5-20251001-v1:0";
 
+// AWS Bedrock pricing for Claude Haiku 4.5 — verify against the latest values
+// at https://aws.amazon.com/bedrock/pricing/ when prices change. Quoted in USD
+// per 1,000,000 tokens. Passed to both Lambdas via env vars so the backend can
+// compute the dollar cost of each request server-side and surface it to the UI.
+const HAIKU_45_INPUT_PRICE_PER_MTOK = "1.00";
+const HAIKU_45_OUTPUT_PRICE_PER_MTOK = "5.00";
+
 interface AiHomeworkHelperStackProps extends cdk.StackProps {
   portfolioDistributionId: string;
 }
@@ -181,6 +188,8 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       reservedConcurrentExecutions: 10,
       environment: {
         BEDROCK_MODEL_ID: HAIKU_45_MODEL_ID,
+        BEDROCK_INPUT_PRICE_PER_MTOK: HAIKU_45_INPUT_PRICE_PER_MTOK,
+        BEDROCK_OUTPUT_PRICE_PER_MTOK: HAIKU_45_OUTPUT_PRICE_PER_MTOK,
         S3_BUCKET_NAME: sessionBucket.bucketName,
         BEDROCK_GUARDRAIL_ID: guardrail.attrGuardrailId,
         BEDROCK_GUARDRAIL_VERSION: guardrailVersion.attrVersion,
@@ -355,6 +364,8 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       reservedConcurrentExecutions: 5,
       environment: {
         BEDROCK_MODEL_ID: HAIKU_45_MODEL_ID,
+        BEDROCK_INPUT_PRICE_PER_MTOK: HAIKU_45_INPUT_PRICE_PER_MTOK,
+        BEDROCK_OUTPUT_PRICE_PER_MTOK: HAIKU_45_OUTPUT_PRICE_PER_MTOK,
         S3_BUCKET_NAME: sessionBucket.bucketName,
         BEDROCK_GUARDRAIL_ID: guardrail.attrGuardrailId,
         BEDROCK_GUARDRAIL_VERSION: guardrailVersion.attrVersion,

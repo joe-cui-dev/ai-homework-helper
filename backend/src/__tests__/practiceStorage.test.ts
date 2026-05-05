@@ -62,6 +62,7 @@ const sessionJson = (
   problems: [],
   messages: [],
   toolLog: [],
+  totalUsage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   ...overrides,
 });
 

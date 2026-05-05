@@ -1,5 +1,11 @@
 // Mirrored from backend/src/types.ts — kept separate to avoid circular workspace imports.
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
 export type Subject = "math" | "science" | "english" | "other";
 export type YearLevel =
   | "year-1"
@@ -39,6 +45,7 @@ export interface SessionSummary {
   subjects: string[];
   imageUrls: string[];
   questions: SessionQuestion[];
+  usage?: TokenUsage;
 }
 
 export type StreamEvent =
@@ -51,7 +58,12 @@ export type StreamEvent =
       text: string;
     }
   | { type: "packet_complete"; questionId: number; packet: CoachingPacket }
-  | { type: "complete"; batchId: string; packets: BatchPacket[] }
+  | {
+      type: "complete";
+      batchId: string;
+      packets: BatchPacket[];
+      usage: TokenUsage;
+    }
   | { type: "error"; message: string };
 
 // ── Phase 2: Practice Tutor Loop ─────────────────────────────────────────────
@@ -64,6 +76,7 @@ export interface PracticeSessionSummary {
   endedReason?: EndedReason;
   problemCount: number;
   updatedAt: string;
+  totalUsage?: TokenUsage;
 }
 
 // Per-turn UI-facing transcript entry. Built up in usePracticeSession from
@@ -89,5 +102,7 @@ export type PracticeStreamEvent =
       isSessionEnded: boolean;
       endedReason?: EndedReason;
       finalSummary?: string;
+      turnUsage: TokenUsage;
+      sessionUsage: TokenUsage;
     }
   | { type: "error"; message: string };

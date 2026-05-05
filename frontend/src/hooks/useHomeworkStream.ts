@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { streamHomework } from "../services/api";
-import type { BatchPacket, StreamEvent } from "../types";
+import type { BatchPacket, StreamEvent, TokenUsage } from "../types";
 
 type Status = "idle" | "analyzing" | "generating" | "done" | "stopped" | "error";
 
@@ -16,6 +16,7 @@ interface UseHomeworkStreamReturn {
   packets: BatchPacket[];
   pending: PendingPacket[];
   totalQuestions: number;
+  usage: TokenUsage | null;
   error: string | null;
   submit: (question: string, token: string, images?: string[]) => Promise<void>;
   stop: () => void;
@@ -28,6 +29,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
   const [packets, setPackets] = useState<BatchPacket[]>([]);
   const [pending, setPending] = useState<PendingPacket[]>([]);
   const [totalQuestions, setTotalQuestions] = useState(0);
+  const [usage, setUsage] = useState<TokenUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // abortRef gates stale event processing; abortControllerRef cancels the fetch.
@@ -51,6 +53,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     setPackets([]);
     setPending([]);
     setTotalQuestions(0);
+    setUsage(null);
     setError(null);
     pendingTextRef.current.clear();
   }, []);
@@ -66,6 +69,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
       setPackets([]);
       setPending([]);
       setTotalQuestions(0);
+      setUsage(null);
       setError(null);
 
       const handleEvent = (event: StreamEvent) => {
@@ -106,6 +110,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
         } else if (event.type === "complete") {
           setBatchId(event.batchId);
           setPackets(event.packets);
+          setUsage(event.usage);
           setPending([]);
           setStatus("done");
         } else if (event.type === "error") {
@@ -141,6 +146,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     packets,
     pending,
     totalQuestions,
+    usage,
     error,
     submit,
     stop,

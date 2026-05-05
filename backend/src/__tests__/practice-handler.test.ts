@@ -90,8 +90,11 @@ const session = (overrides: Partial<PracticeSession> = {}): PracticeSession => (
   problems: [],
   messages: [],
   toolLog: [],
+  totalUsage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   ...overrides,
 });
+
+const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
 const event = (
   rawPath: string,
@@ -154,6 +157,7 @@ describe("practice-handler routing", () => {
       agentMessage: "Let's start.",
       problem: "5+7",
       isSessionEnded: false,
+      turnUsage: ZERO_USAGE,
     });
 
     await handler(
@@ -201,6 +205,7 @@ describe("practice-handler routing", () => {
       agentMessage: "Try this next.",
       problem: "8+6",
       isSessionEnded: false,
+      turnUsage: ZERO_USAGE,
     });
 
     await handler(
@@ -250,6 +255,7 @@ describe("practice-handler routing", () => {
       isSessionEnded: true,
       endedReason: "abandoned",
       finalSummary: "Parent ended early.",
+      turnUsage: ZERO_USAGE,
     });
 
     await handler(

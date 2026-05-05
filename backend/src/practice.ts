@@ -13,8 +13,8 @@
 //
 // Cost guardrails are enforced in the dispatcher (not just the prompt).
 // ─────────────────────────────────────────────────────────────────────────────
-import type { Tool, BedrockMessage } from "./bedrock";
-import { callClaude, converseWithTools } from "./bedrock";
+import type { RawTokenUsage, Tool, BedrockMessage } from "./bedrock";
+import { buildUsage, callClaude, converseWithTools, sumUsage } from "./bedrock";
 import type {
   CoachingPacket,
   PracticeProblem,
@@ -38,6 +38,9 @@ export interface TurnResult {
   isSessionEnded: boolean;
   endedReason?: PracticeSession["endedReason"];
   finalSummary?: string;
+  // Usage incurred during this turn only (sum of all Bedrock calls inside the
+  // agent loop + any inner tool dispatches).
+  turnUsage: RawTokenUsage;
 }
 
 // ---------------------------------------------------------------------------
@@ -240,9 +243,12 @@ const safeJsonParse = <T>(raw: string, fallback: T): T => {
 const currentProblem = (session: PracticeSession): PracticeProblem | undefined =>
   session.problems[session.problems.length - 1];
 
+type AccumulateUsage = (usage: RawTokenUsage) => void;
+
 const generateProblem = async (
   session: PracticeSession,
   input: { difficulty: "easier" | "same" | "harder"; focus?: string },
+  accumulateUsage: AccumulateUsage,
 ): Promise<{ problem: string; difficulty: string }> => {
   if (session.problemCount >= MAX_PROBLEMS_PER_SESSION) {
     throw new Error(
@@ -260,7 +266,8 @@ ${input.focus ? `Focus this problem on: ${input.focus}\n` : ""}${previousProblem
 Return ONLY valid JSON with no markdown fences:
 { "problem": "<problem text the parent will read to the child>", "expectedAnswer": "<the correct answer in concise form>" }`;
 
-  const raw = await callClaude(prompt, 0.4);
+  const { text: raw, usage } = await callClaude(prompt, 0.4);
+  accumulateUsage(usage);
   const parsed = safeJsonParse(raw, { problem: "", expectedAnswer: "" });
   if (!parsed.problem || !parsed.expectedAnswer) {
     throw new Error("Failed to generate a practice problem. Please try again.");
@@ -280,6 +287,7 @@ Return ONLY valid JSON with no markdown fences:
 const evaluateAttempt = async (
   session: PracticeSession,
   input: { childResponse: string },
+  accumulateUsage: AccumulateUsage,
 ): Promise<{ verdict: Verdict; explanation: string; suggestedNext?: string }> => {
   const cur = currentProblem(session);
   if (!cur) {
@@ -309,7 +317,8 @@ Classify the attempt as ONE of:
 Return ONLY valid JSON with no markdown fences:
 { "verdict": "<one of the above>", "explanation": "<one short adult-tone sentence explaining the diagnosis>", "suggestedNext": "<optional one-line non-binding suggestion>" }`;
 
-  const raw = await callClaude(prompt, 0.2);
+  const { text: raw, usage } = await callClaude(prompt, 0.2);
+  accumulateUsage(usage);
   const parsed = safeJsonParse(raw, {
     verdict: "stuck" as Verdict,
     explanation: "Could not parse the diagnosis.",
@@ -319,6 +328,7 @@ Return ONLY valid JSON with no markdown fences:
 
 const giveHint = async (
   session: PracticeSession,
+  accumulateUsage: AccumulateUsage,
 ): Promise<{ hint: string }> => {
   const cur = currentProblem(session);
   if (!cur) {
@@ -331,7 +341,8 @@ Problem: ${cur.problem}
 Concept: ${packet.whyItWorks}
 
 Return ONLY valid JSON: { "hint": "<one short year-level-appropriate Socratic prompt>" }`;
-  const raw = await callClaude(prompt, 0.4);
+  const { text: raw, usage } = await callClaude(prompt, 0.4);
+  accumulateUsage(usage);
   const parsed = safeJsonParse(raw, { hint: "" });
   if (!parsed.hint) throw new Error("Failed to generate a hint.");
   return parsed;
@@ -339,6 +350,7 @@ Return ONLY valid JSON: { "hint": "<one short year-level-appropriate Socratic pr
 
 const workedExample = async (
   session: PracticeSession,
+  accumulateUsage: AccumulateUsage,
 ): Promise<{ example: string }> => {
   const cur = currentProblem(session);
   if (!cur) {
@@ -351,7 +363,8 @@ Current problem (do not solve this; show a similar one): ${cur.problem}
 Concept: ${packet.whyItWorks}
 
 Return ONLY valid JSON: { "example": "<the worked example, multi-line plain text>" }`;
-  const raw = await callClaude(prompt, 0.3);
+  const { text: raw, usage } = await callClaude(prompt, 0.3);
+  accumulateUsage(usage);
   const parsed = safeJsonParse(raw, { example: "" });
   if (!parsed.example) throw new Error("Failed to produce a worked example.");
   return parsed;
@@ -360,6 +373,7 @@ Return ONLY valid JSON: { "example": "<the worked example, multi-line plain text
 const changeTeachingStyle = async (
   session: PracticeSession,
   input: { style: TeachingStyle },
+  accumulateUsage: AccumulateUsage,
 ): Promise<{ altExplanation: string }> => {
   const cur = currentProblem(session);
   if (!cur) {
@@ -379,7 +393,8 @@ Style guidance:
 - real_world: use a concrete real-world scenario the child can relate to.
 
 Return ONLY valid JSON: { "altExplanation": "<the alternative explanation, plain text>" }`;
-  const raw = await callClaude(prompt, 0.4);
+  const { text: raw, usage } = await callClaude(prompt, 0.4);
+  accumulateUsage(usage);
   const parsed = safeJsonParse(raw, { altExplanation: "" });
   if (!parsed.altExplanation) {
     throw new Error("Failed to produce an alternative explanation.");
@@ -390,6 +405,7 @@ Return ONLY valid JSON: { "altExplanation": "<the alternative explanation, plain
 const lookupPrerequisiteSkill = async (
   session: PracticeSession,
   input: { concept: string },
+  accumulateUsage: AccumulateUsage,
 ): Promise<{ prerequisite: string; why: string }> => {
   const packet = session.sourceCoachingPacket;
   const prompt = `Identify the single foundational/prerequisite skill a ${packet.yearLevel} child needs in order to master "${input.concept}". The child has shown they're missing it.
@@ -397,7 +413,8 @@ const lookupPrerequisiteSkill = async (
 Subject: ${packet.subject}
 
 Return ONLY valid JSON: { "prerequisite": "<short name of the prerequisite skill>", "why": "<one short adult-tone sentence explaining why mastering this prerequisite unblocks the current concept>" }`;
-  const raw = await callClaude(prompt, 0.2);
+  const { text: raw, usage } = await callClaude(prompt, 0.2);
+  accumulateUsage(usage);
   const parsed = safeJsonParse(raw, { prerequisite: "", why: "" });
   if (!parsed.prerequisite) {
     throw new Error("Failed to look up the prerequisite skill.");
@@ -414,6 +431,7 @@ export const dispatchPracticeTool = async (
   name: string,
   input: Record<string, unknown>,
   turnIndex: number,
+  accumulateUsage: AccumulateUsage = () => undefined,
 ): Promise<unknown> => {
   // end_turn is captured by the loop, never reaches here.
   // All other tools count toward the per-session cap.
@@ -430,17 +448,30 @@ export const dispatchPracticeTool = async (
       return generateProblem(
         session,
         input as { difficulty: "easier" | "same" | "harder"; focus?: string },
+        accumulateUsage,
       );
     case "evaluate_attempt":
-      return evaluateAttempt(session, input as { childResponse: string });
+      return evaluateAttempt(
+        session,
+        input as { childResponse: string },
+        accumulateUsage,
+      );
     case "give_hint":
-      return giveHint(session);
+      return giveHint(session, accumulateUsage);
     case "worked_example":
-      return workedExample(session);
+      return workedExample(session, accumulateUsage);
     case "change_teaching_style":
-      return changeTeachingStyle(session, input as { style: TeachingStyle });
+      return changeTeachingStyle(
+        session,
+        input as { style: TeachingStyle },
+        accumulateUsage,
+      );
     case "lookup_prerequisite_skill":
-      return lookupPrerequisiteSkill(session, input as { concept: string });
+      return lookupPrerequisiteSkill(
+        session,
+        input as { concept: string },
+        accumulateUsage,
+      );
     default:
       throw new Error(`Unknown practice tool: ${name}`);
   }
@@ -497,6 +528,15 @@ export const runPracticeTurn = async (
 
   const systemPrompt = buildSystemPrompt(session.sourceCoachingPacket);
 
+  // Accumulator for every Bedrock call inside this turn (the converseWithTools
+  // calls in the loop below + every tool implementation that calls callClaude).
+  let turnInput = 0;
+  let turnOutput = 0;
+  const accumulateUsage: AccumulateUsage = (u) => {
+    turnInput += u.inputTokens;
+    turnOutput += u.outputTokens;
+  };
+
   for (let iteration = 0; iteration < MAX_ITERATIONS_PER_TURN; iteration++) {
     logger.debug("practice_iteration", {
       iteration,
@@ -516,6 +556,7 @@ export const runPracticeTurn = async (
       toolChoice,
       4096,
     );
+    accumulateUsage(response.usage);
 
     session.messages.push(response.message);
 
@@ -575,6 +616,7 @@ export const runPracticeTurn = async (
             name,
             input as Record<string, unknown>,
             turnIndex,
+            accumulateUsage,
           );
           toolResultBlocks.push({
             toolResult: {
@@ -610,6 +652,8 @@ export const runPracticeTurn = async (
         session.endedReason = endTurnInput.endedReason;
         session.finalSummary = endTurnInput.finalSummary;
       }
+      const turnUsage = buildUsage(turnInput, turnOutput);
+      session.totalUsage = sumUsage(session.totalUsage, turnUsage);
       return {
         session,
         agentMessage: endTurnInput.agentMessage,
@@ -617,6 +661,7 @@ export const runPracticeTurn = async (
         isSessionEnded: endTurnInput.isSessionEnded,
         endedReason: endTurnInput.endedReason,
         finalSummary: endTurnInput.finalSummary,
+        turnUsage,
       };
     }
   }

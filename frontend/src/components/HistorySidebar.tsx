@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { SessionSummary } from "../types";
 import { useSessionHistory } from "../hooks/useSessionHistory";
 import { subjectColour } from "../utils/subjectColour";
+import { formatUsageCompact } from "../utils/formatUsage";
 import { SessionDetailModal } from "./SessionDetailModal";
 
 interface HistorySidebarProps {
@@ -44,6 +45,12 @@ function SessionCard({ session, onClick }: { session: SessionSummary; onClick: (
         <span className="inline-block text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
           +{extraCount} more
         </span>
+      )}
+
+      {session.usage && (
+        <p className="text-[11px] text-gray-400">
+          {formatUsageCompact(session.usage)}
+        </p>
       )}
 
       {session.imageUrls.length > 0 && (

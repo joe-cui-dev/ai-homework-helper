@@ -7,6 +7,11 @@ jest.mock("../bedrock", () => ({
     const match = url.match(/^data:(image\/(?:jpeg|png));base64,(.+)$/);
     return { mediaType: match![1], base64Data: match![2] };
   },
+  buildUsage: (i: number, o: number) => ({
+    inputTokens: i,
+    outputTokens: o,
+    costUsd: 0,
+  }),
 }));
 
 jest.mock("../logger", () => ({
@@ -47,13 +52,19 @@ beforeEach(() => {
 describe("generateCoachingPackets", () => {
   it("returns empty array when no questions provided", async () => {
     const result = await generateCoachingPackets([IMG], [], "article");
-    expect(result).toEqual([]);
+    expect(result.packets).toEqual([]);
+    expect(result.usage).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+    });
     expect(converseWithTools).not.toHaveBeenCalled();
   });
 
   it("parses packets out of the submit_coaching_packets tool input", async () => {
     converseWithTools.mockResolvedValueOnce({
       stopReason: "tool_use",
+      usage: { inputTokens: 100, outputTokens: 200, costUsd: 0.0011 },
       message: {
         role: "assistant",
         content: [
@@ -70,15 +81,17 @@ describe("generateCoachingPackets", () => {
 
     const result = await generateCoachingPackets([IMG], QUESTIONS, "Article body");
 
-    expect(result).toHaveLength(2);
-    expect(result[0].questionId).toBe(1);
-    expect(result[1].questionId).toBe(2);
-    expect(result[0].whyItWorks).toContain("Concept for question 1");
+    expect(result.packets).toHaveLength(2);
+    expect(result.packets[0].questionId).toBe(1);
+    expect(result.packets[1].questionId).toBe(2);
+    expect(result.packets[0].whyItWorks).toContain("Concept for question 1");
+    expect(result.usage.inputTokens).toBeGreaterThanOrEqual(0);
   });
 
   it("forces submit_coaching_packets via toolChoice", async () => {
     converseWithTools.mockResolvedValueOnce({
       stopReason: "tool_use",
+      usage: { inputTokens: 100, outputTokens: 200, costUsd: 0.0011 },
       message: {
         role: "assistant",
         content: [
@@ -106,6 +119,7 @@ describe("generateCoachingPackets", () => {
   it("includes the article text and per-question id list in the user message", async () => {
     converseWithTools.mockResolvedValueOnce({
       stopReason: "tool_use",
+      usage: { inputTokens: 100, outputTokens: 200, costUsd: 0.0011 },
       message: {
         role: "assistant",
         content: [
@@ -136,6 +150,7 @@ describe("generateCoachingPackets", () => {
   it("throws when guardrail intervenes, surfacing the message", async () => {
     converseWithTools.mockResolvedValueOnce({
       stopReason: "guardrail_intervened",
+      usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
       message: {
         role: "assistant",
         content: [{ text: "Blocked by content filter." }],
@@ -150,6 +165,7 @@ describe("generateCoachingPackets", () => {
   it("throws when Claude does not call the tool", async () => {
     converseWithTools.mockResolvedValueOnce({
       stopReason: "end_turn",
+      usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
       message: {
         role: "assistant",
         content: [{ text: "I cannot answer." }],

@@ -12,10 +12,15 @@
 // structurally prevent the cross-contamination bug where Claude collapses
 // multiple questions' answers into a single field.
 // ─────────────────────────────────────────────────────────────────────────────
-import type { Tool, BedrockMessage } from "./bedrock";
-import { converseWithTools, parseDataUrl } from "./bedrock";
+import type { RawTokenUsage, Tool, BedrockMessage } from "./bedrock";
+import { buildUsage, converseWithTools, parseDataUrl } from "./bedrock";
 import type { CoachingPacket, IdentifiedQuestion } from "./types";
 import { logger } from "./logger";
+
+export interface GenerateCoachingPacketsResult {
+  packets: CoachingPacket[];
+  usage: RawTokenUsage;
+}
 
 // Per-call cap on identified questions. Each packet is bounded by the schema
 // at ~600 output tokens (tldrAnswer + whyItWorks + howToCoach + watchFor +
@@ -207,8 +212,10 @@ export const generateCoachingPackets = async (
   images: string[],
   questions: IdentifiedQuestion[],
   articleContext?: string,
-): Promise<CoachingPacket[]> => {
-  if (questions.length === 0) return [];
+): Promise<GenerateCoachingPacketsResult> => {
+  if (questions.length === 0) {
+    return { packets: [], usage: buildUsage(0, 0) };
+  }
 
   // Build the user message: images first, then optional article, then the
   // structured question list as plain text so Claude can route per-id.
@@ -272,8 +279,10 @@ export const generateCoachingPackets = async (
       const input = toolUse.input as { packets: CoachingPacket[] };
       logger.info("packet_generate_complete", {
         packetCount: input.packets.length,
+        inputTokens: response.usage.inputTokens,
+        outputTokens: response.usage.outputTokens,
       });
-      return input.packets;
+      return { packets: input.packets, usage: response.usage };
     }
   }
 
