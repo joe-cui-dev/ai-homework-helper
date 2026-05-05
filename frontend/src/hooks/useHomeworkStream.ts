@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { streamHomework } from "../services/api";
-import type { BatchPacket, StreamEvent } from "../types";
+import type { BatchPacket, StreamEvent, TokenUsage } from "../types";
 
 type Status = "idle" | "analyzing" | "generating" | "done" | "stopped" | "error";
 
@@ -12,9 +12,11 @@ export interface PendingPacket {
 
 interface UseHomeworkStreamReturn {
   status: Status;
+  batchId: string | null;
   packets: BatchPacket[];
   pending: PendingPacket[];
   totalQuestions: number;
+  usage: TokenUsage | null;
   error: string | null;
   submit: (question: string, token: string, images?: string[]) => Promise<void>;
   stop: () => void;
@@ -23,9 +25,11 @@ interface UseHomeworkStreamReturn {
 
 export const useHomeworkStream = (): UseHomeworkStreamReturn => {
   const [status, setStatus] = useState<Status>("idle");
+  const [batchId, setBatchId] = useState<string | null>(null);
   const [packets, setPackets] = useState<BatchPacket[]>([]);
   const [pending, setPending] = useState<PendingPacket[]>([]);
   const [totalQuestions, setTotalQuestions] = useState(0);
+  const [usage, setUsage] = useState<TokenUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // abortRef gates stale event processing; abortControllerRef cancels the fetch.
@@ -45,9 +49,11 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     abortRef.current = true;
     abortControllerRef.current?.abort();
     setStatus("idle");
+    setBatchId(null);
     setPackets([]);
     setPending([]);
     setTotalQuestions(0);
+    setUsage(null);
     setError(null);
     pendingTextRef.current.clear();
   }, []);
@@ -59,9 +65,11 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
       abortRef.current = false;
       pendingTextRef.current.clear();
       setStatus("analyzing");
+      setBatchId(null);
       setPackets([]);
       setPending([]);
       setTotalQuestions(0);
+      setUsage(null);
       setError(null);
 
       const handleEvent = (event: StreamEvent) => {
@@ -72,6 +80,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
         } else if (event.type === "packet_start") {
           pendingTextRef.current.set(event.questionId, event.text);
           setTotalQuestions(event.total);
+          setBatchId(event.batchId);
           setStatus("generating");
           setPending((prev) => {
             // Avoid duplicates if the same id is announced twice.
@@ -99,7 +108,9 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
             prev.filter((p) => p.questionId !== event.questionId),
           );
         } else if (event.type === "complete") {
+          setBatchId(event.batchId);
           setPackets(event.packets);
+          setUsage(event.usage);
           setPending([]);
           setStatus("done");
         } else if (event.type === "error") {
@@ -131,9 +142,11 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
 
   return {
     status,
+    batchId,
     packets,
     pending,
     totalQuestions,
+    usage,
     error,
     submit,
     stop,

@@ -7,12 +7,14 @@ interface QuestionResultListProps {
   packets: BatchPacket[];
   pending: PendingPacket[];
   total: number;
+  onPractise?: (questionId: number, questionText: string, packet: BatchPacket["packet"]) => void;
 }
 
 export function QuestionResultList({
   packets,
   pending,
   total,
+  onPractise,
 }: QuestionResultListProps) {
   const showHeader = total > 1;
 
@@ -31,7 +33,14 @@ export function QuestionResultList({
               {bp.questionText}
             </p>
           )}
-          <ResultCard packet={bp.packet} />
+          <ResultCard
+            packet={bp.packet}
+            onPractise={
+              onPractise
+                ? () => onPractise(bp.questionId, bp.questionText, bp.packet)
+                : undefined
+            }
+          />
         </div>
       ))}
 

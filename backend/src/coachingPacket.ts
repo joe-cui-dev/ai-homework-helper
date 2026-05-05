@@ -12,13 +12,72 @@
 // structurally prevent the cross-contamination bug where Claude collapses
 // multiple questions' answers into a single field.
 // ─────────────────────────────────────────────────────────────────────────────
-import type { Tool, BedrockMessage } from "./bedrock";
-import { converseWithTools, parseDataUrl } from "./bedrock";
-import type {
-  CoachingPacket,
-  IdentifiedQuestion,
-} from "./types";
+import type { RawTokenUsage, Tool, BedrockMessage } from "./bedrock";
+import { buildUsage, converseWithTools, parseDataUrl } from "./bedrock";
+import type { CoachingPacket, IdentifiedQuestion } from "./types";
 import { logger } from "./logger";
+
+export interface GenerateCoachingPacketsResult {
+  packets: CoachingPacket[];
+  usage: RawTokenUsage;
+}
+
+// Per-call cap on identified questions. Each packet is bounded by the schema
+// at ~600 output tokens (tldrAnswer + whyItWorks + howToCoach + watchFor +
+// childHint + JSON framing). 7 packets ≈ 4200 tokens, comfortably under the
+// 8192-token output ceiling with margin for the model's own slack. Larger
+// batches (e.g. a 21-question worksheet) are chunked by chunkQuestionsForPacketCall
+// below into multiple parallel calls.
+export const MAX_QUESTIONS_PER_PACKET_CALL = 7;
+
+// ── Chunking helper ──────────────────────────────────────────────────────
+// Two-stage:
+//   1. Group by sourcePage so each chunk shares its page's image (cheaper
+//      vision tokens, naturally cohesive — same article, same diagram).
+//      Questions without a sourcePage fall into a single "all-images" group.
+//   2. Sub-split any group that exceeds MAX_QUESTIONS_PER_PACKET_CALL.
+// Article context is shared across all chunks (passed unchanged each call).
+export interface PacketCallChunk {
+  questions: IdentifiedQuestion[];
+  images: string[];
+}
+
+const chunkArray = <T>(arr: T[], size: number): T[][] => {
+  if (size <= 0) return [arr];
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
+
+export const chunkQuestionsForPacketCall = (
+  questions: IdentifiedQuestion[],
+  allImages: string[],
+): PacketCallChunk[] => {
+  const byPage = new Map<number, IdentifiedQuestion[]>();
+  for (const q of questions) {
+    const key = q.sourcePage ?? -1;
+    const existing = byPage.get(key);
+    if (existing) existing.push(q);
+    else byPage.set(key, [q]);
+  }
+
+  const chunks: PacketCallChunk[] = [];
+  for (const [page, pageQuestions] of byPage) {
+    // Per-chunk image selection: send only the relevant page's image when we
+    // know which page the questions are on; otherwise fall back to all images.
+    const chunkImages =
+      page >= 0 && allImages[page] !== undefined
+        ? [allImages[page]]
+        : allImages;
+    for (const sub of chunkArray(
+      pageQuestions,
+      MAX_QUESTIONS_PER_PACKET_CALL,
+    )) {
+      chunks.push({ questions: sub, images: chunkImages });
+    }
+  }
+  return chunks;
+};
 
 const SYSTEM_PROMPT = `You are an Australian-curriculum homework tutor speaking to a PARENT who will then teach their child. The parent is the reader, not the child.
 
@@ -153,8 +212,10 @@ export const generateCoachingPackets = async (
   images: string[],
   questions: IdentifiedQuestion[],
   articleContext?: string,
-): Promise<CoachingPacket[]> => {
-  if (questions.length === 0) return [];
+): Promise<GenerateCoachingPacketsResult> => {
+  if (questions.length === 0) {
+    return { packets: [], usage: buildUsage(0, 0) };
+  }
 
   // Build the user message: images first, then optional article, then the
   // structured question list as plain text so Claude can route per-id.
@@ -218,8 +279,10 @@ export const generateCoachingPackets = async (
       const input = toolUse.input as { packets: CoachingPacket[] };
       logger.info("packet_generate_complete", {
         packetCount: input.packets.length,
+        inputTokens: response.usage.inputTokens,
+        outputTokens: response.usage.outputTokens,
       });
-      return input.packets;
+      return { packets: input.packets, usage: response.usage };
     }
   }
 

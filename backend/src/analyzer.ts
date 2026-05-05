@@ -8,12 +8,17 @@
 // The analyzer is deliberately separate from the agent loop so that the handler
 // can orchestrate sequential per-question solves using the existing runAgent().
 // ─────────────────────────────────────────────────────────────────────────────
-import type { Tool, BedrockMessage } from "./bedrock";
-import { converseWithTools, parseDataUrl } from "./bedrock";
+import type { RawTokenUsage, Tool, BedrockMessage } from "./bedrock";
+import { buildUsage, converseWithTools, parseDataUrl } from "./bedrock";
 import type { PageAnalysis, IdentifiedQuestion } from "./types";
 import { logger } from "./logger";
 
 export type { PageAnalysis };
+
+export interface AnalyzePagesResult {
+  analysis: PageAnalysis;
+  usage: RawTokenUsage;
+}
 
 const ANALYZER_SYSTEM_PROMPT = `You are analyzing photos of Australian primary school homework pages.
 Your job is to:
@@ -73,13 +78,17 @@ const SUBMIT_TOOL: Tool = {
 export const analyzePages = async (
   images: string[],
   questionText?: string,
-): Promise<PageAnalysis> => {
+): Promise<AnalyzePagesResult> => {
+  const zeroUsage = buildUsage(0, 0);
   // Fast path: no images, just a text question — skip the Claude call entirely.
   if (images.length === 0) {
     return {
-      questions: questionText?.trim()
-        ? [{ id: 1, text: questionText.trim(), usesArticle: false }]
-        : [],
+      analysis: {
+        questions: questionText?.trim()
+          ? [{ id: 1, text: questionText.trim(), usesArticle: false }]
+          : [],
+      },
+      usage: zeroUsage,
     };
   }
 
@@ -134,8 +143,11 @@ export const analyzePages = async (
         hasArticle: !!input.articleContext,
       });
       return {
-        articleContext: input.articleContext,
-        questions: input.questions,
+        analysis: {
+          articleContext: input.articleContext,
+          questions: input.questions,
+        },
+        usage: response.usage,
       };
     }
   }
@@ -143,8 +155,11 @@ export const analyzePages = async (
   // Fallback: Claude didn't call the tool — treat whole input as one question.
   logger.warn("analyzer_no_tool_call");
   return {
-    questions: questionText?.trim()
-      ? [{ id: 1, text: questionText.trim(), usesArticle: false }]
-      : [],
+    analysis: {
+      questions: questionText?.trim()
+        ? [{ id: 1, text: questionText.trim(), usesArticle: false }]
+        : [],
+    },
+    usage: response.usage,
   };
 };
