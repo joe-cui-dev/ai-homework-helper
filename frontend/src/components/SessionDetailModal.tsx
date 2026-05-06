@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CoachingPacket, SessionSummary } from "../types";
 import { ResultCard } from "./ResultCard";
 import { PracticeModal } from "./PracticeModal";
+import { ReadingPacketCard } from "./ReadingPacketCard";
 import { subjectColour } from "../utils/subjectColour";
 import { formatUsageCompact } from "../utils/formatUsage";
 
@@ -77,6 +78,18 @@ export function SessionDetailModal({ session, token, onClose }: SessionDetailMod
         </div>
 
         <div className="p-5 space-y-4">
+          {/* Reading-session book context */}
+          {session.sessionType === "reading" && session.bookContext && (
+            <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 text-sm text-gray-700">
+              <span className="font-semibold">
+                {session.bookContext.title ?? "This book"}
+              </span>
+              {session.bookContext.author && (
+                <span className="text-gray-500"> — {session.bookContext.author}</span>
+              )}
+            </div>
+          )}
+
           {/* Full-size uploaded images — shared across all questions */}
           {session.imageUrls.length > 0 && (
             <div className="space-y-3">
@@ -91,30 +104,44 @@ export function SessionDetailModal({ session, token, onClose }: SessionDetailMod
             </div>
           )}
 
-          {/* One ResultCard per question, stacked */}
-          {session.questions.map((q, i) => (
-            <div key={i} className="space-y-2">
-              {session.questions.length > 1 && (
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">
-                  Question {i + 1}
-                </p>
-              )}
-              <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-                <p className="text-sm text-gray-700 leading-relaxed">{q.input}</p>
-              </div>
-              <ResultCard
-                packet={q.packet}
-                onPractise={() =>
-                  setPractice({
-                    questionId: q.questionId,
-                    questionText: q.input,
-                    packet: q.packet,
-                  })
-                }
-                practiceStatus={q.practiceSession?.status}
-              />
+          {/* Reading session: render ReadingPacket cards */}
+          {session.sessionType === "reading" && session.readingPackets?.length ? (
+            <div className="space-y-3">
+              {session.readingPackets.map((packet, i) => (
+                <ReadingPacketCard
+                  key={packet.questionId}
+                  packet={packet}
+                  index={i}
+                  total={session.readingPackets!.length}
+                />
+              ))}
             </div>
-          ))}
+          ) : (
+            // Homework session: existing per-question CoachingPacket cards.
+            session.questions.map((q, i) => (
+              <div key={i} className="space-y-2">
+                {session.questions.length > 1 && (
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">
+                    Question {i + 1}
+                  </p>
+                )}
+                <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
+                  <p className="text-sm text-gray-700 leading-relaxed">{q.input}</p>
+                </div>
+                <ResultCard
+                  packet={q.packet}
+                  onPractise={() =>
+                    setPractice({
+                      questionId: q.questionId,
+                      questionText: q.input,
+                      packet: q.packet,
+                    })
+                  }
+                  practiceStatus={q.practiceSession?.status}
+                />
+              </div>
+            ))
+          )}
         </div>
       </div>
 

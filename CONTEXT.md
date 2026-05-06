@@ -3,9 +3,40 @@
 ## Terms
 
 ### Session
-One student submission — a batch of one or more questions extracted from a single upload. Persisted to S3 at `sessions/{studentId}/{batchId}.json` with a 30-day lifecycle. One session maps to one history card, regardless of how many questions it contains. Not to be confused with a "conversation" — this app does not support multi-turn back-and-forth threads.
+One student submission — a batch of work persisted to S3 at `sessions/{studentId}/{batchId}.json` with a 30-day lifecycle. One session maps to one history card. Not to be confused with a "conversation" — this app does not support multi-turn back-and-forth threads.
 
-The session JSON holds a `questions` array (new format). Old sessions written before the batch model used flat top-level fields (`input`, `subject`, `difficulty`, `answer`, etc.) and are normalised to a one-element `questions` array at read time.
+A session is polymorphic, distinguished by `sessionType`:
+- **Homework Session** (`sessionType: "homework"`, default for legacy rows) — questions are *extracted* from a worksheet image. JSON holds a `questions` array of `{ input, packet }` (CoachingPacket).
+- **Reading Session** (`sessionType: "reading"`) — questions are *generated* by the AI from a book the parent uploads. JSON holds a `bookContext` object and a `readingPackets` array (ReadingPacket).
+
+Old sessions written before the batch model used flat top-level fields (`input`, `subject`, `difficulty`, `answer`, etc.) and are normalised to a one-element `questions` array at read time.
+
+### Reading Session
+A session where the parent uploads a book (cover + a few pages of content) and the AI generates 5 grounded comprehension questions instead of solving an existing homework problem. The reader of the output is still the Parent-as-Coach. Reading-question generation is *always* grounded in the uploaded pages — generating from cover-only training-data knowledge is forbidden (see ADR 0002). If the AI judges the uploaded pages too thin to write 5 quality questions, it streams a `needs_more_pages` event with a specific request to the parent and saves no session.
+
+### Book Context
+Optional metadata attached to a Reading Session: `{ title?, author? }`, populated by Claude only when clearly readable from the cover image. Both fields are omitted when unreadable rather than guessed. Shown in the history card and the result page header.
+
+### Reading Packet
+The per-question output for a Reading Session. Sibling of CoachingPacket, with reading-flavoured field semantics:
+- `questionType` — `literal` | `inference` | `vocabulary` (the Comprehension Skill targeted)
+- `questionText` — phrased so the parent can read aloud verbatim, calibrated to year level
+- `modelAnswer` — what a strong answer looks like, grounded in the uploaded pages
+- `comprehensionSkill` — adult-to-adult: which sub-skill this question tests and why
+- `coachingTip` — adult-to-adult action-oriented guidance for the parent
+- `commonMisreadings` — wrong/partial answers a child of this year level often gives
+- `discussionPrompt` — Socratic prompt the parent reads if the child is stuck
+- `pageReference` — optional pointer to where the answer is in the uploaded pages
+
+Year level is inferred per session (from the cover artwork + page complexity) rather than per question, because the whole book targets one audience.
+
+### Comprehension Skill
+The reading sub-skill a Reading Packet targets, set in `questionType`:
+- **literal** — find-the-fact in the text
+- **inference** — read between the lines (motivation, cause/effect, prediction)
+- **vocabulary** — what a word means *here*, in context
+
+A Reading Session aims for ~2 literal, ~2 inference, ~1 vocabulary, but the AI has leeway when the pages don't support a balanced mix.
 
 ### Question
 A single extracted question within a session, with its own `input`, `subject`, `difficulty`, `answer`, `steps`, `explanation`, and optional `hints`. A session always has at least one question.

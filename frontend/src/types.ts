@@ -39,12 +39,46 @@ export interface SessionQuestion {
   practiceSession?: PracticeSessionSummary;
 }
 
+// ── Reading Session types ───────────────────────────────────────────────────
+
+export type TaskType = "homework" | "reading";
+
+export type ReadingQuestionType = "literal" | "inference" | "vocabulary";
+
+export interface BookContext {
+  title?: string;
+  author?: string;
+}
+
+export interface ReadingPacket {
+  questionId: number;
+  yearLevel: YearLevel;
+  questionType: ReadingQuestionType;
+  questionText: string;
+  modelAnswer: string;
+  comprehensionSkill: string;
+  coachingTip: string;
+  commonMisreadings: string[];
+  discussionPrompt: string;
+  pageReference?: string;
+}
+
+export interface ReadingBatchPacket {
+  questionId: number;
+  packet: ReadingPacket;
+}
+
 export interface SessionSummary {
   sessionId: string;
   timestamp: string;
+  // Discriminator. History API normalises legacy rows to "homework".
+  sessionType: TaskType;
   subjects: string[];
   imageUrls: string[];
   questions: SessionQuestion[];
+  // Reading-only fields. Empty/undefined for homework sessions.
+  bookContext?: BookContext;
+  readingPackets?: ReadingPacket[];
   usage?: TokenUsage;
 }
 
@@ -62,6 +96,32 @@ export type StreamEvent =
       type: "complete";
       batchId: string;
       packets: BatchPacket[];
+      usage: TokenUsage;
+    }
+  // ── Reading-task events ───────────────────────────────────────────────
+  | { type: "book_analyzing" }
+  | {
+      type: "book_analyzed";
+      bookContext: BookContext;
+      yearLevel: YearLevel;
+    }
+  | { type: "needs_more_pages"; message: string }
+  | {
+      type: "reading_packet_start";
+      batchId: string;
+      questionId: number;
+      total: number;
+    }
+  | {
+      type: "reading_packet_complete";
+      questionId: number;
+      packet: ReadingPacket;
+    }
+  | {
+      type: "reading_complete";
+      batchId: string;
+      bookContext: BookContext;
+      packets: ReadingBatchPacket[];
       usage: TokenUsage;
     }
   | { type: "error"; message: string };

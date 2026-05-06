@@ -10,7 +10,12 @@ import { listSessions } from "./storage";
 import type { BatchQuestion } from "./storage";
 import { listPracticeSessionsForBatch } from "./practiceStorage";
 import type { PracticeSessionSummary } from "./practiceStorage";
-import type { TokenUsage } from "./types";
+import type {
+  BookContext,
+  ReadingPacket,
+  TaskType,
+  TokenUsage,
+} from "./types";
 import { logger } from "./logger";
 
 const verifier = CognitoJwtVerifier.create({
@@ -29,9 +34,14 @@ interface QuestionWithPractice extends BatchQuestion {
 interface SessionSummary {
   sessionId: string;
   timestamp: string;
+  // "homework" | "reading" — defaults to "homework" for legacy rows.
+  sessionType: TaskType;
   subjects: string[];
   imageUrls: string[];
   questions: QuestionWithPractice[];
+  // Reading-only fields. Empty/undefined for homework sessions.
+  bookContext?: BookContext;
+  readingPackets?: ReadingPacket[];
   usage?: TokenUsage;
 }
 
@@ -75,40 +85,62 @@ export const handler = async (
   const { sessions, nextCursor } = await listSessions(studentId, cursor, limit);
 
   const summaries: SessionSummary[] = await Promise.all(
-    sessions.map(async ({ imageKeys, questions, sessionId, timestamp, usage }) => {
-      const [imageUrls, practiceSummaries] = await Promise.all([
-        imageKeys?.length
-          ? Promise.all(
-              imageKeys.map((key) =>
-                getSignedUrl(
-                  s3,
-                  new GetObjectCommand({ Bucket: bucket, Key: key }),
-                  { expiresIn: PRESIGN_EXPIRES_IN },
-                ),
-              ),
-            )
-          : Promise.resolve([] as string[]),
-        listPracticeSessionsForBatch(studentId, sessionId),
-      ]);
-      const practiceByQuestion = new Map(
-        practiceSummaries.map((p) => [p.questionId, p]),
-      );
-      const questionsWithPractice: QuestionWithPractice[] = questions.map(
-        (q) => ({
-          ...q,
-          practiceSession: practiceByQuestion.get(q.questionId),
-        }),
-      );
-      const subjects = [...new Set(questions.map((q) => q.packet.subject))];
-      return {
+    sessions.map(
+      async ({
+        imageKeys,
+        questions,
         sessionId,
         timestamp,
-        subjects,
-        imageUrls,
-        questions: questionsWithPractice,
         usage,
-      };
-    }),
+        sessionType,
+        bookContext,
+        readingPackets,
+      }) => {
+        const resolvedType: TaskType = sessionType ?? "homework";
+        const [imageUrls, practiceSummaries] = await Promise.all([
+          imageKeys?.length
+            ? Promise.all(
+                imageKeys.map((key) =>
+                  getSignedUrl(
+                    s3,
+                    new GetObjectCommand({ Bucket: bucket, Key: key }),
+                    { expiresIn: PRESIGN_EXPIRES_IN },
+                  ),
+                ),
+              )
+            : Promise.resolve([] as string[]),
+          // Practice sessions are a homework-only concept in v1; skip the
+          // S3 list for reading sessions.
+          resolvedType === "reading"
+            ? Promise.resolve([] as PracticeSessionSummary[])
+            : listPracticeSessionsForBatch(studentId, sessionId),
+        ]);
+        const practiceByQuestion = new Map(
+          practiceSummaries.map((p) => [p.questionId, p]),
+        );
+        const questionsWithPractice: QuestionWithPractice[] = questions.map(
+          (q) => ({
+            ...q,
+            practiceSession: practiceByQuestion.get(q.questionId),
+          }),
+        );
+        const subjects =
+          resolvedType === "reading"
+            ? ["reading"]
+            : [...new Set(questions.map((q) => q.packet.subject))];
+        return {
+          sessionId,
+          timestamp,
+          sessionType: resolvedType,
+          subjects,
+          imageUrls,
+          questions: questionsWithPractice,
+          bookContext,
+          readingPackets,
+          usage,
+        };
+      },
+    ),
   );
 
   logger.info("history_fetched", { studentId, count: summaries.length });
