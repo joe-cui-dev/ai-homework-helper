@@ -1,4 +1,4 @@
-import type { SessionSummary, StreamEvent } from "../types";
+import type { SessionSummary, StreamEvent, TaskType } from "../types";
 
 // Sanity cap on the raw file before compression runs.
 // Genuine homework photos are never this large; this mainly guards against
@@ -76,14 +76,17 @@ export const fetchSessionHistory = async (
   return response.json() as Promise<{ sessions: SessionSummary[]; nextCursor: string | null }>;
 };
 
-// Streams the homework question and optional page images to the backend,
-// invoking onEvent for each parsed NDJSON event received.
+// Streams a homework or reading submission to the backend, invoking onEvent
+// for each parsed NDJSON event. taskType selects the backend pipeline:
+// "homework" extracts questions from a worksheet; "reading" generates
+// comprehension questions from a book cover + pages.
 export const streamHomework = async (
   question: string,
   token: string,
   onEvent: (event: StreamEvent) => void,
   images?: string[], // base64-encoded image strings, optional
   signal?: AbortSignal,
+  taskType: TaskType = "homework",
 ): Promise<void> => {
   const apiUrl = import.meta.env.VITE_API_URL;
   if (!apiUrl) throw new Error("VITE_API_URL is not configured.");
@@ -94,7 +97,11 @@ export const streamHomework = async (
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ question, images: images?.length ? images : null }),
+    body: JSON.stringify({
+      question,
+      images: images?.length ? images : null,
+      taskType,
+    }),
     signal,
   });
 

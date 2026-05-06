@@ -55,6 +55,60 @@ export interface PageAnalysis {
   questions: IdentifiedQuestion[];
 }
 
+// ── Reading Session types ───────────────────────────────────────────────────
+// A Reading Session is a Session where the parent uploads a book (cover +
+// pages) and the AI *generates* comprehension questions, instead of
+// *extracting* questions from a worksheet. See ADR 0002 and CONTEXT.md.
+
+export type TaskType = "homework" | "reading";
+
+export type ReadingQuestionType = "literal" | "inference" | "vocabulary";
+
+export interface BookContext {
+  // Title and author extracted from the cover when recognisable. Both
+  // optional — if Claude can't read the cover, the session still works
+  // (questions are grounded in the page contents anyway).
+  title?: string;
+  author?: string;
+}
+
+// One generated comprehension question. Sibling of CoachingPacket; reading
+// questions don't fit the homework field semantics ("Answer" implies one
+// correct numeric answer; reading is prose). Reader is the parent.
+export interface ReadingPacket {
+  questionId: number;
+  yearLevel: YearLevel;
+  questionType: ReadingQuestionType;
+  // Phrased so the parent can read it aloud verbatim. Calibrated to year level.
+  questionText: string;
+  // What a strong answer looks like — grounded in the uploaded pages.
+  modelAnswer: string;
+  // Adult-to-adult: what reading sub-skill this question targets and why.
+  comprehensionSkill: string;
+  // Adult-to-adult: what the parent should do/say with the child.
+  coachingTip: string;
+  // Common wrong/partial answers a child of this year level might give.
+  commonMisreadings: string[];
+  // Year-calibrated Socratic prompt the parent reads if the child is stuck.
+  discussionPrompt: string;
+  // Optional pointer to where in the uploaded pages the answer can be found.
+  pageReference?: string;
+}
+
+export interface ReadingBatchPacket {
+  questionId: number;
+  packet: ReadingPacket;
+}
+
+export interface BookAnalysis {
+  bookContext: BookContext;
+  yearLevel: YearLevel;
+  pagesAreSufficient: boolean;
+  // Required when pagesAreSufficient === false. A specific request to the
+  // parent ("Could you upload a few pages from the middle of the book?").
+  insufficientReason?: string;
+}
+
 export type StreamEvent =
   | { type: "analyzing" }
   | {
@@ -69,6 +123,28 @@ export type StreamEvent =
       type: "complete";
       batchId: string;
       packets: BatchPacket[];
+      usage: TokenUsage;
+    }
+  // ── Reading-task events ───────────────────────────────────────────────
+  | { type: "book_analyzing" }
+  | {
+      type: "book_analyzed";
+      bookContext: BookContext;
+      yearLevel: YearLevel;
+    }
+  | { type: "needs_more_pages"; message: string }
+  | {
+      type: "reading_packet_start";
+      batchId: string;
+      questionId: number;
+      total: number;
+    }
+  | { type: "reading_packet_complete"; questionId: number; packet: ReadingPacket }
+  | {
+      type: "reading_complete";
+      batchId: string;
+      bookContext: BookContext;
+      packets: ReadingBatchPacket[];
       usage: TokenUsage;
     }
   | { type: "error"; message: string };

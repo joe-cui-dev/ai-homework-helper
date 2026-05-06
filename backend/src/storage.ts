@@ -14,7 +14,13 @@ import {
   ListObjectsV2Command,
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
-import type { CoachingPacket, TokenUsage } from "./types";
+import type {
+  BookContext,
+  CoachingPacket,
+  ReadingPacket,
+  TaskType,
+  TokenUsage,
+} from "./types";
 import { logger } from "./logger";
 
 export interface BatchQuestion {
@@ -27,7 +33,15 @@ export interface SessionRecord {
   sessionId: string;
   timestamp: string;
   imageKeys?: string[];
+  // Discriminator. Absent on legacy rows written before reading sessions
+  // landed — readers must default to "homework".
+  sessionType?: TaskType;
+  // Populated for homework sessions only (for back-compat the field is named
+  // `questions` in the JSON regardless).
   questions: BatchQuestion[];
+  // Populated for reading sessions only.
+  bookContext?: BookContext;
+  readingPackets?: ReadingPacket[];
   // Total tokens used to produce the entire batch (analyze + chunked packet
   // calls). Optional for backward compatibility with sessions written before
   // usage tracking landed.
@@ -41,9 +55,17 @@ export interface SessionPage {
 
 const s3 = new S3Client({});
 
+export interface SaveSessionData {
+  timestamp: string;
+  questions?: BatchQuestion[];
+  sessionType?: TaskType;
+  bookContext?: BookContext;
+  readingPackets?: ReadingPacket[];
+}
+
 export const saveSession = async (
   sessionId: string,
-  data: { timestamp: string; questions: BatchQuestion[] },
+  data: SaveSessionData,
   studentId?: string,
   imageKeys?: string[],
   usage?: TokenUsage,
@@ -58,6 +80,11 @@ export const saveSession = async (
     : `sessions/${sessionId}.json`;
 
   const body: Record<string, unknown> = { ...data };
+  // Default homework sessions don't write the questions key as undefined.
+  if (!data.questions?.length) delete body.questions;
+  if (!data.readingPackets?.length) delete body.readingPackets;
+  if (!data.bookContext) delete body.bookContext;
+  if (!data.sessionType) delete body.sessionType;
   if (imageKeys?.length) body.imageKeys = imageKeys;
   if (usage) body.usage = usage;
 
@@ -69,7 +96,7 @@ export const saveSession = async (
       ContentType: "application/json",
     }),
   );
-  logger.info("session_save", { key });
+  logger.info("session_save", { key, sessionType: data.sessionType ?? "homework" });
 };
 
 // Kept exported for Phase 2 (Coaching Dialogue) which may surface recent
@@ -117,7 +144,10 @@ export const getRecentSessions = async (
         sessionId,
         timestamp: (raw.timestamp as string) ?? "",
         imageKeys: raw.imageKeys as string[] | undefined,
+        sessionType: (raw.sessionType as TaskType | undefined) ?? "homework",
         questions: (raw.questions as BatchQuestion[] | undefined) ?? [],
+        bookContext: raw.bookContext as BookContext | undefined,
+        readingPackets: raw.readingPackets as ReadingPacket[] | undefined,
         usage: raw.usage as TokenUsage | undefined,
       } as SessionRecord;
     }),
@@ -216,7 +246,10 @@ export const listSessions = async (
         sessionId,
         timestamp: (raw.timestamp as string) ?? "",
         imageKeys: raw.imageKeys as string[] | undefined,
+        sessionType: (raw.sessionType as TaskType | undefined) ?? "homework",
         questions: (raw.questions as BatchQuestion[] | undefined) ?? [],
+        bookContext: raw.bookContext as BookContext | undefined,
+        readingPackets: raw.readingPackets as ReadingPacket[] | undefined,
         usage: raw.usage as TokenUsage | undefined,
       } as SessionRecord;
     }),
