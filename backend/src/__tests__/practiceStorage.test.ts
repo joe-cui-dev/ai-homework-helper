@@ -13,7 +13,7 @@ jest.mock("@aws-sdk/client-s3", () => {
   };
 });
 
-jest.mock("../logger", () => ({
+jest.mock("../shared/logger", () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -32,8 +32,8 @@ import {
   loadPracticeSession,
   listPracticeSessionsForBatch,
   PRACTICE_SESSION_MAX_AGE_HOURS,
-} from "../practiceStorage";
-import type { CoachingPacket, PracticeSession } from "../types";
+} from "../practice/practiceStorage";
+import type { CoachingPacket, PracticeSession } from "../shared/types";
 
 const PACKET: CoachingPacket = {
   questionId: 1,

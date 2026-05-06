@@ -9,17 +9,17 @@ jest.mock("aws-jwt-verify", () => ({
   },
 }));
 
-jest.mock("../practice", () => ({
+jest.mock("../practice/practice", () => ({
   runPracticeTurn: jest.fn(),
 }));
 
-jest.mock("../practiceStorage", () => ({
+jest.mock("../practice/practiceStorage", () => ({
   createPracticeSession: jest.fn(),
   loadPracticeSession: jest.fn(),
   savePracticeSession: jest.fn(),
 }));
 
-jest.mock("../logger", () => ({
+jest.mock("../shared/logger", () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -51,14 +51,14 @@ const makeStream = () => new CollectStream();
 const mockVerify = jest.fn();
 
 import type { Context } from "aws-lambda";
-import { handler } from "../practice-handler";
-import { runPracticeTurn } from "../practice";
+import { handler } from "../practice/handler";
+import { runPracticeTurn } from "../practice/practice";
 import {
   createPracticeSession,
   loadPracticeSession,
   savePracticeSession,
-} from "../practiceStorage";
-import type { CoachingPacket, PracticeSession } from "../types";
+} from "../practice/practiceStorage";
+import type { CoachingPacket, PracticeSession } from "../shared/types";
 
 const mockRunPracticeTurn = runPracticeTurn as jest.MockedFunction<typeof runPracticeTurn>;
 const mockCreate = createPracticeSession as jest.MockedFunction<typeof createPracticeSession>;

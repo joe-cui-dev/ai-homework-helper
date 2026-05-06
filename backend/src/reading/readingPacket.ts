@@ -10,11 +10,11 @@
 // Model answers MUST be grounded in the uploaded pages — relying on the
 // model's training-data knowledge of the book is forbidden (see ADR 0002).
 // ─────────────────────────────────────────────────────────────────────────────
-import type { RawTokenUsage, Tool, BedrockMessage } from "./bedrock";
-import { buildUsage, converseWithTools, parseDataUrl } from "./bedrock";
-import { lookupCurriculum } from "./curriculum";
-import type { BookContext, ReadingPacket, YearLevel } from "./types";
-import { logger } from "./logger";
+import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
+import { buildUsage, converseWithTools, parseDataUrl } from "../shared/bedrock";
+import { lookupCurriculum } from "../shared/curriculum";
+import type { BookContext, ReadingPacket, YearLevel } from "../shared/types";
+import { logger } from "../shared/logger";
 
 export interface GenerateReadingPacketsResult {
   packets: ReadingPacket[];

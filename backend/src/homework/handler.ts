@@ -1,5 +1,5 @@
-// ── Lambda entry point ───────────────────────────────────────────────────────
-// Phase 1: deterministic Coaching Packet generation. No agent loop here.
+// ── Homework Lambda entry point ───────────────────────────────────────────────
+// Deterministic Coaching Packet generation for homework submissions.
 //
 // Request flow:
 //   1. Verify Cognito Bearer token.
@@ -14,22 +14,15 @@
 import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { v4 as uuidv4 } from "uuid";
-import { sumUsage } from "./bedrock";
+import { sumUsage } from "../shared/bedrock";
 import { analyzePages } from "./analyzer";
 import {
   chunkQuestionsForPacketCall,
   generateCoachingPackets,
 } from "./coachingPacket";
-import { analyzeBook } from "./bookAnalyzer";
-import { generateReadingPackets } from "./readingPacket";
-import { saveSession, uploadSessionImages } from "./storage";
-import type {
-  BatchPacket,
-  ReadingBatchPacket,
-  StreamEvent,
-  TaskType,
-} from "./types";
-import { logger } from "./logger";
+import { saveSession, uploadSessionImages } from "../shared/storage";
+import type { BatchPacket, StreamEvent } from "../shared/types";
+import { logger } from "../shared/logger";
 
 const verifier = CognitoJwtVerifier.create({
   userPoolId: process.env.COGNITO_USER_POOL_ID ?? "",
@@ -43,15 +36,8 @@ const RESPONSE_HEADERS: Record<string, string> = {
 
 const IMAGE_REGEX = /^data:image\/(jpeg|png|gif|webp);base64,/;
 const MAX_IMAGE_B64_LENGTH = 2_800_000;
-const MAX_IMAGES_HOMEWORK = 5;
-// Reading sessions need cover + several pages of book content. The Lambda
-// Function URL request payload limit is ~6 MB; MAX_TOTAL_B64_LENGTH stays at
-// 5.5 MB to keep margin for JSON envelope and headers.
-const MAX_IMAGES_READING = 8;
+const MAX_IMAGES = 5;
 const MAX_TOTAL_B64_LENGTH = 5_500_000;
-
-const maxImagesFor = (taskType: TaskType): number =>
-  taskType === "reading" ? MAX_IMAGES_READING : MAX_IMAGES_HOMEWORK;
 
 function validateImage(image: unknown, index: number): string {
   if (typeof image !== "string" || !IMAGE_REGEX.test(image)) {
@@ -113,14 +99,12 @@ export const handler = awslambda.streamifyResponse(
         question?: unknown;
         image?: unknown;
         images?: unknown;
-        taskType?: unknown;
       };
       try {
         body = JSON.parse(event.body ?? "{}") as {
           question?: unknown;
           image?: unknown;
           images?: unknown;
-          taskType?: unknown;
         };
       } catch {
         logger.warn("validation_invalid_json");
@@ -128,10 +112,7 @@ export const handler = awslambda.streamifyResponse(
         return;
       }
 
-      const { question, image, images, taskType: rawTaskType } = body;
-
-      const taskType: TaskType =
-        rawTaskType === "reading" ? "reading" : "homework";
+      const { question, image, images } = body;
 
       const rawImages: unknown[] = Array.isArray(images)
         ? images
@@ -139,15 +120,11 @@ export const handler = awslambda.streamifyResponse(
           ? [image]
           : [];
 
-      const maxImages = maxImagesFor(taskType);
-      if (rawImages.length > maxImages) {
-        logger.warn("validation_too_many_images", {
-          count: rawImages.length,
-          taskType,
-        });
+      if (rawImages.length > MAX_IMAGES) {
+        logger.warn("validation_too_many_images", { count: rawImages.length });
         writeEvent({
           type: "error",
-          message: `Please upload at most ${maxImages} images at a time`,
+          message: `Please upload at most ${MAX_IMAGES} images at a time`,
         });
         return;
       }
@@ -180,21 +157,7 @@ export const handler = awslambda.streamifyResponse(
       const trimmedQuestion =
         typeof question === "string" ? question.trim() : "";
 
-      if (taskType === "reading" && validatedImages.length === 0) {
-        logger.warn("validation_reading_missing_images");
-        writeEvent({
-          type: "error",
-          message:
-            "Please upload the book cover and a few pages of content to start a reading session.",
-        });
-        return;
-      }
-
-      if (
-        taskType === "homework" &&
-        !trimmedQuestion &&
-        validatedImages.length === 0
-      ) {
+      if (!trimmedQuestion && validatedImages.length === 0) {
         logger.warn("validation_missing_question");
         writeEvent({
           type: "error",
@@ -217,22 +180,11 @@ export const handler = awslambda.streamifyResponse(
       const studentId = tokenSub;
       const batchId = uuidv4();
 
-      logger.appendKeys({ batchId, taskType });
+      logger.appendKeys({ batchId });
       logger.info("request_received", {
         imageCount: validatedImages.length,
         hasText: !!trimmedQuestion,
-        taskType,
       });
-
-      if (taskType === "reading") {
-        await runReadingFlow({
-          batchId,
-          studentId,
-          images: validatedImages,
-          writeEvent,
-        });
-        return;
-      }
 
       // ── Page analysis ───────────────────────────────────────────────────
       writeEvent({ type: "analyzing" });
@@ -284,9 +236,6 @@ export const handler = awslambda.streamifyResponse(
       }
 
       // ── Coaching-packet generation (chunked, parallel) ──────────────────
-      // Splits questions into chunks (by source page, then by size cap) so
-      // that each Bedrock call stays under the output-token ceiling. All
-      // chunks share the same article context.
       const chunks = chunkQuestionsForPacketCall(
         analysis.questions,
         validatedImages,
@@ -383,106 +332,3 @@ export const handler = awslambda.streamifyResponse(
     }
   },
 );
-
-// ── Reading-task flow ──────────────────────────────────────────────────────
-// Two-step pipeline:
-//   1. analyzeBook judges sufficiency + infers year level. If insufficient,
-//      stream needs_more_pages and exit without saving a session.
-//   2. generateReadingPackets produces ~5 grounded comprehension packets,
-//      streamed back as reading_packet_complete events; finally a
-//      reading_complete event with the persisted batch summary.
-async function runReadingFlow(args: {
-  batchId: string;
-  studentId: string;
-  images: string[];
-  writeEvent: (evt: StreamEvent) => void;
-}): Promise<void> {
-  const { batchId, studentId, images, writeEvent } = args;
-
-  writeEvent({ type: "book_analyzing" });
-  const { analysis, usage: analyzeUsage } = await analyzeBook(images);
-
-  if (!analysis.pagesAreSufficient) {
-    const message =
-      analysis.insufficientReason ??
-      "Please upload a few more pages of the book content so I can write good questions.";
-    logger.info("reading_needs_more_pages", { message });
-    writeEvent({ type: "needs_more_pages", message });
-    return;
-  }
-
-  writeEvent({
-    type: "book_analyzed",
-    bookContext: analysis.bookContext,
-    yearLevel: analysis.yearLevel,
-  });
-
-  // Upload images once for the whole batch (cover + pages share the
-  // sessions/{studentId}/{batchId}/image-{i}.{ext} prefix).
-  let batchImageKeys: string[] = [];
-  try {
-    batchImageKeys = await uploadSessionImages(studentId, batchId, images);
-  } catch (uploadErr) {
-    logger.error(
-      "reading_upload_images_failed",
-      uploadErr instanceof Error ? uploadErr : String(uploadErr),
-    );
-  }
-
-  const { packets, usage: packetUsage } = await generateReadingPackets(
-    images,
-    analysis.bookContext,
-    analysis.yearLevel,
-  );
-
-  if (packets.length === 0) {
-    logger.warn("reading_no_packets_generated");
-    writeEvent({
-      type: "error",
-      message:
-        "I couldn't write reading questions for this book. Please try again or upload different pages.",
-    });
-    return;
-  }
-
-  const batchUsage = sumUsage(analyzeUsage, packetUsage);
-  const readingBatchPackets: ReadingBatchPacket[] = [];
-
-  for (const packet of packets) {
-    writeEvent({
-      type: "reading_packet_complete",
-      questionId: packet.questionId,
-      packet,
-    });
-    readingBatchPackets.push({ questionId: packet.questionId, packet });
-  }
-
-  try {
-    await saveSession(
-      batchId,
-      {
-        timestamp: new Date().toISOString(),
-        sessionType: "reading",
-        bookContext: analysis.bookContext,
-        readingPackets: packets,
-      },
-      studentId,
-      batchImageKeys.length ? batchImageKeys : undefined,
-      batchUsage,
-    );
-  } catch (saveErr) {
-    logger.error(
-      "reading_save_session_failed",
-      saveErr instanceof Error ? saveErr : String(saveErr),
-    );
-  }
-
-  writeEvent({
-    type: "reading_complete",
-    batchId,
-    bookContext: analysis.bookContext,
-    packets: readingBatchPackets,
-    usage: batchUsage,
-  });
-  logger.info("reading_request_complete", { packetCount: packets.length });
-}

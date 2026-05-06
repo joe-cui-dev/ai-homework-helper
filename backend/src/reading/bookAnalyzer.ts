@@ -12,10 +12,10 @@
 // This step is purely classification + sufficiency gating; question generation
 // happens in readingPacket.ts only after this step approves the inputs.
 // ─────────────────────────────────────────────────────────────────────────────
-import type { RawTokenUsage, Tool, BedrockMessage } from "./bedrock";
-import { buildUsage, converseWithTools, parseDataUrl } from "./bedrock";
-import type { BookAnalysis } from "./types";
-import { logger } from "./logger";
+import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
+import { buildUsage, converseWithTools, parseDataUrl } from "../shared/bedrock";
+import type { BookAnalysis } from "../shared/types";
+import { logger } from "../shared/logger";
 
 export interface AnalyzeBookResult {
   analysis: BookAnalysis;

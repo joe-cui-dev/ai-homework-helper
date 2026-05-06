@@ -1,8 +1,8 @@
 import {
   chunkQuestionsForPacketCall,
   MAX_QUESTIONS_PER_PACKET_CALL,
-} from "../coachingPacket";
-import type { IdentifiedQuestion } from "../types";
+} from "../homework/coachingPacket";
+import type { IdentifiedQuestion } from "../shared/types";
 
 const q = (id: number, sourcePage?: number): IdentifiedQuestion => ({
   id,

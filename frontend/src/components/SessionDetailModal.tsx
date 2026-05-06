@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
-import type { CoachingPacket, SessionSummary } from "../types";
+import { useEffect } from "react";
+import type { SessionSummary } from "../types";
 import { ResultCard } from "./ResultCard";
-import { PracticeModal } from "./PracticeModal";
 import { ReadingPacketCard } from "./ReadingPacketCard";
 import { subjectColour } from "../utils/subjectColour";
 import { formatUsageCompact } from "../utils/formatUsage";
+import { useNavigate } from "react-router-dom";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-AU", {
@@ -20,14 +20,8 @@ interface SessionDetailModalProps {
   onClose: () => void;
 }
 
-interface PracticeState {
-  questionId: number;
-  questionText: string;
-  packet: CoachingPacket;
-}
-
-export function SessionDetailModal({ session, token, onClose }: SessionDetailModalProps) {
-  const [practice, setPractice] = useState<PracticeState | null>(null);
+export function SessionDetailModal({ session, token: _token, onClose }: SessionDetailModalProps) {
+  const navigate = useNavigate();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -130,13 +124,10 @@ export function SessionDetailModal({ session, token, onClose }: SessionDetailMod
                 </div>
                 <ResultCard
                   packet={q.packet}
-                  onPractise={() =>
-                    setPractice({
-                      questionId: q.questionId,
-                      questionText: q.input,
-                      packet: q.packet,
-                    })
-                  }
+                  onPractise={() => {
+                    onClose();
+                    navigate(`/practice/${session.sessionId}:${q.questionId}`);
+                  }}
                   practiceStatus={q.practiceSession?.status}
                 />
               </div>
@@ -145,16 +136,6 @@ export function SessionDetailModal({ session, token, onClose }: SessionDetailMod
         </div>
       </div>
 
-      {practice && (
-        <PracticeModal
-          batchId={session.sessionId}
-          questionId={practice.questionId}
-          questionText={practice.questionText}
-          packet={practice.packet}
-          token={token}
-          onClose={() => setPractice(null)}
-        />
-      )}
     </div>
   );
 }

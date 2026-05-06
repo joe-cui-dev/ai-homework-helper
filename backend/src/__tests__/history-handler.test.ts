@@ -8,11 +8,11 @@ jest.mock("aws-jwt-verify", () => ({
   },
 }));
 
-jest.mock("../storage", () => ({
+jest.mock("../shared/storage", () => ({
   listSessions: jest.fn(),
 }));
 
-jest.mock("../practiceStorage", () => ({
+jest.mock("../practice/practiceStorage", () => ({
   listPracticeSessionsForBatch: jest.fn().mockResolvedValue([]),
 }));
 
@@ -29,7 +29,7 @@ jest.mock("@aws-sdk/client-s3", () => {
   };
 });
 
-jest.mock("../logger", () => ({
+jest.mock("../shared/logger", () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -43,10 +43,10 @@ jest.mock("../logger", () => ({
 const mockVerify = jest.fn();
 
 import type { APIGatewayProxyStructuredResultV2 } from "aws-lambda";
-import { handler } from "../history-handler";
-import { listSessions } from "../storage";
-import type { SessionRecord } from "../storage";
-import type { CoachingPacket } from "../types";
+import { handler } from "../history/handler";
+import { listSessions } from "../shared/storage";
+import type { SessionRecord } from "../shared/storage";
+import type { CoachingPacket } from "../shared/types";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const mockListSessions = listSessions as jest.MockedFunction<typeof listSessions>;

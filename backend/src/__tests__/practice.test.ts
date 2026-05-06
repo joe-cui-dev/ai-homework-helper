@@ -3,10 +3,10 @@ import {
   TOOL_SCHEMA,
   MAX_PROBLEMS_PER_SESSION,
   MAX_TOOL_CALLS_PER_SESSION,
-} from "../practice";
-import type { CoachingPacket, PracticeSession } from "../types";
+} from "../practice/practice";
+import type { CoachingPacket, PracticeSession } from "../shared/types";
 
-jest.mock("../bedrock", () => ({
+jest.mock("../shared/bedrock", () => ({
   converseWithTools: jest.fn(),
   callClaude: jest.fn(),
   buildUsage: (i: number, o: number) => ({
@@ -25,7 +25,7 @@ jest.mock("../bedrock", () => ({
   },
 }));
 
-jest.mock("../logger", () => ({
+jest.mock("../shared/logger", () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -34,7 +34,7 @@ jest.mock("../logger", () => ({
   },
 }));
 
-const { converseWithTools, callClaude } = jest.requireMock("../bedrock") as {
+const { converseWithTools, callClaude } = jest.requireMock("../shared/bedrock") as {
   converseWithTools: jest.Mock;
   callClaude: jest.Mock;
 };

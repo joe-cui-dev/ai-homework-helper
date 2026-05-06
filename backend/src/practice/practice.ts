@@ -13,8 +13,8 @@
 //
 // Cost guardrails are enforced in the dispatcher (not just the prompt).
 // ─────────────────────────────────────────────────────────────────────────────
-import type { RawTokenUsage, Tool, BedrockMessage } from "./bedrock";
-import { buildUsage, callClaude, converseWithTools, sumUsage } from "./bedrock";
+import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
+import { buildUsage, callClaude, converseWithTools, sumUsage } from "../shared/bedrock";
 import type {
   CoachingPacket,
   PracticeProblem,
@@ -22,8 +22,8 @@ import type {
   PracticeStreamEvent,
   TeachingStyle,
   Verdict,
-} from "./types";
-import { logger } from "./logger";
+} from "../shared/types";
+import { logger } from "../shared/logger";
 
 export const MAX_ITERATIONS_PER_TURN = 5;
 export const MAX_PROBLEMS_PER_SESSION = 10;

@@ -6,17 +6,17 @@ import type {
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { listSessions } from "./storage";
-import type { BatchQuestion } from "./storage";
-import { listPracticeSessionsForBatch } from "./practiceStorage";
-import type { PracticeSessionSummary } from "./practiceStorage";
+import { listSessions } from "../shared/storage";
+import type { BatchQuestion } from "../shared/storage";
+import { listPracticeSessionsForBatch } from "../practice/practiceStorage";
+import type { PracticeSessionSummary } from "../practice/practiceStorage";
 import type {
   BookContext,
   ReadingPacket,
   TaskType,
   TokenUsage,
-} from "./types";
-import { logger } from "./logger";
+} from "../shared/types";
+import { logger } from "../shared/logger";
 
 const verifier = CognitoJwtVerifier.create({
   userPoolId: process.env.COGNITO_USER_POOL_ID ?? "",
