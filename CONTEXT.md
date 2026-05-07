@@ -62,6 +62,15 @@ The unique identifier for a student, extracted exclusively from the `sub` claim 
 ### Batch
 Synonym for Session — one user submission. The `batchId` (a UUID) is the session's stable identifier and is used as the S3 key stem.
 
+### Homework Page
+The `/homework` route — entry point for submitting homework images and receiving Coaching Packets. Backed by `HomeworkFunction` (Lambda).
+
+### Reading Page
+The `/reading` route — entry point for submitting book cover + pages and receiving Reading Packets. Backed by `ReadingFunction` (Lambda).
+
+### Practice Page
+The `/practice/:sessionId` route — full-page tutor loop linked from a Coaching Packet result. `sessionId` has the form `{batchId}:{questionId}`. Backed by `PracticeFunction` (Lambda).
+
 ### Parent-as-Coach
 The primary reader of the app's output. The parent reads the answer privately and then teaches the child in their own words. The student is the *subject* of the homework but not the direct reader of the AI output. This shapes tone (adult-to-adult, concise), structure (must include teaching guidance, not just answers), and what success looks like (the child learns from the parent, not from the screen).
 

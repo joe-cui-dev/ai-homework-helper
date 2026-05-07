@@ -1,4 +1,4 @@
-import type { SessionSummary, StreamEvent, TaskType } from "../types";
+import type { SessionSummary } from "../types";
 
 // Sanity cap on the raw file before compression runs.
 // Genuine homework photos are never this large; this mainly guards against
@@ -76,73 +76,3 @@ export const fetchSessionHistory = async (
   return response.json() as Promise<{ sessions: SessionSummary[]; nextCursor: string | null }>;
 };
 
-// Streams a homework or reading submission to the backend, invoking onEvent
-// for each parsed NDJSON event. taskType selects the backend pipeline:
-// "homework" extracts questions from a worksheet; "reading" generates
-// comprehension questions from a book cover + pages.
-export const streamHomework = async (
-  question: string,
-  token: string,
-  onEvent: (event: StreamEvent) => void,
-  images?: string[], // base64-encoded image strings, optional
-  signal?: AbortSignal,
-  taskType: TaskType = "homework",
-): Promise<void> => {
-  const apiUrl = import.meta.env.VITE_API_URL;
-  if (!apiUrl) throw new Error("VITE_API_URL is not configured.");
-
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      question,
-      images: images?.length ? images : null,
-      taskType,
-    }),
-    signal,
-  });
-
-  if (!response.ok || !response.body) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `Request failed with status ${response.status}.`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const event = JSON.parse(trimmed) as StreamEvent;
-        onEvent(event);
-        // Only stop early on error — complete arrives after all packet_complete events.
-        if (event.type === "error") return;
-      } catch {
-        // Ignore malformed lines.
-      }
-    }
-  }
-
-  // Attempt to parse any remaining buffered content.
-  if (buffer.trim()) {
-    try {
-      const event = JSON.parse(buffer.trim()) as StreamEvent;
-      onEvent(event);
-    } catch {
-      // Ignore malformed final line.
-    }
-  }
-};

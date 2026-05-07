@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { streamHomework } from "../services/api";
+import { streamReading } from "../services/readingApi";
 import type {
   BookContext,
   ReadingBatchPacket,
@@ -114,14 +114,7 @@ export const useReadingStream = (): UseReadingStreamReturn => {
     };
 
     try {
-      await streamHomework(
-        "",
-        token,
-        handleEvent,
-        images,
-        controller.signal,
-        "reading",
-      );
+      await streamReading(token, images, handleEvent, controller.signal);
       setStatus((prev) =>
         prev === "analyzing" || prev === "generating" ? "done" : prev,
       );

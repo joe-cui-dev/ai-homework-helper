@@ -168,68 +168,79 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       },
     );
 
-    // ── Lambda function ────────────────────────────────────────────────────
-    const lambdaLogGroup = new logs.LogGroup(this, "SolveFunctionLogs", {
+    // ── Shared Lambda env + bundling config ───────────────────────────────
+    const sharedBedrockEnv = {
+      BEDROCK_MODEL_ID: HAIKU_45_MODEL_ID,
+      BEDROCK_INPUT_PRICE_PER_MTOK: HAIKU_45_INPUT_PRICE_PER_MTOK,
+      BEDROCK_OUTPUT_PRICE_PER_MTOK: HAIKU_45_OUTPUT_PRICE_PER_MTOK,
+      BEDROCK_GUARDRAIL_ID: guardrail.attrGuardrailId,
+      BEDROCK_GUARDRAIL_VERSION: guardrailVersion.attrVersion,
+    };
+    const sharedEnv = {
+      ...sharedBedrockEnv,
+      S3_BUCKET_NAME: sessionBucket.bucketName,
+      COGNITO_USER_POOL_ID: userPool.userPoolId,
+      COGNITO_APP_CLIENT_ID: userPoolClient.userPoolClientId,
+      SERVICE_NAME: "ai-homework-helper",
+      LOG_LEVEL: this.node.tryGetContext("logLevel") ?? "DEBUG",
+    };
+    const bedrockInvokePolicy = new iam.PolicyStatement({
+      actions: ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+      resources: [
+        `arn:aws:bedrock:*::foundation-model/${HAIKU_45_BASE_MODEL_ID}`,
+        `arn:aws:bedrock:*:*:inference-profile/${HAIKU_45_MODEL_ID}`,
+      ],
+    });
+    const bedrockGuardrailPolicy = new iam.PolicyStatement({
+      actions: ["bedrock:ApplyGuardrail"],
+      resources: [guardrail.attrGuardrailArn],
+    });
+
+    // ── Homework Lambda ────────────────────────────────────────────────────
+    const homeworkLogGroup = new logs.LogGroup(this, "HomeworkFunctionLogs", {
       retention: logs.RetentionDays.ONE_MONTH,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    const fn = new lambdaNodejs.NodejsFunction(this, "SolveFunction", {
-      logGroup: lambdaLogGroup,
-      entry: path.join(__dirname, "../../backend/src/handler.ts"),
+    const homeworkFn = new lambdaNodejs.NodejsFunction(this, "HomeworkFunction", {
+      logGroup: homeworkLogGroup,
+      entry: path.join(__dirname, "../../backend/src/homework/handler.ts"),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_24_X,
       memorySize: 1024,
-      timeout: cdk.Duration.minutes(5), // no longer bottlenecked by API GW's 29 s ceiling
-      // Caps simultaneous in-flight agent loops across all users.
-      // Each invocation holds a slot for the full agent duration (~10–30 s).
-      // Excess requests receive a 429 throttle response before Lambda runs.
-      // Raise this as real user load is measured.
+      timeout: cdk.Duration.minutes(5),
       reservedConcurrentExecutions: 10,
-      environment: {
-        BEDROCK_MODEL_ID: HAIKU_45_MODEL_ID,
-        BEDROCK_INPUT_PRICE_PER_MTOK: HAIKU_45_INPUT_PRICE_PER_MTOK,
-        BEDROCK_OUTPUT_PRICE_PER_MTOK: HAIKU_45_OUTPUT_PRICE_PER_MTOK,
-        S3_BUCKET_NAME: sessionBucket.bucketName,
-        BEDROCK_GUARDRAIL_ID: guardrail.attrGuardrailId,
-        BEDROCK_GUARDRAIL_VERSION: guardrailVersion.attrVersion,
-        COGNITO_USER_POOL_ID: userPool.userPoolId,
-        COGNITO_APP_CLIENT_ID: userPoolClient.userPoolClientId,
-        SERVICE_NAME: "ai-homework-helper",
-        LOG_LEVEL: this.node.tryGetContext("logLevel") ?? "DEBUG",
-      },
-      bundling: {
-        minify: true,
-        sourceMap: false,
-      },
+      environment: sharedEnv,
+      bundling: { minify: true, sourceMap: false },
     });
 
-    // ── IAM: Bedrock ───────────────────────────────────────────────────────
-    fn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream",
-        ],
-        resources: [
-          // Foundation model — required even when invoked via an inference profile
-          `arn:aws:bedrock:*::foundation-model/${HAIKU_45_BASE_MODEL_ID}`,
-          // Cross-region inference profile
-          `arn:aws:bedrock:*:*:inference-profile/${HAIKU_45_MODEL_ID}`,
-        ],
-      }),
-    );
+    homeworkFn.addToRolePolicy(bedrockInvokePolicy);
+    homeworkFn.addToRolePolicy(bedrockGuardrailPolicy);
+    sessionBucket.grantPut(homeworkFn, "sessions/*");
+    sessionBucket.grantRead(homeworkFn, "sessions/*");
 
-    fn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: ["bedrock:ApplyGuardrail"],
-        resources: [guardrail.attrGuardrailArn],
-      }),
-    );
+    // ── Reading Lambda ─────────────────────────────────────────────────────
+    const readingLogGroup = new logs.LogGroup(this, "ReadingFunctionLogs", {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
 
-    // ── IAM: S3 ───────────────────────────────────────────────────────────
-    sessionBucket.grantPut(fn, "sessions/*");
-    sessionBucket.grantRead(fn, "sessions/*");
+    const readingFn = new lambdaNodejs.NodejsFunction(this, "ReadingFunction", {
+      logGroup: readingLogGroup,
+      entry: path.join(__dirname, "../../backend/src/reading/handler.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 1024,
+      timeout: cdk.Duration.minutes(5),
+      reservedConcurrentExecutions: 10,
+      environment: sharedEnv,
+      bundling: { minify: true, sourceMap: false },
+    });
+
+    readingFn.addToRolePolicy(bedrockInvokePolicy);
+    readingFn.addToRolePolicy(bedrockGuardrailPolicy);
+    sessionBucket.grantPut(readingFn, "sessions/*");
+    sessionBucket.grantRead(readingFn, "sessions/*");
 
     // ── History Lambda ────────────────────────────────────────────────────
     // Separate function so the history read path never contends with the
@@ -241,7 +252,7 @@ export class AiHomeworkHelperStack extends cdk.Stack {
 
     const historyFn = new lambdaNodejs.NodejsFunction(this, "HistoryFunction", {
       logGroup: historyLogGroup,
-      entry: path.join(__dirname, "../../backend/src/history-handler.ts"),
+      entry: path.join(__dirname, "../../backend/src/history/handler.ts"),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_24_X,
       memorySize: 512,
@@ -354,51 +365,20 @@ export class AiHomeworkHelperStack extends cdk.Stack {
 
     const practiceFn = new lambdaNodejs.NodejsFunction(this, "PracticeFunction", {
       logGroup: practiceLogGroup,
-      entry: path.join(__dirname, "../../backend/src/practice-handler.ts"),
+      entry: path.join(__dirname, "../../backend/src/practice/handler.ts"),
       handler: "handler",
       runtime: lambda.Runtime.NODEJS_24_X,
       memorySize: 1024,
       timeout: cdk.Duration.minutes(5),
-      // Smaller cap than Solve — practice turns are individually shorter
+      // Smaller cap than homework/reading — practice turns are individually shorter
       // (no vision call), but each session generates many turns over time.
       reservedConcurrentExecutions: 5,
-      environment: {
-        BEDROCK_MODEL_ID: HAIKU_45_MODEL_ID,
-        BEDROCK_INPUT_PRICE_PER_MTOK: HAIKU_45_INPUT_PRICE_PER_MTOK,
-        BEDROCK_OUTPUT_PRICE_PER_MTOK: HAIKU_45_OUTPUT_PRICE_PER_MTOK,
-        S3_BUCKET_NAME: sessionBucket.bucketName,
-        BEDROCK_GUARDRAIL_ID: guardrail.attrGuardrailId,
-        BEDROCK_GUARDRAIL_VERSION: guardrailVersion.attrVersion,
-        COGNITO_USER_POOL_ID: userPool.userPoolId,
-        COGNITO_APP_CLIENT_ID: userPoolClient.userPoolClientId,
-        SERVICE_NAME: "ai-homework-helper",
-        LOG_LEVEL: this.node.tryGetContext("logLevel") ?? "DEBUG",
-      },
-      bundling: {
-        minify: true,
-        sourceMap: false,
-      },
+      environment: sharedEnv,
+      bundling: { minify: true, sourceMap: false },
     });
 
-    practiceFn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream",
-        ],
-        resources: [
-          `arn:aws:bedrock:*::foundation-model/${HAIKU_45_BASE_MODEL_ID}`,
-          `arn:aws:bedrock:*:*:inference-profile/${HAIKU_45_MODEL_ID}`,
-        ],
-      }),
-    );
-
-    practiceFn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: ["bedrock:ApplyGuardrail"],
-        resources: [guardrail.attrGuardrailArn],
-      }),
-    );
+    practiceFn.addToRolePolicy(bedrockInvokePolicy);
+    practiceFn.addToRolePolicy(bedrockGuardrailPolicy);
 
     // Practice Lambda needs read+write on sessions/* (load source packet, list
     // practice siblings, write practice session JSON).
@@ -422,22 +402,27 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       },
     });
 
-    // ── Lambda Function URL (streaming) ───────────────────────────────────
-    // Response streaming removes the API Gateway timeout ceiling and lets the
-    // client receive tool-progress events incrementally before the final result.
-    // Authentication is handled inside the Lambda via Cognito JWT validation,
-    // so authType stays NONE (required for streaming).
-    const fnUrl = new lambda.FunctionUrl(this, "SolveFunctionUrl", {
-      function: fn,
+    // ── Homework + Reading Function URLs (streaming) ───────────────────────
+    const streamCors = {
+      allowedOrigins: [
+        this.node.tryGetContext("allowedOrigin") ?? "https://joe-cui.com",
+      ],
+      allowedMethods: [lambda.HttpMethod.POST],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    };
+
+    const homeworkFnUrl = new lambda.FunctionUrl(this, "HomeworkFunctionUrl", {
+      function: homeworkFn,
       authType: lambda.FunctionUrlAuthType.NONE,
       invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
-      cors: {
-        allowedOrigins: [
-          this.node.tryGetContext("allowedOrigin") ?? "https://joe-cui.com",
-        ],
-        allowedMethods: [lambda.HttpMethod.POST],
-        allowedHeaders: ["Content-Type", "Authorization"],
-      },
+      cors: streamCors,
+    });
+
+    const readingFnUrl = new lambda.FunctionUrl(this, "ReadingFunctionUrl", {
+      function: readingFn,
+      authType: lambda.FunctionUrlAuthType.NONE,
+      invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
+      cors: streamCors,
     });
 
     // ── CloudFront Function (SPA routing) ────────────────────────────────
@@ -510,9 +495,14 @@ function handler(event) {
     });
 
     // ── Outputs ───────────────────────────────────────────────────────────
-    new cdk.CfnOutput(this, "FunctionUrl", {
-      value: fnUrl.url,
-      description: "POST to this URL with Authorization: Bearer <token>",
+    new cdk.CfnOutput(this, "HomeworkApiUrl", {
+      value: homeworkFnUrl.url,
+      description: "POST homework submissions with Authorization: Bearer <token>",
+    });
+
+    new cdk.CfnOutput(this, "ReadingApiUrl", {
+      value: readingFnUrl.url,
+      description: "POST reading sessions with Authorization: Bearer <token>",
     });
 
     new cdk.CfnOutput(this, "HistoryApiUrl", {

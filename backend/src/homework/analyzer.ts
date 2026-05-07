@@ -8,10 +8,10 @@
 // The analyzer is deliberately separate from the agent loop so that the handler
 // can orchestrate sequential per-question solves using the existing runAgent().
 // ─────────────────────────────────────────────────────────────────────────────
-import type { RawTokenUsage, Tool, BedrockMessage } from "./bedrock";
-import { buildUsage, converseWithTools, parseDataUrl } from "./bedrock";
-import type { PageAnalysis, IdentifiedQuestion } from "./types";
-import { logger } from "./logger";
+import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
+import { buildUsage, converseWithTools, parseDataUrl } from "../shared/bedrock";
+import type { PageAnalysis, IdentifiedQuestion } from "../shared/types";
+import { logger } from "../shared/logger";
 
 export type { PageAnalysis };
 

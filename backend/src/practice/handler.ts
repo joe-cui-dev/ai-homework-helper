@@ -18,8 +18,8 @@ import {
   loadPracticeSession,
   savePracticeSession,
 } from "./practiceStorage";
-import type { PracticeSession, PracticeStreamEvent } from "./types";
-import { logger } from "./logger";
+import type { PracticeSession, PracticeStreamEvent } from "../shared/types";
+import { logger } from "../shared/logger";
 
 const verifier = CognitoJwtVerifier.create({
   userPoolId: process.env.COGNITO_USER_POOL_ID ?? "",

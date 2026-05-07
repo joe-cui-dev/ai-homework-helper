@@ -1,7 +1,7 @@
-import { generateReadingPackets } from "../readingPacket";
-import type { BookContext, ReadingPacket } from "../types";
+import { generateReadingPackets } from "../reading/readingPacket";
+import type { BookContext, ReadingPacket } from "../shared/types";
 
-jest.mock("../bedrock", () => ({
+jest.mock("../shared/bedrock", () => ({
   converseWithTools: jest.fn(),
   parseDataUrl: (url: string) => {
     const match = url.match(/^data:(image\/(?:jpeg|png));base64,(.+)$/);
@@ -14,7 +14,7 @@ jest.mock("../bedrock", () => ({
   }),
 }));
 
-jest.mock("../logger", () => ({
+jest.mock("../shared/logger", () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),
@@ -23,7 +23,7 @@ jest.mock("../logger", () => ({
   },
 }));
 
-const { converseWithTools } = jest.requireMock("../bedrock") as {
+const { converseWithTools } = jest.requireMock("../shared/bedrock") as {
   converseWithTools: jest.Mock;
 };
 

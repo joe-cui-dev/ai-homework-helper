@@ -1,6 +1,6 @@
-import { listSessions, saveSession, uploadSessionImages } from "../storage";
-import type { BatchQuestion } from "../storage";
-import type { CoachingPacket } from "../types";
+import { listSessions, saveSession, uploadSessionImages } from "../shared/storage";
+import type { BatchQuestion } from "../shared/storage";
+import type { CoachingPacket } from "../shared/types";
 
 jest.mock("@aws-sdk/client-s3", () => {
   const sendMock = jest.fn();
@@ -13,7 +13,7 @@ jest.mock("@aws-sdk/client-s3", () => {
   };
 });
 
-jest.mock("../logger", () => ({
+jest.mock("../shared/logger", () => ({
   logger: {
     info: jest.fn(),
     warn: jest.fn(),

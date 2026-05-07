@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { usePracticeSession } from "../hooks/usePracticeSession";
 import { formatUsageCompact } from "../utils/formatUsage";
-import type { CoachingPacket } from "../types";
 
 const TOOL_LABEL: Record<string, string> = {
   generate_problem: "Generating problem",
@@ -13,23 +13,14 @@ const TOOL_LABEL: Record<string, string> = {
   end_turn: "Wrapping up turn",
 };
 
-interface PracticeModalProps {
-  batchId: string;
-  questionId: number;
-  questionText: string;
-  packet: CoachingPacket;
+interface PracticePageProps {
   token: string;
-  onClose: () => void;
 }
 
-export function PracticeModal({
-  batchId,
-  questionId,
-  questionText,
-  packet,
-  token,
-  onClose,
-}: PracticeModalProps) {
+export const PracticePage = ({ token }: PracticePageProps) => {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  const navigate = useNavigate();
+
   const {
     status,
     transcript,
@@ -45,23 +36,24 @@ export function PracticeModal({
   } = usePracticeSession();
 
   const [parentInput, setParentInput] = useState("");
-  const [contextOpen, setContextOpen] = useState(false);
   const startedRef = useRef(false);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
-  // Kick off the session exactly once when the modal mounts.
+  // sessionId format: "{batchId}:{questionId}"
+  const colon = sessionId?.indexOf(":") ?? -1;
+  const batchId = colon > 0 ? sessionId!.slice(0, colon) : "";
+  const questionId = colon > 0 ? parseInt(sessionId!.slice(colon + 1), 10) : NaN;
+
   useEffect(() => {
-    if (startedRef.current) return;
+    if (startedRef.current || !batchId || Number.isNaN(questionId)) return;
     startedRef.current = true;
     void start(batchId, questionId, token);
   }, [batchId, questionId, token, start]);
 
-  // Reset hook state when the modal unmounts to free the abort controller.
   useEffect(() => {
     return () => reset();
   }, [reset]);
 
-  // Scroll new entries into view.
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [transcript, toolEvents]);
@@ -82,66 +74,45 @@ export function PracticeModal({
   const isWorking = status === "starting" || status === "submitting";
   const isEnded = status === "ended";
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-stretch sm:items-center sm:justify-center bg-black/50 sm:p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="relative w-full sm:max-w-2xl bg-white sm:rounded-2xl shadow-xl flex flex-col h-full sm:max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-              Practice
-            </p>
-            <p className="text-sm text-gray-700 truncate">{questionText}</p>
-            {sessionUsage && (
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                {turnCount} turn{turnCount === 1 ? "" : "s"} ·{" "}
-                {formatUsageCompact(sessionUsage)}
-              </p>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors shrink-0"
-            aria-label="Close practice"
-          >
-            <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                fillRule="evenodd"
-                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </button>
-        </div>
-
-        {/* Collapsible source CoachingPacket header */}
+  if (!batchId || Number.isNaN(questionId)) {
+    return (
+      <main className="max-w-2xl mx-auto px-4 py-16 text-center space-y-4">
+        <p className="text-gray-600">Invalid practice session link.</p>
         <button
-          onClick={() => setContextOpen((v) => !v)}
-          className="flex items-center justify-between px-4 py-2 text-xs font-semibold text-brand-600 hover:bg-brand-50 transition-colors shrink-0"
+          onClick={() => navigate("/homework")}
+          className="px-5 py-2 rounded-xl bg-brand-600 text-white font-semibold hover:bg-brand-700 transition-colors"
         >
-          <span>{contextOpen ? "Hide source coaching packet" : "Show source coaching packet"}</span>
-          <svg
-            className={`w-4 h-4 transition-transform ${contextOpen ? "rotate-180" : ""}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          Back to Homework
         </button>
-        {contextOpen && (
-          <div className="px-4 pb-3 text-xs text-gray-600 space-y-2 border-b border-gray-100 shrink-0">
-            <p><span className="font-semibold">Concept:</span> {packet.whyItWorks}</p>
-            <p><span className="font-semibold">Watch for:</span> {packet.watchFor.join("; ")}</p>
-          </div>
-        )}
+      </main>
+    );
+  }
 
-        {/* Transcript */}
+  return (
+    <div className="min-h-[calc(100vh-56px)] flex flex-col max-w-2xl mx-auto px-3 sm:px-4 py-5 sm:py-8">
+      {/* Back link + header */}
+      <div className="flex items-center justify-between mb-4">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:text-brand-800 transition-colors"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+          </svg>
+          Back
+        </button>
+        <div className="text-right">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Practice</p>
+          {sessionUsage && (
+            <p className="text-[11px] text-gray-400">
+              {turnCount} turn{turnCount === 1 ? "" : "s"} · {formatUsageCompact(sessionUsage)}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Transcript */}
+      <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {transcript.length === 0 && status === "starting" && (
             <p className="text-sm text-gray-400 italic">Setting up the first problem…</p>
@@ -180,7 +151,6 @@ export function PracticeModal({
             ),
           )}
 
-          {/* Live tool indicators while a turn is running */}
           {isWorking && toolEvents.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {toolEvents.map((e, i) => (
@@ -221,7 +191,7 @@ export function PracticeModal({
           <div ref={transcriptEndRef} />
         </div>
 
-        {/* Footer: parent input + end button */}
+        {/* Input footer */}
         <form
           onSubmit={handleSubmit}
           className="border-t border-gray-100 p-3 space-y-2 shrink-0"
@@ -258,14 +228,14 @@ export function PracticeModal({
           {isEnded && (
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => navigate("/homework")}
               className="w-full px-4 py-2 rounded-xl text-sm font-bold bg-brand-600 text-white hover:bg-brand-700 transition-colors"
             >
-              Close
+              Back to Homework
             </button>
           )}
         </form>
       </div>
     </div>
   );
-}
+};

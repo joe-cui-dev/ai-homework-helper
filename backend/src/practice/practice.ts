@@ -13,8 +13,13 @@
 //
 // Cost guardrails are enforced in the dispatcher (not just the prompt).
 // ─────────────────────────────────────────────────────────────────────────────
-import type { RawTokenUsage, Tool, BedrockMessage } from "./bedrock";
-import { buildUsage, callClaude, converseWithTools, sumUsage } from "./bedrock";
+import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
+import {
+  buildUsage,
+  callClaude,
+  converseWithTools,
+  sumUsage,
+} from "../shared/bedrock";
 import type {
   CoachingPacket,
   PracticeProblem,
@@ -22,8 +27,8 @@ import type {
   PracticeStreamEvent,
   TeachingStyle,
   Verdict,
-} from "./types";
-import { logger } from "./logger";
+} from "../shared/types";
+import { logger } from "../shared/logger";
 
 export const MAX_ITERATIONS_PER_TURN = 5;
 export const MAX_PROBLEMS_PER_SESSION = 10;
@@ -47,7 +52,9 @@ export interface TurnResult {
 // System prompt
 // ---------------------------------------------------------------------------
 
-const buildSystemPrompt = (packet: CoachingPacket): string => `You are a Practice Tutor agent. The reader of your messages is the PARENT, who will read problems aloud to their child and report what the child says.
+const buildSystemPrompt = (
+  packet: CoachingPacket,
+): string => `You are a Practice Tutor agent. The reader of your messages is the PARENT, who will read problems aloud to their child and report what the child says.
 
 Source homework question this practice session is anchored to:
 - Subject: ${packet.subject}
@@ -156,7 +163,13 @@ export const TOOL_SCHEMA: Tool[] = [
           properties: {
             style: {
               type: "string",
-              enum: ["visual", "story", "manipulatives", "number_line", "real_world"],
+              enum: [
+                "visual",
+                "story",
+                "manipulatives",
+                "number_line",
+                "real_world",
+              ],
             },
           },
           required: ["style"],
@@ -240,8 +253,9 @@ const safeJsonParse = <T>(raw: string, fallback: T): T => {
   }
 };
 
-const currentProblem = (session: PracticeSession): PracticeProblem | undefined =>
-  session.problems[session.problems.length - 1];
+const currentProblem = (
+  session: PracticeSession,
+): PracticeProblem | undefined => session.problems[session.problems.length - 1];
 
 type AccumulateUsage = (usage: RawTokenUsage) => void;
 
@@ -288,7 +302,11 @@ const evaluateAttempt = async (
   session: PracticeSession,
   input: { childResponse: string },
   accumulateUsage: AccumulateUsage,
-): Promise<{ verdict: Verdict; explanation: string; suggestedNext?: string }> => {
+): Promise<{
+  verdict: Verdict;
+  explanation: string;
+  suggestedNext?: string;
+}> => {
   const cur = currentProblem(session);
   if (!cur) {
     throw new Error(
@@ -441,7 +459,11 @@ export const dispatchPracticeTool = async (
     );
   }
   session.toolCallCount += 1;
-  session.toolLog.push({ turn: turnIndex, tool: name, ts: new Date().toISOString() });
+  session.toolLog.push({
+    turn: turnIndex,
+    tool: name,
+    ts: new Date().toISOString(),
+  });
 
   switch (name) {
     case "generate_problem":
@@ -521,10 +543,8 @@ export const runPracticeTurn = async (
     });
   }
 
-  const turnIndex = session.toolLog.reduce(
-    (max, e) => Math.max(max, e.turn),
-    -1,
-  ) + 1;
+  const turnIndex =
+    session.toolLog.reduce((max, e) => Math.max(max, e.turn), -1) + 1;
 
   const systemPrompt = buildSystemPrompt(session.sourceCoachingPacket);
 
@@ -545,16 +565,21 @@ export const runPracticeTurn = async (
       toolCallCount: session.toolCallCount,
     });
 
-    const toolChoice = forceEndSession && iteration === 0
-      ? { tool: { name: "end_turn" } }
-      : { any: {} };
+    const toolChoice =
+      forceEndSession && iteration === 0
+        ? { tool: { name: "end_turn" } }
+        : { any: {} };
 
+    // Guardrail disabled on the orchestration call: tool inputs in the user role
+    // (kickoff, forceEnd, tool results) trigger PROMPT_ATTACK at HIGH sensitivity.
+    // Content safety is enforced inside each tool via callClaude (InvokeModel).
     const response = await converseWithTools(
       session.messages,
       TOOL_SCHEMA,
       systemPrompt,
       toolChoice,
       4096,
+      false,
     );
     accumulateUsage(response.usage);
 
@@ -565,9 +590,10 @@ export const runPracticeTurn = async (
         (response.message.content ?? [])
           .map((b) => (b as { text?: string }).text)
           .filter(Boolean)
-          .join(" ") ||
-        "Your message was blocked by the content filter.";
-      logger.warn("practice_guardrail_intervened", { message: guardrailMessage });
+          .join(" ") || "Your message was blocked by the content filter.";
+      logger.warn("practice_guardrail_intervened", {
+        message: guardrailMessage,
+      });
       throw new Error(guardrailMessage);
     }
 

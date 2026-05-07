@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { streamHomework } from "../services/api";
+import { streamHomework } from "../services/homeworkApi";
 import type { BatchPacket, StreamEvent, TokenUsage } from "../types";
 
 type Status = "idle" | "analyzing" | "generating" | "done" | "stopped" | "error";

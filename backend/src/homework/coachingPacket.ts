@@ -12,10 +12,10 @@
 // structurally prevent the cross-contamination bug where Claude collapses
 // multiple questions' answers into a single field.
 // ─────────────────────────────────────────────────────────────────────────────
-import type { RawTokenUsage, Tool, BedrockMessage } from "./bedrock";
-import { buildUsage, converseWithTools, parseDataUrl } from "./bedrock";
-import type { CoachingPacket, IdentifiedQuestion } from "./types";
-import { logger } from "./logger";
+import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
+import { buildUsage, converseWithTools, parseDataUrl } from "../shared/bedrock";
+import type { CoachingPacket, IdentifiedQuestion } from "../shared/types";
+import { logger } from "../shared/logger";
 
 export interface GenerateCoachingPacketsResult {
   packets: CoachingPacket[];

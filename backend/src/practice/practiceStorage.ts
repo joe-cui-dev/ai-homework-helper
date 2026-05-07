@@ -13,8 +13,8 @@ import {
   ListObjectsV2Command,
   NoSuchKey,
 } from "@aws-sdk/client-s3";
-import type { CoachingPacket, PracticeSession, TokenUsage } from "./types";
-import { logger } from "./logger";
+import type { CoachingPacket, PracticeSession, TokenUsage } from "../shared/types";
+import { logger } from "../shared/logger";
 
 const s3 = new S3Client({});
 

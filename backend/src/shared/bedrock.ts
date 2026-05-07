@@ -198,6 +198,7 @@ export const converseWithTools = async (
   system: string,
   toolChoice: Record<string, unknown> = { any: {} },
   maxTokens = 4096,
+  enableGuardrail = true,
 ): Promise<ConverseResponse> => {
   const modelId = process.env.BEDROCK_MODEL_ID;
   if (!modelId) {
@@ -213,7 +214,7 @@ export const converseWithTools = async (
       tools,
       toolChoice: toolChoice as unknown as { any: Record<string, never> },
     },
-    ...(GUARDRAIL_ID && GUARDRAIL_VERSION
+    ...(enableGuardrail && GUARDRAIL_ID && GUARDRAIL_VERSION
       ? {
           guardrailConfig: {
             guardrailIdentifier: GUARDRAIL_ID,
