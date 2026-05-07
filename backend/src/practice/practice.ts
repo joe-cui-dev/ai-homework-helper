@@ -536,15 +536,10 @@ export const runPracticeTurn = async (
       ],
     });
   } else if (session.messages.length === 0) {
-    // Cold start of a session — seed with a parent-facing request so the
-    // guardrail sees on-topic educational content rather than a bare meta-instruction.
+    // Cold start of a session — seed with a synthetic kickoff message.
     session.messages.push({
       role: "user",
-      content: [
-        {
-          text: "We would like to start a practice session on this topic. Please give us a warm-up problem to begin.",
-        },
-      ],
+      content: [{ text: "[Start the session. Produce a warm-up problem.]" }],
     });
   }
 
@@ -575,12 +570,16 @@ export const runPracticeTurn = async (
         ? { tool: { name: "end_turn" } }
         : { any: {} };
 
+    // Guardrail disabled on the orchestration call: tool inputs in the user role
+    // (kickoff, forceEnd, tool results) trigger PROMPT_ATTACK at HIGH sensitivity.
+    // Content safety is enforced inside each tool via callClaude (InvokeModel).
     const response = await converseWithTools(
       session.messages,
       TOOL_SCHEMA,
       systemPrompt,
       toolChoice,
       4096,
+      false,
     );
     accumulateUsage(response.usage);
 
