@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import type { SessionSummary } from "../types";
 import { useSessionHistory } from "../hooks/useSessionHistory";
 import { subjectColour } from "../utils/subjectColour";
@@ -19,23 +20,62 @@ function formatDate(iso: string): string {
   });
 }
 
-function SessionCard({ session, onClick }: { session: SessionSummary; onClick: () => void }) {
+const WRITING_ENDED_LABEL: Record<string, { text: string; chip: string }> = {
+  completed: { text: "Completed", chip: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  abandoned: { text: "Expired", chip: "bg-gray-100 text-gray-500 border-gray-200" },
+  max_drafts: { text: "Limit reached", chip: "bg-amber-50 text-amber-700 border-amber-200" },
+  max_questions: { text: "Limit reached", chip: "bg-amber-50 text-amber-700 border-amber-200" },
+};
+
+interface SessionCardProps {
+  session: SessionSummary;
+  onClick: () => void;
+  onResume?: () => void;
+}
+
+function SessionCard({ session, onClick, onResume }: SessionCardProps) {
   const isReading = session.sessionType === "reading";
+  const isWriting = session.sessionType === "writing";
   const readingPackets = session.readingPackets ?? [];
-  const previewText = isReading
-    ? (session.bookContext?.title ?? readingPackets[0]?.questionText ?? "Reading session")
-    : (session.questions[0]?.input ?? "");
-  const extraCount = isReading
-    ? Math.max(0, readingPackets.length - 1)
-    : Math.max(0, session.questions.length - 1);
+
+  let previewText = "";
+  let extraText: string | null = null;
+  if (isWriting) {
+    previewText =
+      session.plan?.assignmentSummary ?? session.prompt?.input ?? "Writing session";
+    extraText = `${session.draftCount ?? 0} drafts · ${session.questionCount ?? 0} questions`;
+  } else if (isReading) {
+    previewText =
+      session.bookContext?.title ?? readingPackets[0]?.questionText ?? "Reading session";
+    const extraCount = Math.max(0, readingPackets.length - 1);
+    if (extraCount > 0) extraText = `${extraCount + 1} questions`;
+  } else {
+    previewText = session.questions[0]?.input ?? "";
+    const extraCount = Math.max(0, session.questions.length - 1);
+    if (extraCount > 0) extraText = `+${extraCount} more`;
+  }
+
+  const isActiveWriting = isWriting && session.status === "active";
+  const writingEndedChip =
+    isWriting && session.status === "ended" && session.endedReason
+      ? WRITING_ENDED_LABEL[session.endedReason]
+      : null;
 
   return (
     <button
-      onClick={onClick}
-      className="w-full text-left p-3 rounded-xl bg-white border border-gray-100 space-y-2 hover:border-brand-200 hover:shadow-sm transition-all"
+      onClick={isActiveWriting ? onResume : onClick}
+      className={`w-full text-left p-3 rounded-xl bg-white border space-y-2 hover:shadow-sm transition-all ${
+        isActiveWriting
+          ? "border-violet-200 border-l-4 hover:border-violet-400"
+          : "border-gray-100 hover:border-brand-200"
+      }`}
     >
       <div className="flex items-center gap-2 flex-wrap">
-        {isReading ? (
+        {isWriting ? (
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700">
+            ✍️ Writing
+          </span>
+        ) : isReading ? (
           <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700">
             📚 Reading
           </span>
@@ -49,15 +89,31 @@ function SessionCard({ session, onClick }: { session: SessionSummary; onClick: (
             </span>
           ))
         )}
+        {isActiveWriting && (
+          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800">
+            In progress
+          </span>
+        )}
+        {writingEndedChip && (
+          <span
+            className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${writingEndedChip.chip}`}
+          >
+            {writingEndedChip.text}
+          </span>
+        )}
         <span className="text-xs text-gray-400">{formatDate(session.timestamp)}</span>
       </div>
 
       <p className="text-sm text-gray-700 line-clamp-2">{previewText}</p>
 
-      {extraCount > 0 && (
+      {extraText && (
         <span className="inline-block text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-          {isReading ? `${extraCount + 1} questions` : `+${extraCount} more`}
+          {extraText}
         </span>
+      )}
+
+      {isActiveWriting && (
+        <p className="text-xs font-semibold text-violet-600">Resume →</p>
       )}
 
       {session.usage && (
@@ -98,7 +154,16 @@ function SkeletonCard() {
 export function HistorySidebar({ token, open, onClose }: HistorySidebarProps) {
   const { sessions, loading, loadingMore, error, nextCursor, loadMore } =
     useSessionHistory(token);
+  const navigate = useNavigate();
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
+
+  // Pin active writing sessions to the top.
+  const activeWriting = sessions.filter(
+    (s) => s.sessionType === "writing" && s.status === "active",
+  );
+  const otherSessions = sessions.filter(
+    (s) => !(s.sessionType === "writing" && s.status === "active"),
+  );
 
   return (
     <>
@@ -152,8 +217,32 @@ export function HistorySidebar({ token, open, onClose }: HistorySidebarProps) {
             </p>
           )}
 
-          {sessions.map((s) => (
-            <SessionCard key={s.sessionId} session={s} onClick={() => setSelectedSession(s)} />
+          {activeWriting.length > 0 && (
+            <>
+              {activeWriting.map((s) => (
+                <SessionCard
+                  key={s.sessionId}
+                  session={s}
+                  onClick={() => setSelectedSession(s)}
+                  onResume={() => {
+                    onClose();
+                    navigate(`/writing/${s.sessionId}`);
+                  }}
+                />
+              ))}
+              <div className="border-b border-gray-200 my-2" />
+            </>
+          )}
+          {otherSessions.map((s) => (
+            <SessionCard
+              key={s.sessionId}
+              session={s}
+              onClick={() => setSelectedSession(s)}
+              onResume={() => {
+                onClose();
+                navigate(`/writing/${s.sessionId}`);
+              }}
+            />
           ))}
 
           {nextCursor && (

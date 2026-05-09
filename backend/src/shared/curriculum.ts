@@ -125,3 +125,87 @@ export const lookupCurriculum = (subject: string, year: string): string[] => {
   const outcomes = CURRICULUM[subject as Subject]?.[year as Year];
   return outcomes ?? [];
 };
+
+// ── English Writing outcomes (AC v9, abbreviated) ─────────────────────────────
+// Used by the Writing Lambda's /start system prompt to ground successCriteria
+// and rubric descriptors in curriculum language. Outcome strings are NOT echoed
+// in WritingPlanPacket — the parent gets prompt-specific criteria, not codes.
+type WritingGenreKey =
+  | "narrative"
+  | "persuasive"
+  | "recount"
+  | "descriptive"
+  | "information_report"
+  | "explanation"
+  | "procedure"
+  | "other";
+
+const WRITING_OUTCOMES_BY_YEAR: Record<Year, string[]> = {
+  "year-1": [
+    "Create short imaginative, informative and persuasive texts on familiar topics",
+    "Use capital letters at the start of a sentence and full stops at the end",
+    "Spell most one- and two-syllable words with common letter patterns",
+    "Re-read own writing and add detail with adult support",
+  ],
+  "year-2": [
+    "Create texts that show simple structure (beginning, middle, end) for the chosen purpose",
+    "Use compound sentences and adjectives to add detail",
+    "Spell familiar words correctly using sound-letter patterns and common rules",
+    "Edit own writing for capitals, full stops and missing words",
+  ],
+  "year-3": [
+    "Plan, draft and revise short texts for an identified audience and purpose",
+    "Use paragraphs to group ideas and a wider range of sentence types",
+    "Choose vocabulary to add precision and engage the reader",
+    "Edit for spelling using known rules and a personal word bank",
+  ],
+  "year-4": [
+    "Plan, create, edit and publish written texts using paragraphs with topic sentences and supporting detail",
+    "Use complex sentences with subordinate clauses to develop ideas",
+    "Use figurative language (similes, metaphors, alliteration) where appropriate to genre",
+    "Edit for tense consistency, subject-verb agreement and dialogue punctuation",
+  ],
+  "year-5": [
+    "Plan, draft and publish multi-paragraph texts that develop ideas with evidence and detail",
+    "Vary sentence structure and length for effect, using cohesive devices between paragraphs",
+    "Choose vocabulary deliberately to influence the reader and match the genre",
+    "Edit for paragraph structure, punctuation of dialogue, and consistent point of view",
+  ],
+  "year-6": [
+    "Plan, draft and publish extended texts (narrative, persuasive, expository) with evidence-based argument or developed plot",
+    "Use a range of sentence structures and cohesive devices to build a sustained argument or storyline",
+    "Make precise vocabulary choices to position the reader and signal genre conventions",
+    "Edit independently for structure, mechanics and audience appropriateness",
+  ],
+};
+
+const GENRE_DESCRIPTORS: Record<WritingGenreKey, string> = {
+  narrative:
+    "Tells a story with orientation, complication and resolution; uses character, setting and a clear sequence of events.",
+  persuasive:
+    "Takes a clear position, supports it with reasons and evidence, anticipates counter-arguments where appropriate, and ends with a call to action or restated stance.",
+  recount:
+    "Retells real events in chronological order with orientation (who/when/where), a sequence of events, and a personal comment or reflection at the end.",
+  descriptive:
+    "Builds a vivid picture for the reader using sensory detail, precise nouns, and apt adjectives; structure is organised by aspect rather than time.",
+  information_report:
+    "Presents factual information about a topic; opens with a classification, organises facts into categorised paragraphs, uses third person and present tense.",
+  explanation:
+    "Explains how or why something happens using cause-and-effect language and a clear sequence; typically present tense, third person.",
+  procedure:
+    "Tells someone how to do something with a goal, materials, and numbered steps in imperative voice.",
+  other:
+    "Mixed or unclear genre — apply general writing-quality criteria (clear purpose, organisation, audience awareness).",
+};
+
+// Returns AU writing outcomes for the given year, plus a one-line descriptor of
+// the genre's structural conventions. Both are used to ground the WritingPlan's
+// successCriteria and the rubric's per-dimension descriptors.
+export const lookupWritingOutcomes = (
+  year: string,
+  genre: string,
+): { yearOutcomes: string[]; genreDescriptor: string } => ({
+  yearOutcomes: WRITING_OUTCOMES_BY_YEAR[year as Year] ?? [],
+  genreDescriptor:
+    GENRE_DESCRIPTORS[genre as WritingGenreKey] ?? GENRE_DESCRIPTORS.other,
+});

@@ -15,6 +15,9 @@ import type {
   ReadingPacket,
   TaskType,
   TokenUsage,
+  WritingEndedReason,
+  WritingPlanPacket,
+  WritingTurn,
 } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -34,14 +37,24 @@ interface QuestionWithPractice extends BatchQuestion {
 interface SessionSummary {
   sessionId: string;
   timestamp: string;
-  // "homework" | "reading" — defaults to "homework" for legacy rows.
+  // "homework" | "reading" | "writing" — defaults to "homework" for legacy rows.
   sessionType: TaskType;
   subjects: string[];
   imageUrls: string[];
   questions: QuestionWithPractice[];
-  // Reading-only fields. Empty/undefined for homework sessions.
+  // Reading-only fields. Empty/undefined for non-reading sessions.
   bookContext?: BookContext;
   readingPackets?: ReadingPacket[];
+  // Writing-only fields. Empty/undefined for non-writing sessions. _internal
+  // is intentionally NOT projected — see ADR 0003.
+  status?: "active" | "ended";
+  endedReason?: WritingEndedReason;
+  updatedAt?: string;
+  prompt?: { input: string; imageKeys?: string[] };
+  plan?: WritingPlanPacket;
+  turns?: WritingTurn[];
+  draftCount?: number;
+  questionCount?: number;
   usage?: TokenUsage;
 }
 
@@ -86,21 +99,28 @@ export const handler = async (
 
   const summaries: SessionSummary[] = await Promise.all(
     sessions.map(
-      async ({
-        imageKeys,
-        questions,
-        sessionId,
-        timestamp,
-        usage,
-        sessionType,
-        bookContext,
-        readingPackets,
-      }) => {
+      async (record) => {
+        const {
+          imageKeys,
+          questions,
+          sessionId,
+          timestamp,
+          usage,
+          sessionType,
+          bookContext,
+          readingPackets,
+        } = record;
         const resolvedType: TaskType = sessionType ?? "homework";
+        // For writing sessions, surface ONLY the prompt image so the history
+        // sidebar doesn't expose the student's draft work as thumbnails.
+        const presignKeys =
+          resolvedType === "writing"
+            ? (record.prompt?.imageKeys ?? [])
+            : (imageKeys ?? []);
         const [imageUrls, practiceSummaries] = await Promise.all([
-          imageKeys?.length
+          presignKeys.length
             ? Promise.all(
-                imageKeys.map((key) =>
+                presignKeys.map((key) =>
                   getSignedUrl(
                     s3,
                     new GetObjectCommand({ Bucket: bucket, Key: key }),
@@ -109,11 +129,11 @@ export const handler = async (
                 ),
               )
             : Promise.resolve([] as string[]),
-          // Practice sessions are a homework-only concept in v1; skip the
-          // S3 list for reading sessions.
-          resolvedType === "reading"
-            ? Promise.resolve([] as PracticeSessionSummary[])
-            : listPracticeSessionsForBatch(studentId, sessionId),
+          // Practice sessions are a homework-only concept; skip the S3 list
+          // for reading and writing sessions.
+          resolvedType === "homework"
+            ? listPracticeSessionsForBatch(studentId, sessionId)
+            : Promise.resolve([] as PracticeSessionSummary[]),
         ]);
         const practiceByQuestion = new Map(
           practiceSummaries.map((p) => [p.questionId, p]),
@@ -127,7 +147,9 @@ export const handler = async (
         const subjects =
           resolvedType === "reading"
             ? ["reading"]
-            : [...new Set(questions.map((q) => q.packet.subject))];
+            : resolvedType === "writing"
+              ? ["writing"]
+              : [...new Set(questions.map((q) => q.packet.subject))];
         return {
           sessionId,
           timestamp,
@@ -137,6 +159,19 @@ export const handler = async (
           questions: questionsWithPractice,
           bookContext,
           readingPackets,
+          // Writing-only fields; undefined for other types.
+          status: resolvedType === "writing" ? record.status : undefined,
+          endedReason:
+            resolvedType === "writing" ? record.endedReason : undefined,
+          updatedAt:
+            resolvedType === "writing" ? record.updatedAt : undefined,
+          prompt: resolvedType === "writing" ? record.prompt : undefined,
+          plan: resolvedType === "writing" ? record.plan : undefined,
+          turns: resolvedType === "writing" ? record.turns : undefined,
+          draftCount:
+            resolvedType === "writing" ? record.draftCount : undefined,
+          questionCount:
+            resolvedType === "writing" ? record.questionCount : undefined,
           usage,
         };
       },

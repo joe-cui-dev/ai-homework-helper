@@ -20,6 +20,9 @@ import type {
   ReadingPacket,
   TaskType,
   TokenUsage,
+  WritingEndedReason,
+  WritingPlanPacket,
+  WritingTurn,
 } from "./types";
 import { logger } from "./logger";
 
@@ -42,6 +45,18 @@ export interface SessionRecord {
   // Populated for reading sessions only.
   bookContext?: BookContext;
   readingPackets?: ReadingPacket[];
+  // Populated for writing sessions only. The _internal field on the underlying
+  // S3 JSON (Bedrock messages, per-turn raw usage) is intentionally NOT
+  // surfaced on SessionRecord — see ADR 0003. Readers strip it before
+  // projection.
+  status?: "active" | "ended";
+  endedReason?: WritingEndedReason;
+  updatedAt?: string;
+  prompt?: { input: string; imageKeys?: string[] };
+  plan?: WritingPlanPacket;
+  turns?: WritingTurn[];
+  draftCount?: number;
+  questionCount?: number;
   // Total tokens used to produce the entire batch (analyze + chunked packet
   // calls). Optional for backward compatibility with sessions written before
   // usage tracking landed.
@@ -140,16 +155,7 @@ export const getRecentSessions = async (
         ".json",
         "",
       );
-      return {
-        sessionId,
-        timestamp: (raw.timestamp as string) ?? "",
-        imageKeys: raw.imageKeys as string[] | undefined,
-        sessionType: (raw.sessionType as TaskType | undefined) ?? "homework",
-        questions: (raw.questions as BatchQuestion[] | undefined) ?? [],
-        bookContext: raw.bookContext as BookContext | undefined,
-        readingPackets: raw.readingPackets as ReadingPacket[] | undefined,
-        usage: raw.usage as TokenUsage | undefined,
-      } as SessionRecord;
+      return projectSessionRecord(sessionId, raw);
     }),
   );
 
@@ -162,6 +168,10 @@ export const uploadSessionImages = async (
   studentId: string,
   sessionId: string,
   images: string[],
+  // Prefix lets multi-turn sessions (Writing) namespace images per turn role
+  // without colliding on flat sessions/<studentId>/<batchId>/. Defaults to
+  // "image" — the original homework/reading naming.
+  prefix: string = "image",
 ): Promise<string[]> => {
   if (images.length === 0) return [];
 
@@ -176,7 +186,7 @@ export const uploadSessionImages = async (
       );
       if (!match) throw new Error(`Invalid image data URL at index ${i}`);
       const [, mediaType, ext, base64Data] = match;
-      const key = `sessions/${studentId}/${sessionId}/image-${i}.${ext}`;
+      const key = `sessions/${studentId}/${sessionId}/${prefix}-${i}.${ext}`;
       await s3.send(
         new PutObjectCommand({
           Bucket: bucket,
@@ -241,21 +251,44 @@ export const listSessions = async (
         "",
       );
       const raw = JSON.parse(body) as Record<string, unknown>;
-
-      return {
-        sessionId,
-        timestamp: (raw.timestamp as string) ?? "",
-        imageKeys: raw.imageKeys as string[] | undefined,
-        sessionType: (raw.sessionType as TaskType | undefined) ?? "homework",
-        questions: (raw.questions as BatchQuestion[] | undefined) ?? [],
-        bookContext: raw.bookContext as BookContext | undefined,
-        readingPackets: raw.readingPackets as ReadingPacket[] | undefined,
-        usage: raw.usage as TokenUsage | undefined,
-      } as SessionRecord;
+      return projectSessionRecord(sessionId, raw);
     }),
   );
 
   const validSessions = sessions.filter((s): s is SessionRecord => s !== null);
   logger.info("list_sessions", { studentId, count: validSessions.length });
   return { sessions: validSessions, nextCursor };
+};
+
+// Project the raw S3 JSON of a session into the SessionRecord public shape.
+// Critical: never echo `_internal` (Writing Session Bedrock messages, per-turn
+// raw usage). See ADR 0003. Defaults `sessionType` to "homework" for legacy
+// rows written before the discriminator existed.
+const projectSessionRecord = (
+  sessionId: string,
+  raw: Record<string, unknown>,
+): SessionRecord => {
+  const sessionType =
+    (raw.sessionType as TaskType | undefined) ?? "homework";
+  const base: SessionRecord = {
+    sessionId,
+    timestamp: (raw.timestamp as string) ?? "",
+    imageKeys: raw.imageKeys as string[] | undefined,
+    sessionType,
+    questions: (raw.questions as BatchQuestion[] | undefined) ?? [],
+    bookContext: raw.bookContext as BookContext | undefined,
+    readingPackets: raw.readingPackets as ReadingPacket[] | undefined,
+    usage: raw.usage as TokenUsage | undefined,
+  };
+  if (sessionType === "writing") {
+    base.status = raw.status as SessionRecord["status"];
+    base.endedReason = raw.endedReason as WritingEndedReason | undefined;
+    base.updatedAt = raw.updatedAt as string | undefined;
+    base.prompt = raw.prompt as SessionRecord["prompt"];
+    base.plan = raw.plan as WritingPlanPacket | undefined;
+    base.turns = (raw.turns as WritingTurn[] | undefined) ?? [];
+    base.draftCount = (raw.draftCount as number | undefined) ?? 0;
+    base.questionCount = (raw.questionCount as number | undefined) ?? 0;
+  }
+  return base;
 };

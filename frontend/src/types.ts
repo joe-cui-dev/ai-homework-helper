@@ -41,7 +41,7 @@ export interface SessionQuestion {
 
 // ── Reading Session types ───────────────────────────────────────────────────
 
-export type TaskType = "homework" | "reading";
+export type TaskType = "homework" | "reading" | "writing";
 
 export type ReadingQuestionType = "literal" | "inference" | "vocabulary";
 
@@ -76,9 +76,18 @@ export interface SessionSummary {
   subjects: string[];
   imageUrls: string[];
   questions: SessionQuestion[];
-  // Reading-only fields. Empty/undefined for homework sessions.
+  // Reading-only fields. Empty/undefined for non-reading sessions.
   bookContext?: BookContext;
   readingPackets?: ReadingPacket[];
+  // Writing-only fields. Empty/undefined for non-writing sessions.
+  status?: "active" | "ended";
+  endedReason?: WritingEndedReason;
+  updatedAt?: string;
+  prompt?: { input: string; imageKeys?: string[] };
+  plan?: WritingPlanPacket;
+  turns?: WritingTurn[];
+  draftCount?: number;
+  questionCount?: number;
   usage?: TokenUsage;
 }
 
@@ -165,4 +174,134 @@ export type PracticeStreamEvent =
       turnUsage: TokenUsage;
       sessionUsage: TokenUsage;
     }
+  | { type: "error"; message: string };
+
+// ── Writing Session types (mirror backend/src/shared/types.ts) ──────────────
+
+export type WritingGenre =
+  | "narrative"
+  | "persuasive"
+  | "recount"
+  | "descriptive"
+  | "information_report"
+  | "explanation"
+  | "procedure"
+  | "other";
+
+export type WritingEndedReason =
+  | "completed"
+  | "abandoned"
+  | "max_drafts"
+  | "max_questions";
+
+export interface WritingPlanPacket {
+  assignmentSummary: string;
+  genre: WritingGenre;
+  yearLevel: YearLevel;
+  successCriteria: string[];
+  planningQuestions: string[];
+  modelAnswer: string;
+  vocabularyToOffer: string[];
+  watchFor: string[];
+  coachingScript: string;
+}
+
+export interface FeedbackHighlight {
+  evidenceQuote: string;
+  comment: string;
+}
+
+export interface DraftFeedbackWish {
+  evidenceQuote: string;
+  comment: string;
+  revisionSuggestion: string;
+}
+
+export type RubricDimensionName =
+  | "Ideas & Content"
+  | "Structure & Organisation"
+  | "Language & Vocabulary"
+  | "Mechanics";
+
+export interface RubricDimension {
+  name: RubricDimensionName;
+  score: 1 | 2 | 3 | 4;
+  rationale: string;
+}
+
+export type OverallBand =
+  | "Working towards"
+  | "At standard"
+  | "Above standard";
+
+export interface DraftRubric {
+  dimensions: RubricDimension[];
+  overallBand: OverallBand;
+}
+
+export type DraftNextStep =
+  | "revise_with_focus"
+  | "ready_for_final_read_aloud"
+  | "needs_replanning";
+
+export interface DraftFeedbackPacket {
+  transcription: string;
+  againstPrompt: string;
+  twoStars: FeedbackHighlight[];
+  oneWish: DraftFeedbackWish;
+  rubric: DraftRubric;
+  mechanicsNotes: string[];
+  coachingScript: string;
+  nextStep: DraftNextStep;
+}
+
+export interface CoachingNotePacket {
+  questionUnderstood: string;
+  answer: string;
+  coachingTip: string;
+  relatedGuidanceField?: string;
+}
+
+export type WritingTurn =
+  | {
+      kind: "draft";
+      turnIndex: number;
+      ts: string;
+      input: { text?: string; imageKeys?: string[] };
+      packet: DraftFeedbackPacket;
+    }
+  | {
+      kind: "question";
+      turnIndex: number;
+      ts: string;
+      input: { text: string };
+      packet: CoachingNotePacket;
+    };
+
+export type WritingStreamEvent =
+  | {
+      type: "plan_complete";
+      batchId: string;
+      plan: WritingPlanPacket;
+      usage: TokenUsage;
+    }
+  | { type: "transcribing" }
+  | {
+      type: "feedback_complete";
+      turnIndex: number;
+      packet: DraftFeedbackPacket;
+      draftCount: number;
+      questionCount: number;
+      usage: TokenUsage;
+    }
+  | {
+      type: "answer_complete";
+      turnIndex: number;
+      packet: CoachingNotePacket;
+      draftCount: number;
+      questionCount: number;
+      usage: TokenUsage;
+    }
+  | { type: "limit_reached"; kind: "draft" | "question"; remaining: 0 }
+  | { type: "session_ended"; endedReason: WritingEndedReason }
   | { type: "error"; message: string };

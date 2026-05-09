@@ -402,7 +402,33 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       },
     });
 
-    // ── Homework + Reading Function URLs (streaming) ───────────────────────
+    // ── Writing Lambda (English Writing Coaching) ──────────────────────────
+    // Multi-turn writing-coaching session. Each turn = one POST. State lives
+    // in S3 (sessions/{studentId}/{batchId}.json with sessionType="writing"
+    // and an _internal namespace for Bedrock messages). See ADR 0003.
+    const writingLogGroup = new logs.LogGroup(this, "WritingFunctionLogs", {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const writingFn = new lambdaNodejs.NodejsFunction(this, "WritingFunction", {
+      logGroup: writingLogGroup,
+      entry: path.join(__dirname, "../../backend/src/writing/handler.ts"),
+      handler: "handler",
+      runtime: lambda.Runtime.NODEJS_24_X,
+      memorySize: 1024,
+      timeout: cdk.Duration.minutes(5),
+      reservedConcurrentExecutions: 10,
+      environment: sharedEnv,
+      bundling: { minify: true, sourceMap: false },
+    });
+
+    writingFn.addToRolePolicy(bedrockInvokePolicy);
+    writingFn.addToRolePolicy(bedrockGuardrailPolicy);
+    sessionBucket.grantPut(writingFn, "sessions/*");
+    sessionBucket.grantRead(writingFn, "sessions/*");
+
+    // ── Homework + Reading + Writing Function URLs (streaming) ─────────────
     const streamCors = {
       allowedOrigins: [
         this.node.tryGetContext("allowedOrigin") ?? "https://joe-cui.com",
@@ -420,6 +446,13 @@ export class AiHomeworkHelperStack extends cdk.Stack {
 
     const readingFnUrl = new lambda.FunctionUrl(this, "ReadingFunctionUrl", {
       function: readingFn,
+      authType: lambda.FunctionUrlAuthType.NONE,
+      invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
+      cors: streamCors,
+    });
+
+    const writingFnUrl = new lambda.FunctionUrl(this, "WritingFunctionUrl", {
+      function: writingFn,
       authType: lambda.FunctionUrlAuthType.NONE,
       invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
       cors: streamCors,
@@ -514,6 +547,12 @@ function handler(event) {
       value: practiceFnUrl.url,
       description:
         "POST /practice/start | /practice/turn | /practice/end — Phase 2 Practice Tutor Loop",
+    });
+
+    new cdk.CfnOutput(this, "WritingApiUrl", {
+      value: writingFnUrl.url,
+      description:
+        "POST /writing/start | /writing/draft | /writing/question | /writing/end — English Writing Coaching",
     });
 
     new cdk.CfnOutput(this, "UserPoolId", {

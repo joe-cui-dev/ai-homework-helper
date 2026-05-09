@@ -37,17 +37,23 @@ cd infra && npm run synth
 
 This is an npm workspaces monorepo with three packages: `backend/`, `frontend/`, `infra/`.
 
-**Request flow:**
+**Modules** (each is its own Lambda Function URL):
 
-1. React SPA authenticates via Amazon Cognito and POSTs questions (+ optional base64 image) to a Lambda Function URL with a JWT Bearer token
-2. `backend/src/handler.ts` — Lambda entry point: validates JWT (CognitoJwtVerifier), extracts `studentId` from the `sub` claim, validates question length (≤2000 chars), then calls `runAgent()`
-3. `backend/src/agent.ts` — agentic loop (max 5 iterations) calling Bedrock Converse API. Claude picks tools from a schema of 6 tools; each iteration dispatches tools and streams `tool_start`/`tool_end` NDJSON events back to the client
-4. `backend/src/pipeline.ts` — single-turn AI skills (`solve`, `explain`, `generateHint`) invoked via `InvokeModel`; uses subject-specific `SKILL_PROMPTS` and year-level `TONE_PROMPTS`
-5. On `submit_answer` tool call, handler writes `{ type: "complete", result }` and saves session to S3 at `sessions/{studentId}/{sessionId}.json`
-6. `backend/src/storage.ts` — S3 session persistence; `getRecentSessions` fetches up to 3 recent sessions for personalization
-7. `backend/src/curriculum.ts` — local lookup of Australian Curriculum outcomes (no API call, zero cost)
+- **Homework** (`backend/src/homework/`) — stateless. Parent uploads a worksheet image; Claude extracts questions and emits a `CoachingPacket` per question. SPA route `/homework`.
+- **Reading** (`backend/src/reading/`) — stateless. Parent uploads book cover + pages; Claude generates 5 grounded comprehension `ReadingPacket`s. SPA route `/reading`.
+- **Writing** (`backend/src/writing/`) — multi-turn coaching for an English writing assignment. Three typed turn kinds (`/writing/start`, `/writing/draft`, `/writing/question`), each one forced-tool Converse call (no per-turn loop). State lives in `sessions/{studentId}/{batchId}.json` with `sessionType: "writing"` and is **mutated across HTTP requests**. `_internal` namespace holds Bedrock `messages[]` and per-turn raw usage; the history reader skips it. See [docs/adr/0003-writing-session-model.md](docs/adr/0003-writing-session-model.md). SPA routes `/writing` and `/writing/:batchId`.
+- **Practice** (`backend/src/practice/`) — multi-turn agentic loop launched from a CoachingPacket. Each turn iterates a 7-tool dispatch up to 5 times until terminal `end_turn`. SPA route `/practice/:sessionId`.
+- **History** (`backend/src/history/`) — read-only listing for the sidebar; presigns image URLs and (for homework sessions) lists practice siblings. Strips `_internal` from writing sessions on projection.
 
-**Streaming:** responses are NDJSON (`application/x-ndjson`). Frontend parses lines via `ReadableStream` in `frontend/src/services/api.ts`, and `useHomeworkStream` hook manages state transitions (idle → streaming → done/error).
+**Request flow (Homework example):**
+
+1. React SPA authenticates via Amazon Cognito and POSTs questions (+ optional base64 image) to the Homework Function URL with a JWT Bearer token
+2. `backend/src/homework/handler.ts` — Lambda entry: validates JWT, extracts `studentId` from `sub`, validates input, then calls `analyzePages()` and `generateCoachingPackets()`
+3. NDJSON stream emits `analyzing` → `packet_start` per question → `packet_complete` per packet → `complete`
+4. `backend/src/shared/storage.ts` — persists the batch session to S3
+5. `backend/src/shared/curriculum.ts` — local lookup of AU Curriculum outcomes (math/science/english) plus English writing outcomes per genre via `lookupWritingOutcomes`
+
+**Streaming:** all four POST endpoints use NDJSON (`application/x-ndjson`) via `awslambda.streamifyResponse`. Frontend parses lines via `ReadableStream`; per-module hooks (`useHomeworkStream`, `useReadingStream`, `useWritingSession`, `usePracticeSession`) manage state.
 
 **Safety:** two-layer enforcement — Bedrock Guardrails (hate/profanity/PII/off-topic) on all InvokeModel calls, plus Cognito JWT validation ensuring `studentId` always comes from the verified token.
 
@@ -73,6 +79,7 @@ See `frontend/.env.local.example` for the template.
 - **`callClaude` vs `converseWithTools`:** pipeline skills use single-turn `InvokeModel`; the orchestration loop uses multi-turn Converse API — both go through Bedrock Guardrails
 - **`AlreadyReportedError`:** thrown when a guardrail blocks a response to prevent duplicate error events being streamed
 - **CDK context overrides:** `logLevel` and `allowedOrigin` can be changed at deploy time via `--context` flags without code changes
+- **Writing is "agentic at session level only":** each turn is one forced-tool Converse call; the multi-turn-ness across HTTP requests is the agent character, not iteration inside a turn. Cheaper and lower-latency than a per-turn loop, and the only branching decision (`nextStep` discriminator) is one conditional, not a loop.
 
 ## Agent skills
 

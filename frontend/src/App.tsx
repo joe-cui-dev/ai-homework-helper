@@ -5,6 +5,8 @@ import { HistorySidebar } from "./components/HistorySidebar";
 import { HomeworkPage } from "./pages/HomeworkPage";
 import { ReadingPage } from "./pages/ReadingPage";
 import { PracticePage } from "./pages/PracticePage";
+import { WritingPage } from "./pages/WritingPage";
+import { WritingSessionPage } from "./pages/WritingSessionPage";
 import { useAuth } from "./hooks/useAuth";
 
 function AppShell({
@@ -50,12 +52,15 @@ function AppShell({
           </div>
 
           {/* Centre: nav */}
-          <nav className="flex gap-1 p-1 bg-gray-100/70 rounded-2xl flex-1 max-w-xs">
+          <nav className="flex gap-1 p-1 bg-gray-100/70 rounded-2xl flex-1 max-w-md">
             <NavLink to="/homework" className={navLinkClass}>
               Homework
             </NavLink>
             <NavLink to="/reading" className={navLinkClass}>
               Reading
+            </NavLink>
+            <NavLink to="/writing" className={navLinkClass}>
+              Writing
             </NavLink>
             <NavLink to="/practice" className={navLinkClass}>
               Practice
@@ -81,6 +86,8 @@ function AppShell({
         <Route path="/" element={<Navigate to="/homework" replace />} />
         <Route path="/homework" element={<HomeworkPage token={token} />} />
         <Route path="/reading" element={<ReadingPage token={token} />} />
+        <Route path="/writing" element={<WritingPage token={token} />} />
+        <Route path="/writing/:batchId" element={<WritingSessionPage token={token} />} />
         <Route path="/practice" element={<Navigate to="/homework" replace />} />
         <Route path="/practice/:sessionId" element={<PracticePage token={token} />} />
         <Route path="*" element={<Navigate to="/homework" replace />} />

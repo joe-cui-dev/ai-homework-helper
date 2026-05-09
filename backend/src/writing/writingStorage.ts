@@ -1,0 +1,122 @@
+// ── Writing Session storage ──────────────────────────────────────────────────
+// One JSON object per session at sessions/{studentId}/{batchId}.json. Mutated
+// across HTTP requests (read-modify-write per turn). _internal carries Bedrock
+// state and per-turn raw usage — history reader skips it. See ADR 0003.
+//
+// Lazy stale-flip: sessions older than WRITING_SESSION_MAX_AGE_HOURS since
+// updatedAt are flipped to status="ended", endedReason="abandoned" on next
+// read, mirroring practiceStorage.
+// ─────────────────────────────────────────────────────────────────────────────
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  NoSuchKey,
+} from "@aws-sdk/client-s3";
+import type { WritingSessionRecord } from "../shared/types";
+import { logger } from "../shared/logger";
+
+const s3 = new S3Client({});
+
+export const WRITING_SESSION_MAX_AGE_HOURS = 24;
+export const MAX_DRAFT_TURNS = 5;
+export const MAX_QUESTION_TURNS = 3;
+
+const bucket = (): string => {
+  const b = process.env.S3_BUCKET_NAME;
+  if (!b) throw new Error("S3_BUCKET_NAME environment variable is not set");
+  return b;
+};
+
+const sessionKey = (studentId: string, batchId: string): string =>
+  `sessions/${studentId}/${batchId}.json`;
+
+const isStale = (record: WritingSessionRecord): boolean => {
+  if (record.status === "ended") return false;
+  const ageMs = Date.now() - new Date(record.updatedAt).getTime();
+  return ageMs > WRITING_SESSION_MAX_AGE_HOURS * 3600 * 1000;
+};
+
+export interface WritingSessionLocator {
+  studentId: string;
+  batchId: string;
+}
+
+// Load a writing session by batchId. Performs lazy stale-flip: if the session
+// is "active" but older than 24 h, flips to ended/abandoned and persists
+// before returning. Throws if the session does not exist or belongs to
+// another student.
+export const loadWritingSession = async (
+  loc: WritingSessionLocator,
+): Promise<WritingSessionRecord> => {
+  let response;
+  try {
+    response = await s3.send(
+      new GetObjectCommand({
+        Bucket: bucket(),
+        Key: sessionKey(loc.studentId, loc.batchId),
+      }),
+    );
+  } catch (err) {
+    if (err instanceof NoSuchKey || (err as { name?: string }).name === "NoSuchKey") {
+      const error = new Error("Writing session not found.");
+      (error as { code?: string }).code = "NOT_FOUND";
+      throw error;
+    }
+    throw err;
+  }
+  const body = await response.Body?.transformToString("utf-8");
+  if (!body) throw new Error("Writing session is empty.");
+  const record = JSON.parse(body) as WritingSessionRecord;
+
+  // Defensive: a session at this path may have been written by Homework or
+  // Reading. Reject so callers don't accidentally mutate a non-Writing record.
+  if (record.sessionType !== "writing") {
+    const error = new Error(
+      "This session is not a writing session.",
+    );
+    (error as { code?: string }).code = "WRONG_TYPE";
+    throw error;
+  }
+
+  // Tenancy check: studentId on the record must match the caller. If the
+  // record is missing studentId (legacy or partial write), refuse.
+  if (record.studentId !== loc.studentId) {
+    const error = new Error("Writing session not found.");
+    (error as { code?: string }).code = "NOT_FOUND";
+    throw error;
+  }
+
+  if (isStale(record)) {
+    record.status = "ended";
+    record.endedReason = "abandoned";
+    await saveWritingSession(record);
+    logger.info("writing_session_auto_abandoned", {
+      sessionId: record.sessionId,
+    });
+  }
+
+  return record;
+};
+
+// Save the full session record (including _internal). Atomic at the S3 object
+// level — read-modify-write inside the Lambda is safe so long as we don't
+// have concurrent turns for the same session, which the UI wizard prevents.
+export const saveWritingSession = async (
+  record: WritingSessionRecord,
+): Promise<void> => {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket(),
+      Key: sessionKey(record.studentId, record.sessionId),
+      Body: JSON.stringify(record),
+      ContentType: "application/json",
+    }),
+  );
+  logger.info("writing_session_save", {
+    sessionId: record.sessionId,
+    status: record.status,
+    draftCount: record.draftCount,
+    questionCount: record.questionCount,
+  });
+};

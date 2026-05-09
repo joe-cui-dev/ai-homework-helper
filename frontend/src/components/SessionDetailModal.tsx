@@ -2,6 +2,9 @@ import { useEffect } from "react";
 import type { SessionSummary } from "../types";
 import { ResultCard } from "./ResultCard";
 import { ReadingPacketCard } from "./ReadingPacketCard";
+import { WritingPlanCard } from "./WritingPlanCard";
+import { DraftFeedbackCard } from "./DraftFeedbackCard";
+import { CoachingNoteCard } from "./CoachingNoteCard";
 import { subjectColour } from "../utils/subjectColour";
 import { formatUsageCompact } from "../utils/formatUsage";
 import { useNavigate } from "react-router-dom";
@@ -98,8 +101,40 @@ export function SessionDetailModal({ session, token: _token, onClose }: SessionD
             </div>
           )}
 
-          {/* Reading session: render ReadingPacket cards */}
-          {session.sessionType === "reading" && session.readingPackets?.length ? (
+          {/* Writing session: render plan + transcript of all turns */}
+          {session.sessionType === "writing" && session.plan ? (
+            <div className="space-y-3">
+              <WritingPlanCard plan={session.plan} />
+              {(session.turns ?? []).map((turn) => {
+                if (turn.kind === "draft") {
+                  const draftIndex =
+                    (session.turns ?? [])
+                      .slice(0, (session.turns ?? []).indexOf(turn) + 1)
+                      .filter((t) => t.kind === "draft").length;
+                  return (
+                    <DraftFeedbackCard
+                      key={turn.turnIndex}
+                      packet={turn.packet}
+                      draftIndex={draftIndex}
+                    />
+                  );
+                }
+                const questionIndex =
+                  (session.turns ?? [])
+                    .slice(0, (session.turns ?? []).indexOf(turn) + 1)
+                    .filter((t) => t.kind === "question").length;
+                return (
+                  <CoachingNoteCard
+                    key={turn.turnIndex}
+                    packet={turn.packet}
+                    question={turn.input.text}
+                    questionIndex={questionIndex}
+                  />
+                );
+              })}
+            </div>
+          ) : session.sessionType === "reading" && session.readingPackets?.length ? (
+            // Reading session: render ReadingPacket cards
             <div className="space-y-3">
               {session.readingPackets.map((packet, i) => (
                 <ReadingPacketCard
