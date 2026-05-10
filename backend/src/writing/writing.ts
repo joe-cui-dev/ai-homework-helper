@@ -42,6 +42,34 @@ const buildImageBlocks = (images: string[]): Record<string, unknown>[] =>
     };
   });
 
+// Replace image blocks with a text placeholder before persisting to S3.
+// Buffer doesn't survive JSON.stringify + JSON.parse — it round-trips to a
+// plain object {type:"Buffer", data:[...]} that the AWS SDK can't base64-
+// encode, so replaying it on the next turn throws "@smithy/util-base64:
+// toBase64 encoder function only accepts string | Uint8Array". Subsequent
+// turns don't need the original images anyway: the locked `plan` and the
+// system-prompt context header already carry the relevant content.
+export const redactImageBlocksForHistory = (
+  message: BedrockMessage,
+): BedrockMessage => {
+  let imageCount = 0;
+  const redacted = (message.content ?? []).map((block) => {
+    const b = block as Record<string, unknown>;
+    if (b.image) {
+      imageCount += 1;
+      return { text: "[image from earlier turn omitted from history]" };
+    }
+    // Defensive: catches sessions persisted before this redaction landed,
+    // where image.source.bytes is a JSON-revived {type:"Buffer", data:[]}
+    // object that fails base64 encoding.
+    return block;
+  });
+  if (imageCount > 0) {
+    logger.debug("writing_history_image_redacted", { imageCount });
+  }
+  return { role: message.role, content: redacted };
+};
+
 const extractToolUse = <T,>(
   message: BedrockMessage,
   toolName: string,

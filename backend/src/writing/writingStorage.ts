@@ -13,6 +13,7 @@ import {
   GetObjectCommand,
   NoSuchKey,
 } from "@aws-sdk/client-s3";
+import type { BedrockMessage } from "../shared/bedrock";
 import type { WritingSessionRecord } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -87,6 +88,19 @@ export const loadWritingSession = async (
     throw error;
   }
 
+  // Self-heal sessions persisted before image-block redaction landed: any
+  // image block whose `bytes` is no longer a Buffer/Uint8Array (e.g. the
+  // JSON.parse-revived {type:"Buffer", data:[]} shape) gets replaced with a
+  // text placeholder. Without this, the AWS SDK throws
+  //   "@smithy/util-base64: toBase64 encoder function only accepts string |
+  //    Uint8Array"
+  // on the next turn that replays history.
+  if (record._internal?.messages?.length) {
+    record._internal.messages = sanitiseHistoryMessages(
+      record._internal.messages,
+    );
+  }
+
   if (isStale(record)) {
     record.status = "ended";
     record.endedReason = "abandoned";
@@ -102,6 +116,39 @@ export const loadWritingSession = async (
 // Save the full session record (including _internal). Atomic at the S3 object
 // level — read-modify-write inside the Lambda is safe so long as we don't
 // have concurrent turns for the same session, which the UI wizard prevents.
+// Replace any image content block whose `bytes` is not a real Buffer/Uint8Array
+// with a text placeholder. Detects the failure mode where Buffer was
+// JSON.stringify'd to {type:"Buffer", data:[...]} and JSON.parse'd back as a
+// plain object — which the AWS SDK's base64 encoder can't accept on a replay.
+const sanitiseHistoryMessages = (
+  messages: BedrockMessage[],
+): BedrockMessage[] => {
+  let healedCount = 0;
+  const out = messages.map((msg) => {
+    const content = (msg.content ?? []).map((block) => {
+      const b = block as Record<string, unknown>;
+      const image = b.image as
+        | { source?: { bytes?: unknown } }
+        | undefined;
+      if (image) {
+        const bytes = image.source?.bytes;
+        const isUsable =
+          bytes instanceof Uint8Array || typeof bytes === "string";
+        if (!isUsable) {
+          healedCount += 1;
+          return { text: "[image from earlier turn omitted from history]" };
+        }
+      }
+      return block;
+    });
+    return { role: msg.role, content };
+  });
+  if (healedCount > 0) {
+    logger.warn("writing_history_sanitised", { healedImages: healedCount });
+  }
+  return out;
+};
+
 export const saveWritingSession = async (
   record: WritingSessionRecord,
 ): Promise<void> => {

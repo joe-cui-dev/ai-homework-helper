@@ -16,6 +16,7 @@ import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { v4 as uuidv4 } from "uuid";
 import {
   accumulateTurnUsage,
+  redactImageBlocksForHistory,
   runDraftTurn,
   runPlanTurn,
   runQuestionTurn,
@@ -245,7 +246,9 @@ const handleStart = async (
     usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
     _internal: {
       messages: [
-        result.userMessage,
+        // Redact image blocks before persistence — Buffer doesn't survive
+        // S3 round-trip and would break base64 encoding on the next turn.
+        redactImageBlocksForHistory(result.userMessage),
         result.assistantMessage,
         result.toolResultMessage,
       ],
@@ -349,7 +352,7 @@ const handleDraft = async (
   session.draftCount += 1;
   session.updatedAt = turn.ts;
   session._internal.messages.push(
-    result.userMessage,
+    redactImageBlocksForHistory(result.userMessage),
     result.assistantMessage,
     result.toolResultMessage,
   );
