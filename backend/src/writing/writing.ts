@@ -15,6 +15,7 @@ import type {
   DraftFeedbackPacket,
   WritingPlanPacket,
   WritingSessionRecord,
+  YearLevel,
 } from "../shared/types";
 import {
   buildCoachingNoteSystemPrompt,
@@ -95,6 +96,10 @@ const guardrailMessageOf = (message: BedrockMessage): string =>
 export interface PlanTurnInput {
   promptText: string;
   promptImages: string[];
+  // When the parent picked a year level on the landing page, it overrides
+  // Claude's inference. Server defensively rewrites plan.yearLevel after the
+  // call so a misbehaving model can't break downstream calibration.
+  userYearLevel?: YearLevel;
 }
 
 export interface PlanTurnResult {
@@ -136,7 +141,7 @@ export const runPlanTurn = async (
   const response = await converseWithTools(
     [userMessage],
     [SUBMIT_WRITING_PLAN_TOOL],
-    buildPlanSystemPrompt(),
+    buildPlanSystemPrompt(input.userYearLevel),
     { tool: { name: "submit_writing_plan" } },
     8192,
   );
@@ -157,6 +162,14 @@ export const runPlanTurn = async (
     );
   }
   const plan = normalisePlan(rawPlan);
+  // Defensive overwrite: if the parent picked a year level, that's
+  // authoritative regardless of what Claude echoed back.
+  if (input.userYearLevel) {
+    plan.yearLevel = input.userYearLevel;
+    plan.yearLevelSource = "user";
+  } else {
+    plan.yearLevelSource = "inferred";
+  }
   // Surface XML-leakage / missing-field anomalies in CloudWatch.
   const planAnomalies = describePlanAnomalies(plan);
   if (planAnomalies.length > 0) {
@@ -188,6 +201,7 @@ export const runPlanTurn = async (
     inputTokens: response.usage.inputTokens,
     outputTokens: response.usage.outputTokens,
     yearLevel: plan.yearLevel,
+    yearLevelSource: plan.yearLevelSource,
     genre: plan.genre,
   });
 

@@ -82,6 +82,12 @@ This was a deliberate design call (Q2 in the planning interview). Branching disp
 - A feature flag for the route. Direct release, mirroring Reading and Practice.
 - Per-turn subdirectories for image keys. Flat with prefix is sufficient.
 
+## Amendments
+
+### 2026-05-10 — Year level may be sourced from parent input
+
+The "lock both for the rest of this writing session" decision (§Decisions) is preserved, but the *source* of `yearLevel` is no longer inference-only. The writing landing page exposes an optional year-level picker; when set, the value is passed to `/writing/start` and treated as authoritative for the entire session (server defensively overwrites `plan.yearLevel` after the Bedrock call). The plan packet gains `yearLevelSource: "user" | "inferred"` so readers and telemetry can tell the two paths apart. The previous "when in doubt, choose the lower year" instruction in `buildPlanSystemPrompt` is removed — it was a workaround for the fact that wrong inference couldn't be corrected, and the override now provides the correction path. Genre remains inference-only and locked.
+
 ## Verification
 
 End-to-end checks live in [/Users/xiaozhoucui/.claude/plans/in-this-agentic-validated-cook.md](../../.claude/plans/in-this-agentic-validated-cook.md) (the implementation plan). The most important to run on first deploy:

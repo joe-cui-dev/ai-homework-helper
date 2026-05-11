@@ -30,6 +30,9 @@ export function WritingPlanCard({ plan: rawPlan }: WritingPlanCardProps) {
         <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
           {plan.yearLevel.replace("year-", "Year ")}
         </span>
+        <span className="text-[10px] font-medium text-gray-400 italic">
+          {plan.yearLevelSource === "user" ? "set by you" : "AI estimate"}
+        </span>
       </header>
 
       <div>

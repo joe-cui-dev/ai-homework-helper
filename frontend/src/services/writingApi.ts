@@ -1,4 +1,4 @@
-import type { WritingStreamEvent } from "../types";
+import type { WritingStreamEvent, YearLevel } from "../types";
 
 const writingUrl = (): string => {
   const base = import.meta.env.VITE_WRITING_API_URL as string | undefined;
@@ -66,7 +66,15 @@ export const startWriting = (
   token: string,
   onEvent: (event: WritingStreamEvent) => void,
   signal?: AbortSignal,
-): Promise<void> => streamRoute("start", { prompt }, token, onEvent, signal);
+  yearLevel?: YearLevel,
+): Promise<void> =>
+  streamRoute(
+    "start",
+    yearLevel ? { prompt, yearLevel } : { prompt },
+    token,
+    onEvent,
+    signal,
+  );
 
 export const submitWritingDraft = (
   batchId: string,

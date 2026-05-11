@@ -11,6 +11,7 @@ import type {
   WritingPlanPacket,
   WritingStreamEvent,
   WritingTurn,
+  YearLevel,
 } from "../types";
 
 export const MAX_DRAFTS = 5;
@@ -41,6 +42,7 @@ interface UseWritingSessionReturn {
   start: (
     prompt: { text: string; images?: string[] },
     token: string,
+    yearLevel?: YearLevel,
   ) => Promise<void>;
   submitDraft: (
     draft: { text?: string; images?: string[] },
@@ -169,7 +171,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
   );
 
   const start = useCallback<UseWritingSessionReturn["start"]>(
-    async (prompt, token) => {
+    async (prompt, token, yearLevel) => {
       reset();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -180,6 +182,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
           token,
           (e) => handleEvent(e, "start"),
           controller.signal,
+          yearLevel,
         );
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;

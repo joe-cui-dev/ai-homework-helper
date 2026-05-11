@@ -198,6 +198,7 @@ export interface WritingPlanPacket {
   assignmentSummary: string;
   genre: WritingGenre;
   yearLevel: YearLevel;
+  yearLevelSource?: "user" | "inferred";
   successCriteria: string[];
   planningQuestions: string[];
   modelAnswer: string;

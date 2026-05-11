@@ -32,6 +32,7 @@ import type {
   WritingSessionRecord,
   WritingStreamEvent,
   WritingTurn,
+  YearLevel,
 } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -92,6 +93,25 @@ const validateImages = (
     );
   }
   return valid;
+};
+
+const VALID_YEAR_LEVELS: readonly YearLevel[] = [
+  "year-1",
+  "year-2",
+  "year-3",
+  "year-4",
+  "year-5",
+  "year-6",
+];
+
+const validateYearLevel = (v: unknown): YearLevel | undefined => {
+  if (v == null || v === "") return undefined;
+  if (typeof v !== "string" || !VALID_YEAR_LEVELS.includes(v as YearLevel)) {
+    throw userError(
+      `yearLevel must be one of ${VALID_YEAR_LEVELS.join(", ")} or omitted`,
+    );
+  }
+  return v as YearLevel;
 };
 
 const validateText = (text: unknown, fieldName: string): string => {
@@ -193,6 +213,7 @@ const handleStart = async (
   const promptObj = (body.prompt ?? {}) as Record<string, unknown>;
   const promptText = validateText(promptObj.text, "prompt.text");
   const promptImages = validateImages(promptObj.images, MAX_IMAGES_PROMPT);
+  const userYearLevel = validateYearLevel(body.yearLevel);
 
   if (!promptText && promptImages.length === 0) {
     writeEvent({
@@ -227,7 +248,7 @@ const handleStart = async (
     }
   }
 
-  const result = await runPlanTurn({ promptText, promptImages });
+  const result = await runPlanTurn({ promptText, promptImages, userYearLevel });
 
   const now = new Date().toISOString();
   const record: WritingSessionRecord = {

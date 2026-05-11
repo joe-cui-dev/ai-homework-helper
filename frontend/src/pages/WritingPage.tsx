@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { compressImage } from "../services/api";
 import { useWritingSession } from "../hooks/useWritingSession";
 import { useSessionHistory } from "../hooks/useSessionHistory";
-import type { SessionSummary } from "../types";
+import type { SessionSummary, YearLevel } from "../types";
 
 const MAX_CHARS = 4000;
 const MAX_IMAGES = 5;
@@ -18,6 +18,7 @@ export const WritingPage = ({ token }: WritingPageProps) => {
   const { sessions } = useSessionHistory(token);
 
   const [promptText, setPromptText] = useState("");
+  const [yearLevel, setYearLevel] = useState<YearLevel | "">("");
   const [images, setImages] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -68,7 +69,11 @@ export const WritingPage = ({ token }: WritingPageProps) => {
     const trimmed = promptText.trim();
     if (!trimmed && images.length === 0) return;
     if (status === "starting") return;
-    void start({ text: trimmed, images: images.length ? images : undefined }, token);
+    void start(
+      { text: trimmed, images: images.length ? images : undefined },
+      token,
+      yearLevel || undefined,
+    );
   };
 
   const isWorking = status === "starting";
@@ -153,6 +158,30 @@ export const WritingPage = ({ token }: WritingPageProps) => {
           {imageError && (
             <p className="text-red-500 text-sm self-center">{imageError}</p>
           )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <label
+            htmlFor="writing-year-level"
+            className="text-sm font-semibold text-gray-700 shrink-0"
+          >
+            Year level
+          </label>
+          <select
+            id="writing-year-level"
+            value={yearLevel}
+            onChange={(e) => setYearLevel(e.target.value as YearLevel | "")}
+            disabled={isWorking}
+            className="flex-1 rounded-xl border-2 border-gray-200 focus:border-violet-400 focus:outline-none px-3 py-2 text-sm text-gray-800 bg-white transition-colors disabled:opacity-50"
+          >
+            <option value="">Let AI infer (default)</option>
+            <option value="year-1">Year 1</option>
+            <option value="year-2">Year 2</option>
+            <option value="year-3">Year 3</option>
+            <option value="year-4">Year 4</option>
+            <option value="year-5">Year 5</option>
+            <option value="year-6">Year 6</option>
+          </select>
         </div>
 
         <button

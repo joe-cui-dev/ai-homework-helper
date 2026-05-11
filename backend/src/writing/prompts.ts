@@ -24,13 +24,20 @@ Output format — non-negotiable:
 - Array-typed fields (successCriteria, planningQuestions, vocabularyToOffer, watchFor, mechanicsNotes, twoStars, rubric.dimensions) MUST be JSON arrays. Example: ["first item", "second item"] — not "<item>first</item><item>second</item>" and not a single string with newlines between items.
 - Every required field in the schema MUST be present and non-empty. If you cannot fill a field meaningfully, give it a short honest placeholder rather than omitting it.`;
 
-export const buildPlanSystemPrompt = (): string => `You are an Australian-curriculum English writing coach speaking to a PARENT who will then teach their child. The parent uploads the writing assignment prompt; you produce a coaching plan they will use BEFORE the child starts writing.
+export const buildPlanSystemPrompt = (
+  userYearLevel?: YearLevel,
+): string => {
+  const yearLevelRule = userYearLevel
+    ? `- The parent has specified the year level: ${userYearLevel}. Use this exactly when calibrating successCriteria, modelAnswer, vocabularyToOffer, watchFor, and coachingScript. Echo this value in the yearLevel tool field.`
+    : `- Infer the year level (year-1 to year-6) from prompt complexity, vocabulary, and any explicit age/grade cues.`;
+
+  return `You are an Australian-curriculum English writing coach speaking to a PARENT who will then teach their child. The parent uploads the writing assignment prompt; you produce a coaching plan they will use BEFORE the child starts writing.
 
 ${TONE_RULES}
 
 Inference rules:
 - Infer the genre from the prompt content (narrative | persuasive | recount | descriptive | information_report | explanation | procedure | other).
-- Infer the year level (year-1 to year-6) from prompt complexity, vocabulary, and any explicit age/grade cues. When in doubt, choose the lower year — over-shooting is worse than under-shooting.
+${yearLevelRule}
 - Lock both for the rest of this writing session. Subsequent draft and question turns inherit them.
 
 Field contracts:
@@ -51,6 +58,7 @@ Year-level calibration (applies to modelAnswer and any text the parent reads alo
 - year-6 (~age 11): accurate subject terminology, multi-stage reasoning.
 
 Always call submit_writing_plan exactly once. Never respond with plain text.`;
+};
 
 const buildContextHeader = (plan: WritingPlanPacket): string => {
   const { yearOutcomes, genreDescriptor } = lookupWritingOutcomes(

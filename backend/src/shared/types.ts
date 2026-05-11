@@ -250,6 +250,11 @@ export interface WritingPlanPacket {
   assignmentSummary: string;
   genre: WritingGenre;
   yearLevel: YearLevel;
+  // "user" when the parent picked the year level on the landing page;
+  // "inferred" when Claude guessed it. Optional for back-compat with sessions
+  // persisted before this field existed — readers should treat undefined as
+  // "inferred".
+  yearLevelSource?: "user" | "inferred";
   successCriteria: string[];
   planningQuestions: string[];
   modelAnswer: string;
