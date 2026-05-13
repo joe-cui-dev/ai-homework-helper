@@ -82,6 +82,10 @@ This was a deliberate design call (Q2 in the planning interview). Branching disp
 - A feature flag for the route. Direct release, mirroring Reading and Practice.
 - Per-turn subdirectories for image keys. Flat with prefix is sufficient.
 
+## 2026-05 update — paired Model Answers
+
+The single `modelAnswer: string` on the WritingPlan was replaced with a structured `modelAnswers` object: two student-voice exemplars (`atYearLevel`, `aboveYearLevel`) plus an N×2 `criteriaJustifications` grid. The cost note above is now slightly stale — the turn-1 output is roughly 2.5–3× larger, adding ~$0.01–0.02 per session at Haiku 4.5 prices. The worst-case session estimate rises modestly but remains well under $0.10. This was a **hard cutover**: sessions persisted before this change have no `modelAnswers` field and render a "Model answers unavailable for this session (legacy data)" notice on the plan card.
+
 ## Amendments
 
 ### 2026-05-10 — Year level may be sourced from parent input

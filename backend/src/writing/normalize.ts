@@ -6,9 +6,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type {
   CoachingNotePacket,
+  CriteriaJustification,
   DraftFeedbackPacket,
   DraftRubric,
   FeedbackHighlight,
+  ModelAnswerPair,
   RubricDimension,
   WritingPlanPacket,
 } from "../shared/types";
@@ -123,6 +125,32 @@ const asRubricDimension = (
   };
 };
 
+const asCriteriaJustification = (item: unknown): CriteriaJustification | null => {
+  if (typeof item !== "object" || item === null) return null;
+  const obj = item as Record<string, unknown>;
+  return {
+    criterion: asString(obj.criterion),
+    atYearLevel: asString(obj.atYearLevel),
+    aboveYearLevel: asString(obj.aboveYearLevel),
+  };
+};
+
+const asModelAnswerPair = (v: unknown): ModelAnswerPair => {
+  const obj = (typeof v === "object" && v !== null ? v : {}) as Record<
+    string,
+    unknown
+  >;
+  return {
+    atYearLevel: asString(obj.atYearLevel),
+    aboveYearLevel: asString(obj.aboveYearLevel),
+    aboveYearLevelLabel: asString(obj.aboveYearLevelLabel),
+    criteriaJustifications: objectArray(
+      obj.criteriaJustifications,
+      asCriteriaJustification,
+    ),
+  };
+};
+
 export const normalisePlan = (plan: WritingPlanPacket): WritingPlanPacket => ({
   ...plan,
   assignmentSummary: asString(plan.assignmentSummary),
@@ -130,7 +158,7 @@ export const normalisePlan = (plan: WritingPlanPacket): WritingPlanPacket => ({
   planningQuestions: stringArray(plan.planningQuestions),
   vocabularyToOffer: stringArray(plan.vocabularyToOffer),
   watchFor: stringArray(plan.watchFor),
-  modelAnswer: asString(plan.modelAnswer),
+  modelAnswers: asModelAnswerPair(plan.modelAnswers),
   coachingScript: asString(plan.coachingScript),
 });
 

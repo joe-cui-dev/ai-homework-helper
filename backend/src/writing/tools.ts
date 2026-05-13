@@ -59,11 +59,66 @@ export const SUBMIT_WRITING_PLAN_TOOL: Tool = {
             minItems: 3,
             maxItems: 4,
           },
-          modelAnswer: {
-            type: "string",
-            maxLength: 1200,
+          modelAnswers: {
+            type: "object",
             description:
-              "A complete model response in STUDENT VOICE at the inferred year level. Hidden behind a UI disclosure. Year-1 is short and concrete; Year-6 may use subject vocabulary.",
+              "TWO student-voice exemplars plus per-criterion justifications. Both samples meet the success criteria; the second one demonstrates higher proficiency. The prose samples are gated behind a UI disclosure; the justifications are surfaced openly.",
+            properties: {
+              atYearLevel: {
+                type: "string",
+                maxLength: 1200,
+                description:
+                  "Complete student-voice response calibrated EXACTLY to the locked yearLevel. Year-1/2: 3–6 short sentences with everyday words. Year-3/4: paragraph-length with simple subject vocabulary. Year-5/6: multi-paragraph with accurate genre conventions.",
+              },
+              aboveYearLevel: {
+                type: "string",
+                maxLength: 1200,
+                description:
+                  "Same prompt, written ONE YEAR ABOVE yearLevel — calibrated to the next row of the year-level table. CAPPED AT year-6: at year-6, write at the strong end of Year 6 (do NOT cross into Year 7 / secondary curriculum). Demonstrates higher proficiency: richer vocabulary, more sophisticated sentence variety, sharper genre conventions. Still student voice, not adult voice.",
+              },
+              aboveYearLevelLabel: {
+                type: "string",
+                maxLength: 24,
+                description:
+                  "Human label for the above-year-level sample. For year-1..5: 'Year 2', 'Year 3', ..., 'Year 6'. For year-6: 'upper Year 6'.",
+              },
+              criteriaJustifications: {
+                type: "array",
+                description:
+                  "One entry per successCriteria entry, IN THE SAME ORDER. Each explains how each sample satisfies that criterion via concrete moves (a specific phrase, structural choice, vocabulary). One sentence each, adult-to-adult.",
+                minItems: 3,
+                maxItems: 5,
+                items: {
+                  type: "object",
+                  properties: {
+                    criterion: {
+                      type: "string",
+                      maxLength: 180,
+                      description: "Verbatim copy of the corresponding successCriteria entry.",
+                    },
+                    atYearLevel: {
+                      type: "string",
+                      maxLength: 200,
+                      description:
+                        "One sentence: how the atYearLevel sample satisfies this criterion. Point to a concrete move (a phrase, structural choice, vocabulary).",
+                    },
+                    aboveYearLevel: {
+                      type: "string",
+                      maxLength: 200,
+                      description:
+                        "One sentence: how the aboveYearLevel sample satisfies the same criterion, typically via a more advanced move.",
+                    },
+                  },
+                  required: ["criterion", "atYearLevel", "aboveYearLevel"],
+                },
+              },
+            },
+            required: [
+              "atYearLevel",
+              "aboveYearLevel",
+              "aboveYearLevelLabel",
+              "criteriaJustifications",
+            ],
           },
           vocabularyToOffer: {
             type: "array",
@@ -94,7 +149,7 @@ export const SUBMIT_WRITING_PLAN_TOOL: Tool = {
           "yearLevel",
           "successCriteria",
           "planningQuestions",
-          "modelAnswer",
+          "modelAnswers",
           "vocabularyToOffer",
           "watchFor",
           "coachingScript",
@@ -270,7 +325,7 @@ export const SUBMIT_COACHING_NOTE_TOOL: Tool = {
             type: "string",
             maxLength: 600,
             description:
-              "Direct answer, anchored in THIS assignment (use the persisted prompt + plan). If the parent asked for copyable content (sentences, paragraphs, openings, conclusions), redirect to Socratic guidance and to the gated modelAnswer on the WritingPlan.",
+              "Direct answer, anchored in THIS assignment (use the persisted prompt + plan). If the parent asked for copyable content (sentences, paragraphs, openings, conclusions), redirect to Socratic guidance and to the gated modelAnswers on the WritingPlan.",
           },
           coachingTip: {
             type: "string",
