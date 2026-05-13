@@ -68,6 +68,14 @@ export const getAccessToken = (): Promise<string | null> => {
   });
 };
 
-export const getCurrentUserEmail = (): string | null => {
-  return userPool.getCurrentUser()?.getUsername() ?? null;
+export const getCurrentUserEmail = (): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const user = userPool.getCurrentUser();
+    if (!user) return resolve(null);
+    user.getSession((err: Error | null, session: CognitoUserSession | null) => {
+      if (err || !session || !session.isValid()) return resolve(null);
+      const email = session.getIdToken().payload.email as string | undefined;
+      resolve(email ?? null);
+    });
+  });
 };

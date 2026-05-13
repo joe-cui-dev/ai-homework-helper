@@ -27,9 +27,9 @@ export function useAuth(): UseAuthReturn {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getAccessToken().then((token) => {
+    getAccessToken().then(async (token) => {
       if (token) {
-        const email = getCurrentUserEmail() ?? "";
+        const email = (await getCurrentUserEmail()) ?? "";
         setUser({ email, token });
       }
       setLoading(false);

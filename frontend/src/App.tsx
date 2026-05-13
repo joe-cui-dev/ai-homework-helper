@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate, NavLink } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  NavLink,
+} from "react-router-dom";
 import { AuthPage } from "./components/AuthPage";
 import { HistorySidebar } from "./components/HistorySidebar";
 import { HomeworkPage } from "./pages/HomeworkPage";
@@ -19,6 +25,7 @@ function AppShell({
   onLogout: () => void;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     `px-4 py-2 rounded-xl text-sm font-bold transition-colors ${
@@ -29,30 +36,54 @@ function AppShell({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-indigo-50 to-purple-100">
-      <HistorySidebar token={token} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <HistorySidebar
+        token={token}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           {/* Left: history + logo */}
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => setSidebarOpen(true)}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors"
-              aria-label="Open history"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors sm:hidden"
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
             >
-              <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path
-                  fillRule="evenodd"
-                  d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z"
-                  clipRule="evenodd"
-                />
+              <svg
+                className="w-5 h-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                {menuOpen ? (
+                  <path
+                    fillRule="evenodd"
+                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
+                ) : (
+                  <path
+                    fillRule="evenodd"
+                    d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
+                    clipRule="evenodd"
+                  />
+                )}
               </svg>
             </button>
             <span className="text-2xl">🎒</span>
           </div>
 
           {/* Centre: nav */}
-          <nav className="flex gap-1 p-1 bg-gray-100/70 rounded-2xl flex-1 max-w-md">
+          <nav className="hidden sm:flex gap-1 p-1 bg-gray-100/70 rounded-2xl flex-1 max-w-md">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="px-4 py-2 rounded-xl text-sm font-bold text-gray-500 hover:text-brand-600 transition-colors"
+            >
+              History
+            </button>
             <NavLink to="/homework" className={navLinkClass}>
               Homework
             </NavLink>
@@ -80,6 +111,50 @@ function AppShell({
             </button>
           </div>
         </div>
+
+        {menuOpen && (
+          <div className="sm:hidden border-t border-gray-100 bg-white/90 backdrop-blur-sm">
+            <div className="max-w-2xl mx-auto px-4 py-3 flex flex-col gap-1">
+              <button
+                onClick={() => {
+                  setSidebarOpen(true);
+                  setMenuOpen(false);
+                }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-gray-500 hover:text-brand-600 hover:bg-brand-50 transition-colors"
+              >
+                History
+              </button>
+              <NavLink
+                to="/homework"
+                className={navLinkClass}
+                onClick={() => setMenuOpen(false)}
+              >
+                Homework
+              </NavLink>
+              <NavLink
+                to="/reading"
+                className={navLinkClass}
+                onClick={() => setMenuOpen(false)}
+              >
+                Reading
+              </NavLink>
+              <NavLink
+                to="/writing"
+                className={navLinkClass}
+                onClick={() => setMenuOpen(false)}
+              >
+                Writing
+              </NavLink>
+              <NavLink
+                to="/practice"
+                className={navLinkClass}
+                onClick={() => setMenuOpen(false)}
+              >
+                Practice
+              </NavLink>
+            </div>
+          </div>
+        )}
       </header>
 
       <Routes>
@@ -87,9 +162,15 @@ function AppShell({
         <Route path="/homework" element={<HomeworkPage token={token} />} />
         <Route path="/reading" element={<ReadingPage token={token} />} />
         <Route path="/writing" element={<WritingPage token={token} />} />
-        <Route path="/writing/:batchId" element={<WritingSessionPage token={token} />} />
+        <Route
+          path="/writing/:batchId"
+          element={<WritingSessionPage token={token} />}
+        />
         <Route path="/practice" element={<Navigate to="/homework" replace />} />
-        <Route path="/practice/:sessionId" element={<PracticePage token={token} />} />
+        <Route
+          path="/practice/:sessionId"
+          element={<PracticePage token={token} />}
+        />
         <Route path="*" element={<Navigate to="/homework" replace />} />
       </Routes>
     </div>
