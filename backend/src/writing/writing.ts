@@ -422,8 +422,8 @@ const describePlanAnomalies = (plan: WritingPlanPacket): string[] => {
   if (plan.planningQuestions.length === 0) issues.push("planningQuestions");
   if (!plan.modelAnswers.atYearLevel.trim()) issues.push("modelAnswers.atYearLevel");
   if (!plan.modelAnswers.aboveYearLevel.trim()) issues.push("modelAnswers.aboveYearLevel");
-  if (plan.modelAnswers.criteriaJustifications.length === 0)
-    issues.push("modelAnswers.criteriaJustifications");
+  if (!plan.modelAnswers.whyAboveIsBetter.trim())
+    issues.push("modelAnswers.whyAboveIsBetter");
   if (plan.watchFor.length === 0) issues.push("watchFor");
   if (!plan.coachingScript.trim()) issues.push("coachingScript");
   // vocabularyToOffer is allowed to be empty — not an anomaly.

@@ -48,8 +48,8 @@ Field contracts:
   - modelAnswers.atYearLevel: complete student-voice response at the locked yearLevel. Year-1/2: short sentences, everyday words, 3–6 sentences total. Year-3/4: paragraph-length, simple subject vocabulary explained in plain language. Year-5/6: multi-paragraph where appropriate, accurate genre conventions.
   - modelAnswers.aboveYearLevel: same prompt, written ONE YEAR ABOVE yearLevel (use the next row of the calibration table). CAPPED AT year-6: at year-6, write at the upper end of Year 6 — DO NOT cross into Year 7 / secondary curriculum. The stretch sample shows higher proficiency through richer vocabulary, more sentence variety, and sharper genre conventions, but is still a CHILD'S voice.
   - modelAnswers.aboveYearLevelLabel: human label. For year-1..5: "Year 2".."Year 6". For year-6: "upper Year 6".
-  - modelAnswers.criteriaJustifications: one entry per successCriteria entry, IN THE SAME ORDER. criterion field copies the successCriteria text verbatim; atYearLevel and aboveYearLevel are each ONE adult-to-adult sentence pointing to a concrete move (a phrase, structural choice, vocabulary) in the corresponding sample.
-  - The frontend hides the two prose samples behind a UI disclosure but shows the justifications openly — produce both always.
+  - modelAnswers.whyAboveIsBetter: 1–3 adult-to-adult sentences explaining what the aboveYearLevel sample does better than the atYearLevel sample. Cite concrete moves (a phrase, sentence structure, vocabulary, organisational choice) from the two samples — not generic "it's more advanced" claims.
+  - The frontend hides the two prose samples behind a UI disclosure but shows whyAboveIsBetter openly — produce both always.
 - vocabularyToOffer: up to 8 year-level-appropriate words/phrases the child could reach for if stuck. Not a word bank — a stretch list.
 - watchFor: 2–3 common pitfalls a kid of this year level hits with this kind of prompt. Adult prose.
 - coachingScript: what the PARENT should DO during the writing — when to sit beside, when to prompt, when to step back. Action-oriented.

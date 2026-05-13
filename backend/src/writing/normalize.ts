@@ -6,7 +6,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type {
   CoachingNotePacket,
-  CriteriaJustification,
   DraftFeedbackPacket,
   DraftRubric,
   FeedbackHighlight,
@@ -125,16 +124,6 @@ const asRubricDimension = (
   };
 };
 
-const asCriteriaJustification = (item: unknown): CriteriaJustification | null => {
-  if (typeof item !== "object" || item === null) return null;
-  const obj = item as Record<string, unknown>;
-  return {
-    criterion: asString(obj.criterion),
-    atYearLevel: asString(obj.atYearLevel),
-    aboveYearLevel: asString(obj.aboveYearLevel),
-  };
-};
-
 const asModelAnswerPair = (v: unknown): ModelAnswerPair => {
   const obj = (typeof v === "object" && v !== null ? v : {}) as Record<
     string,
@@ -144,10 +133,7 @@ const asModelAnswerPair = (v: unknown): ModelAnswerPair => {
     atYearLevel: asString(obj.atYearLevel),
     aboveYearLevel: asString(obj.aboveYearLevel),
     aboveYearLevelLabel: asString(obj.aboveYearLevelLabel),
-    criteriaJustifications: objectArray(
-      obj.criteriaJustifications,
-      asCriteriaJustification,
-    ),
+    whyAboveIsBetter: asString(obj.whyAboveIsBetter),
   };
 };
 

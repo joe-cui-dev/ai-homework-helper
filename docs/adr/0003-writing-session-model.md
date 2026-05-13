@@ -84,7 +84,7 @@ This was a deliberate design call (Q2 in the planning interview). Branching disp
 
 ## 2026-05 update — paired Model Answers
 
-The single `modelAnswer: string` on the WritingPlan was replaced with a structured `modelAnswers` object: two student-voice exemplars (`atYearLevel`, `aboveYearLevel`) plus an N×2 `criteriaJustifications` grid. The cost note above is now slightly stale — the turn-1 output is roughly 2.5–3× larger, adding ~$0.01–0.02 per session at Haiku 4.5 prices. The worst-case session estimate rises modestly but remains well under $0.10. This was a **hard cutover**: sessions persisted before this change have no `modelAnswers` field and render a "Model answers unavailable for this session (legacy data)" notice on the plan card.
+The single `modelAnswer: string` on the WritingPlan was replaced with a structured `modelAnswers` object: two student-voice exemplars (`atYearLevel`, `aboveYearLevel`) plus a `whyAboveIsBetter` comparative note (1–3 sentences). An earlier iteration of this change used a per-criterion N×2 justification grid, but that proved noisy in the UI — the comparative note carries the same coaching intent more concisely. The turn-1 output roughly doubles versus the original single-answer design, adding ~$0.01 per session at Haiku 4.5 prices. The worst-case session estimate rises modestly but remains well under $0.10. This was a **hard cutover**: sessions persisted before this change have no `modelAnswers` field and render a "Model answers unavailable for this session (legacy data)" notice on the plan card.
 
 ## Amendments
 

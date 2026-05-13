@@ -194,17 +194,11 @@ export type WritingEndedReason =
   | "max_drafts"
   | "max_questions";
 
-export interface CriteriaJustification {
-  criterion: string;
-  atYearLevel: string;
-  aboveYearLevel: string;
-}
-
 export interface ModelAnswerPair {
   atYearLevel: string;
   aboveYearLevel: string;
   aboveYearLevelLabel: string;
-  criteriaJustifications: CriteriaJustification[];
+  whyAboveIsBetter: string;
 }
 
 export interface WritingPlanPacket {

@@ -1,5 +1,5 @@
 import { normalisePlan } from "../writing/normalize";
-import type { CriteriaJustification, WritingPlanPacket } from "../shared/types";
+import type { WritingPlanPacket } from "../shared/types";
 
 const VALID_PLAN: WritingPlanPacket = {
   assignmentSummary: "Write a short narrative about a lost dog.",
@@ -13,23 +13,8 @@ const VALID_PLAN: WritingPlanPacket = {
     aboveYearLevel:
       "Rex bolted through the open gate before I could blink. I searched the whole street, my heart thumping. Finally, I spotted him chasing leaves at the park.",
     aboveYearLevelLabel: "Year 4",
-    criteriaJustifications: [
-      {
-        criterion: "Has a clear beginning",
-        atYearLevel: "Opens by naming the dog and the problem.",
-        aboveYearLevel: "Opens with action — Rex 'bolted' — establishing setting and stakes immediately.",
-      },
-      {
-        criterion: "Uses descriptive language",
-        atYearLevel: "Uses everyday words like 'happy' and 'park'.",
-        aboveYearLevel: "Uses vivid verbs ('bolted', 'thumping') and a sensory image.",
-      },
-      {
-        criterion: "Ends with resolution",
-        atYearLevel: "Ends by stating Rex was found.",
-        aboveYearLevel: "Resolves with a concrete sensory image of Rex at play.",
-      },
-    ],
+    whyAboveIsBetter:
+      "The Year 4 sample opens with action ('bolted'), uses sensory verbs ('thumping') and embeds the resolution in a concrete image rather than a bare statement.",
   },
   vocabularyToOffer: ["bolted", "frantic"],
   watchFor: ["Tense drift", "Missing full stops"],
@@ -45,7 +30,7 @@ describe("normalisePlan", () => {
       atYearLevel: "",
       aboveYearLevel: "",
       aboveYearLevelLabel: "",
-      criteriaJustifications: [],
+      whyAboveIsBetter: "",
     });
   });
 
@@ -56,20 +41,14 @@ describe("normalisePlan", () => {
         atYearLevel: 123 as unknown as string,
         aboveYearLevel: null as unknown as string,
         aboveYearLevelLabel: undefined as unknown as string,
-        criteriaJustifications: [
-          { criterion: 42, atYearLevel: null, aboveYearLevel: undefined },
-        ] as unknown as CriteriaJustification[],
+        whyAboveIsBetter: 0 as unknown as string,
       },
     };
     const result = normalisePlan(plan);
     expect(result.modelAnswers.atYearLevel).toBe("123");
     expect(result.modelAnswers.aboveYearLevel).toBe("");
     expect(result.modelAnswers.aboveYearLevelLabel).toBe("");
-    expect(result.modelAnswers.criteriaJustifications[0]).toEqual({
-      criterion: "42",
-      atYearLevel: "",
-      aboveYearLevel: "",
-    });
+    expect(result.modelAnswers.whyAboveIsBetter).toBe("0");
   });
 
   it("preserves the modelAnswers structure when given a valid packet", () => {
@@ -77,11 +56,6 @@ describe("normalisePlan", () => {
     expect(result.modelAnswers.atYearLevel).toBe(VALID_PLAN.modelAnswers.atYearLevel);
     expect(result.modelAnswers.aboveYearLevel).toBe(VALID_PLAN.modelAnswers.aboveYearLevel);
     expect(result.modelAnswers.aboveYearLevelLabel).toBe("Year 4");
-    expect(result.modelAnswers.criteriaJustifications).toHaveLength(3);
-    expect(result.modelAnswers.criteriaJustifications[0]).toEqual({
-      criterion: "Has a clear beginning",
-      atYearLevel: "Opens by naming the dog and the problem.",
-      aboveYearLevel: "Opens with action — Rex 'bolted' — establishing setting and stakes immediately.",
-    });
+    expect(result.modelAnswers.whyAboveIsBetter).toBe(VALID_PLAN.modelAnswers.whyAboveIsBetter);
   });
 });

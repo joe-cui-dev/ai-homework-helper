@@ -243,23 +243,16 @@ export type PracticeStreamEvent =
 // HTTP requests (cold turn 1, then 1..N draft turns and 0..N question turns).
 // See ADR 0003 and the CONTEXT.md "Writing Session" entry.
 
-// One-sentence explanation, per success criterion per sample, of how that
-// sample satisfies the criterion. Surfaced outside the modelAnswers disclosure
-// because the abstract justifications are coaching material, not copyable text.
-export interface CriteriaJustification {
-  criterion: string;
-  atYearLevel: string;
-  aboveYearLevel: string;
-}
-
 // Pair of student-voice exemplars: atYearLevel matches the locked yearLevel;
 // aboveYearLevel is one year above, capped at Year 6 (where it stays at Year 6
 // but is described as "upper Year 6"). Both gated behind a UI disclosure.
+// whyAboveIsBetter is a single adult-to-adult sentence or two explaining what
+// the stretch sample does better — surfaced openly alongside the disclosure.
 export interface ModelAnswerPair {
   atYearLevel: string;
   aboveYearLevel: string;
   aboveYearLevelLabel: string;
-  criteriaJustifications: CriteriaJustification[];
+  whyAboveIsBetter: string;
 }
 
 // Turn-1 output: the parent's coaching plan for this assignment. modelAnswers

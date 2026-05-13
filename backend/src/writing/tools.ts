@@ -82,42 +82,18 @@ export const SUBMIT_WRITING_PLAN_TOOL: Tool = {
                 description:
                   "Human label for the above-year-level sample. For year-1..5: 'Year 2', 'Year 3', ..., 'Year 6'. For year-6: 'upper Year 6'.",
               },
-              criteriaJustifications: {
-                type: "array",
+              whyAboveIsBetter: {
+                type: "string",
+                maxLength: 400,
                 description:
-                  "One entry per successCriteria entry, IN THE SAME ORDER. Each explains how each sample satisfies that criterion via concrete moves (a specific phrase, structural choice, vocabulary). One sentence each, adult-to-adult.",
-                minItems: 3,
-                maxItems: 5,
-                items: {
-                  type: "object",
-                  properties: {
-                    criterion: {
-                      type: "string",
-                      maxLength: 180,
-                      description: "Verbatim copy of the corresponding successCriteria entry.",
-                    },
-                    atYearLevel: {
-                      type: "string",
-                      maxLength: 200,
-                      description:
-                        "One sentence: how the atYearLevel sample satisfies this criterion. Point to a concrete move (a phrase, structural choice, vocabulary).",
-                    },
-                    aboveYearLevel: {
-                      type: "string",
-                      maxLength: 200,
-                      description:
-                        "One sentence: how the aboveYearLevel sample satisfies the same criterion, typically via a more advanced move.",
-                    },
-                  },
-                  required: ["criterion", "atYearLevel", "aboveYearLevel"],
-                },
+                  "Adult-to-adult, 1–3 sentences explaining what the aboveYearLevel sample does better than the atYearLevel sample — name concrete moves (a phrase, sentence structure, vocabulary choice, organisational decision). Not a generic 'it's more advanced' platitude; cite specifics from the two samples.",
               },
             },
             required: [
               "atYearLevel",
               "aboveYearLevel",
               "aboveYearLevelLabel",
-              "criteriaJustifications",
+              "whyAboveIsBetter",
             ],
           },
           vocabularyToOffer: {

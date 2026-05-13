@@ -60,48 +60,6 @@ export function WritingPlanCard({ plan: rawPlan }: WritingPlanCardProps) {
         </ul>
       </div>
 
-      {modelAnswers.criteriaJustifications.length > 0 && (
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">
-            Why each criterion is met
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left border-collapse">
-              <thead>
-                <tr className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  <th className="py-1.5 pr-3 align-bottom font-semibold w-1/3">
-                    Criterion
-                  </th>
-                  <th className="py-1.5 pr-3 align-bottom font-semibold">
-                    At year level
-                  </th>
-                  <th className="py-1.5 align-bottom font-semibold">
-                    {modelAnswers.aboveYearLevelLabel || "Stretch"}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {modelAnswers.criteriaJustifications.map((j, i) => (
-                  <tr
-                    key={i}
-                    className="border-t border-gray-100 align-top"
-                  >
-                    <td className="py-2 pr-3 text-gray-800 font-medium">
-                      {j.criterion}
-                    </td>
-                    <td className="py-2 pr-3 text-gray-700 leading-relaxed">
-                      {j.atYearLevel}
-                    </td>
-                    <td className="py-2 text-gray-700 leading-relaxed">
-                      {j.aboveYearLevel}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       <div>
         <h3 className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1">
@@ -183,6 +141,12 @@ export function WritingPlanCard({ plan: rawPlan }: WritingPlanCardProps) {
                 <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-line italic">
                   {modelAnswers.aboveYearLevel}
                 </p>
+                {modelAnswers.whyAboveIsBetter.trim().length > 0 && (
+                  <p className="mt-2 text-xs text-gray-600 leading-relaxed border-l-2 border-violet-200 pl-2">
+                    <span className="font-semibold text-gray-500">Why this is stronger: </span>
+                    {modelAnswers.whyAboveIsBetter}
+                  </p>
+                )}
               </div>
             )}
           </div>
