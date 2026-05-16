@@ -30,7 +30,7 @@ type Status =
 
 interface UseWritingSessionReturn {
   status: Status;
-  batchId: string | null;
+  sessionId: string | null;
   plan: WritingPlanPacket | null;
   turns: WritingTurn[];
   draftCount: number;
@@ -52,7 +52,7 @@ interface UseWritingSessionReturn {
   end: (token: string) => Promise<void>;
   // Hydrate state from a persisted SessionRecord (resume flow).
   hydrate: (input: {
-    batchId: string;
+    sessionId: string;
     plan: WritingPlanPacket;
     turns: WritingTurn[];
     draftCount: number;
@@ -66,7 +66,7 @@ interface UseWritingSessionReturn {
 
 export const useWritingSession = (): UseWritingSessionReturn => {
   const [status, setStatus] = useState<Status>("idle");
-  const [batchId, setBatchId] = useState<string | null>(null);
+  const [sessionId, setBatchId] = useState<string | null>(null);
   const [plan, setPlan] = useState<WritingPlanPacket | null>(null);
   const [turns, setTurns] = useState<WritingTurn[]>([]);
   const [draftCount, setDraftCount] = useState(0);
@@ -92,7 +92,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
   }, []);
 
   const hydrate = useCallback<UseWritingSessionReturn["hydrate"]>((input) => {
-    setBatchId(input.batchId);
+    setBatchId(input.sessionId);
     setPlan(input.plan);
     setTurns(input.turns);
     setDraftCount(input.draftCount);
@@ -109,7 +109,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
       kind: "start" | "draft" | "question" | "end",
     ) => {
       if (event.type === "plan_complete") {
-        setBatchId(event.batchId);
+        setBatchId(event.sessionId);
         setPlan(event.plan);
         setUsage(event.usage);
         setStatus("ready");
@@ -195,7 +195,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
 
   const submitDraft = useCallback<UseWritingSessionReturn["submitDraft"]>(
     async (draft, token) => {
-      if (!batchId) return;
+      if (!sessionId) return;
       const controller = new AbortController();
       abortRef.current = controller;
       setStatus("submitting_draft");
@@ -204,7 +204,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
       // when feedback_complete lands.
       try {
         await submitWritingDraft(
-          batchId,
+          sessionId,
           draft,
           token,
           (e) => handleEvent(e, "draft"),
@@ -216,21 +216,21 @@ export const useWritingSession = (): UseWritingSessionReturn => {
         setStatus("error");
       }
     },
-    [batchId, handleEvent],
+    [sessionId, handleEvent],
   );
 
   const submitQuestion = useCallback<
     UseWritingSessionReturn["submitQuestion"]
   >(
     async (question, token) => {
-      if (!batchId) return;
+      if (!sessionId) return;
       const controller = new AbortController();
       abortRef.current = controller;
       setStatus("submitting_question");
       setError(null);
       try {
         await submitWritingQuestion(
-          batchId,
+          sessionId,
           question,
           token,
           (e) => handleEvent(e, "question"),
@@ -244,18 +244,18 @@ export const useWritingSession = (): UseWritingSessionReturn => {
         setStatus("error");
       }
     },
-    [batchId, handleEvent],
+    [sessionId, handleEvent],
   );
 
   const end = useCallback<UseWritingSessionReturn["end"]>(
     async (token) => {
-      if (!batchId) return;
+      if (!sessionId) return;
       const controller = new AbortController();
       abortRef.current = controller;
       setStatus("ending");
       try {
         await endWritingSession(
-          batchId,
+          sessionId,
           token,
           (e) => handleEvent(e, "end"),
           controller.signal,
@@ -266,12 +266,12 @@ export const useWritingSession = (): UseWritingSessionReturn => {
         setStatus("error");
       }
     },
-    [batchId, handleEvent],
+    [sessionId, handleEvent],
   );
 
   return {
     status,
-    batchId,
+    sessionId,
     plan,
     turns,
     draftCount,

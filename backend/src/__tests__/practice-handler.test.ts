@@ -190,31 +190,6 @@ describe("practice-handler routing", () => {
     expect(final.problem).toBe("5+7");
   });
 
-  it("/practice/start accepts legacy batchId field for compatibility during cutover", async () => {
-    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
-    const created = bundle();
-    mockCreate.mockResolvedValueOnce(created);
-    mockRunPracticeTurn.mockResolvedValueOnce({
-      session: created.session,
-      agentMessage: "Let's start.",
-      problem: "5+7",
-      isSessionEnded: false,
-      turnUsage: ZERO_USAGE,
-    });
-
-    await handler(
-      event("/practice/start", { batchId: "home-1", questionId: 1 }),
-      makeStream() as never,
-      {} as Context,
-    );
-
-    expect(mockCreate).toHaveBeenCalledWith({
-      studentId: "student-1",
-      originSessionId: "home-1",
-      originQuestionId: 1,
-    });
-  });
-
   it("/practice/start surfaces creation failure as an error event", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
     mockCreate.mockRejectedValueOnce(new Error("Question 1 not found in session home-1."));

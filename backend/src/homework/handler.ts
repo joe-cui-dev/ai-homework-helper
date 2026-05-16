@@ -179,9 +179,9 @@ export const handler = awslambda.streamifyResponse(
       }
 
       const studentId = tokenSub;
-      const batchId = uuidv4();
+      const sessionId = uuidv4();
 
-      logger.appendKeys({ batchId });
+      logger.appendKeys({ sessionId });
       logger.info("request_received", {
         imageCount: validatedImages.length,
         hasText: !!trimmedQuestion,
@@ -214,7 +214,7 @@ export const handler = awslambda.streamifyResponse(
       for (const q of analysis.questions) {
         writeEvent({
           type: "packet_start",
-          batchId,
+          sessionId,
           questionId: q.id,
           total,
           text: q.text,
@@ -226,7 +226,7 @@ export const handler = awslambda.streamifyResponse(
       try {
         batchImageKeys = await uploadSessionImages(
           studentId,
-          batchId,
+          sessionId,
           validatedImages,
         );
       } catch (uploadErr) {
@@ -293,7 +293,7 @@ export const handler = awslambda.streamifyResponse(
         const now = new Date().toISOString();
         const session: HomeworkSession = {
           sessionType: "homework",
-          sessionId: batchId,
+          sessionId,
           studentId,
           timestamp: now,
           updatedAt: now,
@@ -315,7 +315,7 @@ export const handler = awslambda.streamifyResponse(
 
       writeEvent({
         type: "complete",
-        batchId,
+        sessionId,
         packets: allBatchPackets,
         usage: batchUsage,
       });

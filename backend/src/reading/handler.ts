@@ -159,9 +159,9 @@ export const handler = awslambda.streamifyResponse(
       }
 
       const studentId = tokenSub;
-      const batchId = uuidv4();
+      const sessionId = uuidv4();
 
-      logger.appendKeys({ batchId });
+      logger.appendKeys({ sessionId });
       logger.info("request_received", { imageCount: validatedImages.length });
 
       // ── Book analysis ───────────────────────────────────────────────────
@@ -190,7 +190,7 @@ export const handler = awslambda.streamifyResponse(
       try {
         batchImageKeys = await uploadSessionImages(
           studentId,
-          batchId,
+          sessionId,
           validatedImages,
         );
       } catch (uploadErr) {
@@ -232,7 +232,7 @@ export const handler = awslambda.streamifyResponse(
         const now = new Date().toISOString();
         const session: ReadingSession = {
           sessionType: "reading",
-          sessionId: batchId,
+          sessionId,
           studentId,
           timestamp: now,
           updatedAt: now,
@@ -251,7 +251,7 @@ export const handler = awslambda.streamifyResponse(
 
       writeEvent({
         type: "reading_complete",
-        batchId,
+        sessionId,
         bookContext: analysis.bookContext,
         packets: readingBatchPackets,
         usage: batchUsage,

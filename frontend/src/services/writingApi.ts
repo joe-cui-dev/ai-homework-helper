@@ -77,26 +77,26 @@ export const startWriting = (
   );
 
 export const submitWritingDraft = (
-  batchId: string,
+  sessionId: string,
   draft: { text?: string; images?: string[] },
   token: string,
   onEvent: (event: WritingStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> =>
-  streamRoute("draft", { batchId, draft }, token, onEvent, signal);
+  streamRoute("draft", { sessionId, draft }, token, onEvent, signal);
 
 export const submitWritingQuestion = (
-  batchId: string,
+  sessionId: string,
   question: string,
   token: string,
   onEvent: (event: WritingStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> =>
-  streamRoute("question", { batchId, question }, token, onEvent, signal);
+  streamRoute("question", { sessionId, question }, token, onEvent, signal);
 
 export const endWritingSession = (
-  batchId: string,
+  sessionId: string,
   token: string,
   onEvent: (event: WritingStreamEvent) => void,
   signal?: AbortSignal,
-): Promise<void> => streamRoute("end", { batchId }, token, onEvent, signal);
+): Promise<void> => streamRoute("end", { sessionId }, token, onEvent, signal);

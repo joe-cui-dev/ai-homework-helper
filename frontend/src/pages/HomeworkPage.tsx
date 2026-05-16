@@ -30,8 +30,8 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
     _questionText: string,
     _packet: CoachingPacket,
   ) => {
-    if (!homework.batchId) return;
-    navigate(`/practice/${homework.batchId}:${questionId}`);
+    if (!homework.sessionId) return;
+    navigate(`/practice/${homework.sessionId}:${questionId}`);
   };
 
   return (

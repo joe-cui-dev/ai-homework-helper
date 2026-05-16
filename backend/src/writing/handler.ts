@@ -1,9 +1,9 @@
 // ── Writing Lambda entry ─────────────────────────────────────────────────────
 // Four POST routes on one Function URL, dispatched by event.rawPath:
 //   POST /writing/start     { prompt: { text, images? } }
-//   POST /writing/draft     { batchId, draft: { text?, images? } }
-//   POST /writing/question  { batchId, question: string }
-//   POST /writing/end       { batchId }
+//   POST /writing/draft     { sessionId, draft: { text?, images? } }
+//   POST /writing/question  { sessionId, question: string }
+//   POST /writing/end       { sessionId }
 //
 // All routes:
 //   - JWT-validated via Cognito (sub → studentId).
@@ -223,8 +223,8 @@ const handleStart = async (
     return;
   }
 
-  const batchId = uuidv4();
-  logger.appendKeys({ batchId });
+  const sessionId = uuidv4();
+  logger.appendKeys({ sessionId });
   logger.info("writing_start_request", {
     imageCount: promptImages.length,
     hasText: !!promptText,
@@ -236,7 +236,7 @@ const handleStart = async (
     try {
       promptImageKeys = await uploadSessionImages(
         studentId,
-        batchId,
+        sessionId,
         promptImages,
         "prompt-image",
       );
@@ -252,7 +252,7 @@ const handleStart = async (
 
   const now = new Date().toISOString();
   const session: WritingSession = {
-    sessionId: batchId,
+    sessionId,
     studentId,
     sessionType: "writing",
     timestamp: now,
@@ -281,7 +281,7 @@ const handleStart = async (
 
   writeEvent({
     type: "plan_complete",
-    batchId,
+    sessionId,
     plan: result.plan,
     usage: session.usage,
   });
@@ -293,9 +293,9 @@ const handleDraft = async (
   studentId: string,
   writeEvent: (evt: WritingStreamEvent) => void,
 ): Promise<void> => {
-  const batchId = typeof body.batchId === "string" ? body.batchId : "";
-  if (!batchId) {
-    writeEvent({ type: "error", message: "batchId is required" });
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+  if (!sessionId) {
+    writeEvent({ type: "error", message: "sessionId is required" });
     return;
   }
   const draftObj = (body.draft ?? {}) as Record<string, unknown>;
@@ -312,7 +312,7 @@ const handleDraft = async (
   let session: WritingSession;
   let sidecar: AgentSidecar;
   try {
-    const bundle = await loadWritingBundle({ studentId, sessionId: batchId });
+    const bundle = await loadWritingBundle({ studentId, sessionId });
     session = bundle.session;
     sidecar = bundle.sidecar;
   } catch (err) {
@@ -323,7 +323,7 @@ const handleDraft = async (
     }
     throw err;
   }
-  logger.appendKeys({ batchId });
+  logger.appendKeys({ sessionId });
 
   if (session.status === "ended") {
     writeEvent({ type: "error", message: "This writing session has ended." });
@@ -344,7 +344,7 @@ const handleDraft = async (
     try {
       draftImageKeys = await uploadSessionImages(
         studentId,
-        batchId,
+        sessionId,
         draftImages,
         `draft-${turnIndex}-image`,
       );
@@ -405,9 +405,9 @@ const handleQuestion = async (
   studentId: string,
   writeEvent: (evt: WritingStreamEvent) => void,
 ): Promise<void> => {
-  const batchId = typeof body.batchId === "string" ? body.batchId : "";
-  if (!batchId) {
-    writeEvent({ type: "error", message: "batchId is required" });
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+  if (!sessionId) {
+    writeEvent({ type: "error", message: "sessionId is required" });
     return;
   }
   const question = validateText(body.question, "question");
@@ -422,7 +422,7 @@ const handleQuestion = async (
   let session: WritingSession;
   let sidecar: AgentSidecar;
   try {
-    const bundle = await loadWritingBundle({ studentId, sessionId: batchId });
+    const bundle = await loadWritingBundle({ studentId, sessionId });
     session = bundle.session;
     sidecar = bundle.sidecar;
   } catch (err) {
@@ -433,7 +433,7 @@ const handleQuestion = async (
     }
     throw err;
   }
-  logger.appendKeys({ batchId });
+  logger.appendKeys({ sessionId });
 
   if (session.status === "ended") {
     writeEvent({ type: "error", message: "This writing session has ended." });
@@ -487,15 +487,15 @@ const handleEnd = async (
   studentId: string,
   writeEvent: (evt: WritingStreamEvent) => void,
 ): Promise<void> => {
-  const batchId = typeof body.batchId === "string" ? body.batchId : "";
-  if (!batchId) {
-    writeEvent({ type: "error", message: "batchId is required" });
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+  if (!sessionId) {
+    writeEvent({ type: "error", message: "sessionId is required" });
     return;
   }
   let session: WritingSession;
   let sidecar: AgentSidecar;
   try {
-    const bundle = await loadWritingBundle({ studentId, sessionId: batchId });
+    const bundle = await loadWritingBundle({ studentId, sessionId });
     session = bundle.session;
     sidecar = bundle.sidecar;
   } catch (err) {
@@ -506,7 +506,7 @@ const handleEnd = async (
     }
     throw err;
   }
-  logger.appendKeys({ batchId });
+  logger.appendKeys({ sessionId });
   if (session.status !== "ended") {
     session.status = "ended";
     session.endedReason = "completed";

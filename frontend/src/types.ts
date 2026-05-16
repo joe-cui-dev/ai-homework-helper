@@ -95,7 +95,7 @@ export type StreamEvent =
   | { type: "analyzing" }
   | {
       type: "packet_start";
-      batchId: string;
+      sessionId: string;
       questionId: number;
       total: number;
       text: string;
@@ -103,7 +103,7 @@ export type StreamEvent =
   | { type: "packet_complete"; questionId: number; packet: CoachingPacket }
   | {
       type: "complete";
-      batchId: string;
+      sessionId: string;
       packets: BatchPacket[];
       usage: TokenUsage;
     }
@@ -117,7 +117,7 @@ export type StreamEvent =
   | { type: "needs_more_pages"; message: string }
   | {
       type: "reading_packet_start";
-      batchId: string;
+      sessionId: string;
       questionId: number;
       total: number;
     }
@@ -128,7 +128,7 @@ export type StreamEvent =
     }
   | {
       type: "reading_complete";
-      batchId: string;
+      sessionId: string;
       bookContext: BookContext;
       packets: ReadingBatchPacket[];
       usage: TokenUsage;
@@ -166,6 +166,7 @@ export type PracticeStreamEvent =
   | { type: "tool_end"; tool: string }
   | {
       type: "turn_complete";
+      sessionId: string;
       agentMessage: string;
       problem?: string;
       isSessionEnded: boolean;
@@ -289,7 +290,7 @@ export type WritingTurn =
 export type WritingStreamEvent =
   | {
       type: "plan_complete";
-      batchId: string;
+      sessionId: string;
       plan: WritingPlanPacket;
       usage: TokenUsage;
     }

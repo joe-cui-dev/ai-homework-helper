@@ -85,11 +85,7 @@ export const handler = awslambda.streamifyResponse(
 
       if (path.endsWith("/practice/start")) {
         const originSessionId =
-          typeof body.originSessionId === "string"
-            ? body.originSessionId
-            : typeof body.batchId === "string"
-              ? body.batchId
-              : "";
+          typeof body.originSessionId === "string" ? body.originSessionId : "";
         const questionId =
           typeof body.questionId === "number" ? body.questionId : NaN;
         if (!originSessionId || Number.isNaN(questionId)) {
@@ -115,11 +111,7 @@ export const handler = awslambda.streamifyResponse(
         path.endsWith("/practice/end")
       ) {
         const sessionId =
-          typeof body.sessionId === "string"
-            ? body.sessionId
-            : typeof body.practiceSessionId === "string"
-              ? body.practiceSessionId
-              : "";
+          typeof body.sessionId === "string" ? body.sessionId : "";
         if (!sessionId) {
           writeEvent({
             type: "error",
@@ -172,6 +164,7 @@ export const handler = awslambda.streamifyResponse(
 
       writeEvent({
         type: "turn_complete",
+        sessionId: result.session.sessionId,
         agentMessage: result.agentMessage,
         problem: result.problem,
         isSessionEnded: result.isSessionEnded,

@@ -23,7 +23,7 @@ interface WritingSessionPageProps {
 }
 
 export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
-  const { batchId } = useParams<{ batchId: string }>();
+  const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const writing = useWritingSession();
   const { sessions, loading } = useSessionHistory(token);
@@ -31,19 +31,19 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
   const hydratedRef = useRef(false);
 
   // Hydrate from history when arriving cold (e.g. resume from sidebar). If
-  // the hook already has state for this batchId (just-submitted prompt
+  // the hook already has state for this sessionId (just-submitted prompt
   // redirect), skip hydration.
   useEffect(() => {
-    if (!batchId || hydratedRef.current) return;
-    if (writing.batchId === batchId && writing.plan) {
+    if (!sessionId || hydratedRef.current) return;
+    if (writing.sessionId === sessionId && writing.plan) {
       hydratedRef.current = true;
       return;
     }
-    const session = sessions.find((s) => s.sessionId === batchId);
+    const session = sessions.find((s) => s.sessionId === sessionId);
     if (!session || session.sessionType !== "writing" || !session.plan) return;
     hydratedRef.current = true;
     writing.hydrate({
-      batchId,
+      sessionId,
       plan: session.plan,
       turns: session.turns ?? [],
       draftCount: session.draftCount ?? 0,
@@ -52,12 +52,12 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
       status: session.status ?? "active",
       endedReason: session.endedReason,
     });
-  }, [batchId, sessions, writing]);
+  }, [sessionId, sessions, writing]);
 
   const isLoadingResume =
     !writing.plan && !hydratedRef.current && (loading || sessions.length === 0);
 
-  if (!batchId) {
+  if (!sessionId) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-16 text-center space-y-4">
         <p className="text-gray-600">Invalid writing session link.</p>

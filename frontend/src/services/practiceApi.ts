@@ -62,16 +62,22 @@ const streamPracticeRoute = async (
 };
 
 export const startPractice = (
-  batchId: string,
+  originSessionId: string,
   questionId: number,
   token: string,
   onEvent: (event: PracticeStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> =>
-  streamPracticeRoute("start", { batchId, questionId }, token, onEvent, signal);
+  streamPracticeRoute(
+    "start",
+    { originSessionId, questionId },
+    token,
+    onEvent,
+    signal,
+  );
 
 export const submitPracticeTurn = (
-  practiceSessionId: string,
+  sessionId: string,
   parentMessage: string,
   token: string,
   onEvent: (event: PracticeStreamEvent) => void,
@@ -79,21 +85,21 @@ export const submitPracticeTurn = (
 ): Promise<void> =>
   streamPracticeRoute(
     "turn",
-    { practiceSessionId, parentMessage },
+    { sessionId, parentMessage },
     token,
     onEvent,
     signal,
   );
 
 export const endPractice = (
-  practiceSessionId: string,
+  sessionId: string,
   token: string,
   onEvent: (event: PracticeStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> =>
   streamPracticeRoute(
     "end",
-    { practiceSessionId },
+    { sessionId },
     token,
     onEvent,
     signal,

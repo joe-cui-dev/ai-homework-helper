@@ -163,7 +163,7 @@ function AppShell({
         <Route path="/reading" element={<ReadingPage token={token} />} />
         <Route path="/writing" element={<WritingPage token={token} />} />
         <Route
-          path="/writing/:batchId"
+          path="/writing/:sessionId"
           element={<WritingSessionPage token={token} />}
         />
         <Route path="/practice" element={<Navigate to="/homework" replace />} />

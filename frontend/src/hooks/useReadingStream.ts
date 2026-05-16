@@ -25,7 +25,7 @@ type Status =
 
 interface UseReadingStreamReturn {
   status: Status;
-  batchId: string | null;
+  sessionId: string | null;
   bookContext: BookContext | null;
   yearLevel: YearLevel | null;
   packets: ReadingBatchPacket[];
@@ -39,7 +39,7 @@ interface UseReadingStreamReturn {
 
 export const useReadingStream = (): UseReadingStreamReturn => {
   const [status, setStatus] = useState<Status>("idle");
-  const [batchId, setBatchId] = useState<string | null>(null);
+  const [sessionId, setBatchId] = useState<string | null>(null);
   const [bookContext, setBookContext] = useState<BookContext | null>(null);
   const [yearLevel, setYearLevel] = useState<YearLevel | null>(null);
   const [packets, setPackets] = useState<ReadingBatchPacket[]>([]);
@@ -102,7 +102,7 @@ export const useReadingStream = (): UseReadingStreamReturn => {
           { questionId: event.questionId, packet: event.packet },
         ]);
       } else if (event.type === "reading_complete") {
-        setBatchId(event.batchId);
+        setBatchId(event.sessionId);
         setBookContext(event.bookContext);
         setPackets(event.packets);
         setUsage(event.usage);
@@ -134,7 +134,7 @@ export const useReadingStream = (): UseReadingStreamReturn => {
 
   return {
     status,
-    batchId,
+    sessionId,
     bookContext,
     yearLevel,
     packets,

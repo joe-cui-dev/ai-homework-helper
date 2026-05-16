@@ -18,7 +18,9 @@ interface PracticePageProps {
 }
 
 export const PracticePage = ({ token }: PracticePageProps) => {
-  const { sessionId } = useParams<{ sessionId: string }>();
+  // URL param carries `${originSessionId}:${questionId}` — the practice session's
+  // own UUID is unknown until the backend assigns it on /start.
+  const { sessionId: routeParam } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
 
   const {
@@ -39,16 +41,16 @@ export const PracticePage = ({ token }: PracticePageProps) => {
   const startedRef = useRef(false);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
-  // sessionId format: "{batchId}:{questionId}"
-  const colon = sessionId?.indexOf(":") ?? -1;
-  const batchId = colon > 0 ? sessionId!.slice(0, colon) : "";
-  const questionId = colon > 0 ? parseInt(sessionId!.slice(colon + 1), 10) : NaN;
+  // URL format: "{originSessionId}:{questionId}"
+  const colon = routeParam?.indexOf(":") ?? -1;
+  const originSessionId = colon > 0 ? routeParam!.slice(0, colon) : "";
+  const questionId = colon > 0 ? parseInt(routeParam!.slice(colon + 1), 10) : NaN;
 
   useEffect(() => {
-    if (startedRef.current || !batchId || Number.isNaN(questionId)) return;
+    if (startedRef.current || !originSessionId || Number.isNaN(questionId)) return;
     startedRef.current = true;
-    void start(batchId, questionId, token);
-  }, [batchId, questionId, token, start]);
+    void start(originSessionId, questionId, token);
+  }, [originSessionId, questionId, token, start]);
 
   useEffect(() => {
     return () => reset();
@@ -74,7 +76,7 @@ export const PracticePage = ({ token }: PracticePageProps) => {
   const isWorking = status === "starting" || status === "submitting";
   const isEnded = status === "ended";
 
-  if (!batchId || Number.isNaN(questionId)) {
+  if (!originSessionId || Number.isNaN(questionId)) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-16 text-center space-y-4">
         <p className="text-gray-600">Invalid practice session link.</p>

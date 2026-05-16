@@ -14,7 +14,7 @@ interface WritingPageProps {
 
 export const WritingPage = ({ token }: WritingPageProps) => {
   const navigate = useNavigate();
-  const { status, batchId, error, start } = useWritingSession();
+  const { status, sessionId, error, start } = useWritingSession();
   const { sessions } = useSessionHistory(token);
 
   const [promptText, setPromptText] = useState("");
@@ -28,12 +28,12 @@ export const WritingPage = ({ token }: WritingPageProps) => {
     (s) => s.sessionType === "writing" && s.status === "active",
   );
 
-  // When the start request returns a batchId, navigate into the session view.
+  // When the start request returns a sessionId, navigate into the session view.
   useEffect(() => {
-    if (status === "ready" && batchId) {
-      navigate(`/writing/${batchId}`);
+    if (status === "ready" && sessionId) {
+      navigate(`/writing/${sessionId}`);
     }
-  }, [status, batchId, navigate]);
+  }, [status, sessionId, navigate]);
 
   const handleImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);

@@ -12,7 +12,7 @@ export interface PendingPacket {
 
 interface UseHomeworkStreamReturn {
   status: Status;
-  batchId: string | null;
+  sessionId: string | null;
   packets: BatchPacket[];
   pending: PendingPacket[];
   totalQuestions: number;
@@ -25,7 +25,7 @@ interface UseHomeworkStreamReturn {
 
 export const useHomeworkStream = (): UseHomeworkStreamReturn => {
   const [status, setStatus] = useState<Status>("idle");
-  const [batchId, setBatchId] = useState<string | null>(null);
+  const [sessionId, setBatchId] = useState<string | null>(null);
   const [packets, setPackets] = useState<BatchPacket[]>([]);
   const [pending, setPending] = useState<PendingPacket[]>([]);
   const [totalQuestions, setTotalQuestions] = useState(0);
@@ -80,7 +80,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
         } else if (event.type === "packet_start") {
           pendingTextRef.current.set(event.questionId, event.text);
           setTotalQuestions(event.total);
-          setBatchId(event.batchId);
+          setBatchId(event.sessionId);
           setStatus("generating");
           setPending((prev) => {
             // Avoid duplicates if the same id is announced twice.
@@ -108,7 +108,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
             prev.filter((p) => p.questionId !== event.questionId),
           );
         } else if (event.type === "complete") {
-          setBatchId(event.batchId);
+          setBatchId(event.sessionId);
           setPackets(event.packets);
           setUsage(event.usage);
           setPending([]);
@@ -142,7 +142,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
 
   return {
     status,
-    batchId,
+    sessionId,
     packets,
     pending,
     totalQuestions,
