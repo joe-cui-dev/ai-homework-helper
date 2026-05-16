@@ -1,8 +1,10 @@
 # ADR 0003 — Writing Session model
 
-**Status:** Accepted
+**Status:** Superseded (in part) by [ADR 0004](./0004-unified-session-model.md)
 **Date:** 2026-05-09
 **Supersedes:** none. Sibling of [ADR 0001](./0001-batch-session-model.md) (batch model) and [ADR 0002](./0002-reading-session-model.md) (reading polymorphism).
+
+> ADR 0004 supersedes the storage decisions in this ADR: the `_internal` namespace is removed (Bedrock state moves to a sidecar S3 object), `sessionType` becomes a real discriminator on a `Session` union rather than optional fields on a shared record, and Writing's status/`endedReason` are per-variant. The turn-output shapes (`WritingPlanPacket`, draft feedback, coaching note), caps, and the "single forced-tool Converse call per turn" execution model are unchanged.
 
 ## Context
 

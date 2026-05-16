@@ -6,14 +6,13 @@ import type {
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { listSessions } from "../shared/storage";
-import type { BatchQuestion } from "../shared/storage";
-import { listPracticeSessionsForBatch } from "../practice/practiceStorage";
+import { listSessions } from "../shared/sessionStore";
+import type { HomeworkQuestion, Session } from "../shared/session";
+import { listPracticeSessionsForOrigin } from "../practice/practiceStorage";
 import type { PracticeSessionSummary } from "../practice/practiceStorage";
 import type {
   BookContext,
   ReadingPacket,
-  TaskType,
   TokenUsage,
   WritingEndedReason,
   WritingPlanPacket,
@@ -30,23 +29,21 @@ const verifier = CognitoJwtVerifier.create({
 const s3 = new S3Client({});
 const PRESIGN_EXPIRES_IN = 3600;
 
-interface QuestionWithPractice extends BatchQuestion {
+interface QuestionWithPractice extends HomeworkQuestion {
   practiceSession?: PracticeSessionSummary;
 }
 
 interface SessionSummary {
   sessionId: string;
   timestamp: string;
-  // "homework" | "reading" | "writing" — defaults to "homework" for legacy rows.
-  sessionType: TaskType;
+  sessionType: "homework" | "reading" | "writing";
   subjects: string[];
   imageUrls: string[];
   questions: QuestionWithPractice[];
-  // Reading-only fields. Empty/undefined for non-reading sessions.
+  // Reading-only fields.
   bookContext?: BookContext;
   readingPackets?: ReadingPacket[];
-  // Writing-only fields. Empty/undefined for non-writing sessions. _internal
-  // is intentionally NOT projected — see ADR 0003.
+  // Writing-only fields.
   status?: "active" | "ended";
   endedReason?: WritingEndedReason;
   updatedAt?: string;
@@ -97,85 +94,81 @@ export const handler = async (
   const bucket = process.env.S3_BUCKET_NAME ?? "";
   const { sessions, nextCursor } = await listSessions(studentId, cursor, limit);
 
+  // Practice sessions are surfaced as siblings under their origin Homework
+  // card, not as top-level cards (ADR 0004: data model peers; UI nests for now).
+  const topLevel = sessions.filter(
+    (s): s is Exclude<Session, { sessionType: "practice" }> =>
+      s.sessionType !== "practice",
+  );
+
   const summaries: SessionSummary[] = await Promise.all(
-    sessions.map(
-      async (record) => {
-        const {
-          imageKeys,
-          questions,
-          sessionId,
-          timestamp,
-          usage,
-          sessionType,
-          bookContext,
-          readingPackets,
-        } = record;
-        const resolvedType: TaskType = sessionType ?? "homework";
-        // For writing sessions, surface ONLY the prompt image so the history
-        // sidebar doesn't expose the student's draft work as thumbnails.
-        const presignKeys =
-          resolvedType === "writing"
-            ? (record.prompt?.imageKeys ?? [])
-            : (imageKeys ?? []);
-        const [imageUrls, practiceSummaries] = await Promise.all([
-          presignKeys.length
-            ? Promise.all(
-                presignKeys.map((key) =>
-                  getSignedUrl(
-                    s3,
-                    new GetObjectCommand({ Bucket: bucket, Key: key }),
-                    { expiresIn: PRESIGN_EXPIRES_IN },
-                  ),
+    topLevel.map(async (record) => {
+      // For writing, surface only prompt images. Otherwise the session's imageKeys.
+      const presignKeys =
+        record.sessionType === "writing"
+          ? record.prompt.imageKeys
+          : record.imageKeys;
+      const [imageUrls, practiceSummaries] = await Promise.all([
+        presignKeys.length
+          ? Promise.all(
+              presignKeys.map((key) =>
+                getSignedUrl(
+                  s3,
+                  new GetObjectCommand({ Bucket: bucket, Key: key }),
+                  { expiresIn: PRESIGN_EXPIRES_IN },
                 ),
-              )
-            : Promise.resolve([] as string[]),
-          // Practice sessions are a homework-only concept; skip the S3 list
-          // for reading and writing sessions.
-          resolvedType === "homework"
-            ? listPracticeSessionsForBatch(studentId, sessionId)
-            : Promise.resolve([] as PracticeSessionSummary[]),
-        ]);
-        const practiceByQuestion = new Map(
-          practiceSummaries.map((p) => [p.questionId, p]),
-        );
-        const questionsWithPractice: QuestionWithPractice[] = questions.map(
-          (q) => ({
-            ...q,
-            practiceSession: practiceByQuestion.get(q.questionId),
-          }),
-        );
-        const subjects =
-          resolvedType === "reading"
-            ? ["reading"]
-            : resolvedType === "writing"
-              ? ["writing"]
-              : [...new Set(questions.map((q) => q.packet.subject))];
-        return {
-          sessionId,
-          timestamp,
-          sessionType: resolvedType,
-          subjects,
-          imageUrls,
-          questions: questionsWithPractice,
-          bookContext,
-          readingPackets,
-          // Writing-only fields; undefined for other types.
-          status: resolvedType === "writing" ? record.status : undefined,
-          endedReason:
-            resolvedType === "writing" ? record.endedReason : undefined,
-          updatedAt:
-            resolvedType === "writing" ? record.updatedAt : undefined,
-          prompt: resolvedType === "writing" ? record.prompt : undefined,
-          plan: resolvedType === "writing" ? record.plan : undefined,
-          turns: resolvedType === "writing" ? record.turns : undefined,
-          draftCount:
-            resolvedType === "writing" ? record.draftCount : undefined,
-          questionCount:
-            resolvedType === "writing" ? record.questionCount : undefined,
-          usage,
-        };
-      },
-    ),
+              ),
+            )
+          : Promise.resolve([] as string[]),
+        record.sessionType === "homework"
+          ? listPracticeSessionsForOrigin(studentId, record.sessionId)
+          : Promise.resolve([] as PracticeSessionSummary[]),
+      ]);
+      const practiceByQuestion = new Map(
+        practiceSummaries.map((p) => [p.origin.questionId, p]),
+      );
+
+      const questions: QuestionWithPractice[] =
+        record.sessionType === "homework"
+          ? record.questions.map((q) => ({
+              ...q,
+              practiceSession: practiceByQuestion.get(q.questionId),
+            }))
+          : [];
+
+      const subjects =
+        record.sessionType === "reading"
+          ? ["reading"]
+          : record.sessionType === "writing"
+            ? ["writing"]
+            : [...new Set(record.questions.map((q) => q.packet.subject))];
+
+      const summary: SessionSummary = {
+        sessionId: record.sessionId,
+        timestamp: record.timestamp,
+        sessionType: record.sessionType,
+        subjects,
+        imageUrls,
+        questions,
+        usage: record.usage,
+      };
+
+      if (record.sessionType === "reading") {
+        summary.bookContext = record.bookContext;
+        summary.readingPackets = record.readingPackets;
+      } else if (record.sessionType === "writing") {
+        summary.status = record.status;
+        summary.endedReason = record.endedReason;
+        summary.updatedAt = record.updatedAt;
+        summary.prompt = record.prompt;
+        summary.plan = record.plan;
+        summary.turns = record.turns;
+        summary.draftCount = record.draftCount;
+        summary.questionCount = record.questionCount;
+      }
+
+      return summary;
+    }),
   );
 
   logger.info("history_fetched", { studentId, count: summaries.length });

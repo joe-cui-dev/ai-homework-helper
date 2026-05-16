@@ -24,16 +24,16 @@ import {
 import {
   MAX_DRAFT_TURNS,
   MAX_QUESTION_TURNS,
-  loadWritingSession,
-  saveWritingSession,
+  loadWritingBundle,
+  saveWritingBundle,
 } from "./writingStorage";
-import { uploadSessionImages } from "../shared/storage";
+import { uploadSessionImages } from "../shared/sessionStore";
 import type {
-  WritingSessionRecord,
   WritingStreamEvent,
-  WritingTurn,
   YearLevel,
 } from "../shared/types";
+import type { WritingSession, WritingTurn } from "../shared/session";
+import type { AgentSidecar } from "../shared/sessionStore";
 import { logger } from "../shared/logger";
 
 const verifier = CognitoJwtVerifier.create({
@@ -251,40 +251,39 @@ const handleStart = async (
   const result = await runPlanTurn({ promptText, promptImages, userYearLevel });
 
   const now = new Date().toISOString();
-  const record: WritingSessionRecord = {
+  const session: WritingSession = {
     sessionId: batchId,
     studentId,
     sessionType: "writing",
     timestamp: now,
     updatedAt: now,
     status: "active",
-    prompt: { input: promptText, imageKeys: promptImageKeys.length ? promptImageKeys : undefined },
+    prompt: { input: promptText, imageKeys: promptImageKeys },
     plan: result.plan,
     turns: [],
     draftCount: 0,
     questionCount: 0,
-    imageKeys: promptImageKeys,
     usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
-    _internal: {
-      messages: [
-        // Redact image blocks before persistence — Buffer doesn't survive
-        // S3 round-trip and would break base64 encoding on the next turn.
-        redactImageBlocksForHistory(result.userMessage),
-        result.assistantMessage,
-        result.toolResultMessage,
-      ],
-      usagePerTurn: [],
-    },
   };
-  accumulateTurnUsage(record, 0, result.usage);
+  const sidecar: AgentSidecar = {
+    bedrockMessages: [
+      // Redact image blocks before persistence — Buffer doesn't survive
+      // S3 round-trip and would break base64 encoding on the next turn.
+      redactImageBlocksForHistory(result.userMessage),
+      result.assistantMessage,
+      result.toolResultMessage,
+    ],
+    usagePerTurn: [],
+  };
+  accumulateTurnUsage(session, sidecar, 0, result.usage);
 
-  await saveWritingSession(record);
+  await saveWritingBundle({ session, sidecar });
 
   writeEvent({
     type: "plan_complete",
     batchId,
     plan: result.plan,
-    usage: record.usage,
+    usage: session.usage,
   });
 };
 
@@ -310,9 +309,12 @@ const handleDraft = async (
     return;
   }
 
-  let session: WritingSessionRecord;
+  let session: WritingSession;
+  let sidecar: AgentSidecar;
   try {
-    session = await loadWritingSession({ studentId, batchId });
+    const bundle = await loadWritingBundle({ studentId, sessionId: batchId });
+    session = bundle.session;
+    sidecar = bundle.sidecar;
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === "NOT_FOUND" || code === "WRONG_TYPE") {
@@ -354,7 +356,7 @@ const handleDraft = async (
     }
   }
 
-  const result = await runDraftTurn(session, {
+  const result = await runDraftTurn(session, sidecar.bedrockMessages, {
     draftText,
     draftImages,
   });
@@ -372,15 +374,12 @@ const handleDraft = async (
   session.turns.push(turn);
   session.draftCount += 1;
   session.updatedAt = turn.ts;
-  session._internal.messages.push(
+  sidecar.bedrockMessages.push(
     redactImageBlocksForHistory(result.userMessage),
     result.assistantMessage,
     result.toolResultMessage,
   );
-  accumulateTurnUsage(session, turnIndex, result.usage);
-  if (draftImageKeys.length) {
-    session.imageKeys.push(...draftImageKeys);
-  }
+  accumulateTurnUsage(session, sidecar, turnIndex, result.usage);
 
   // Auto-end on reaching the cap to spare the next turn's UX.
   if (session.draftCount >= MAX_DRAFT_TURNS) {
@@ -388,7 +387,7 @@ const handleDraft = async (
     session.endedReason = "max_drafts";
   }
 
-  await saveWritingSession(session);
+  await saveWritingBundle({ session, sidecar });
 
   writeEvent({
     type: "feedback_complete",
@@ -420,9 +419,12 @@ const handleQuestion = async (
     return;
   }
 
-  let session: WritingSessionRecord;
+  let session: WritingSession;
+  let sidecar: AgentSidecar;
   try {
-    session = await loadWritingSession({ studentId, batchId });
+    const bundle = await loadWritingBundle({ studentId, sessionId: batchId });
+    session = bundle.session;
+    sidecar = bundle.sidecar;
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === "NOT_FOUND" || code === "WRONG_TYPE") {
@@ -443,7 +445,7 @@ const handleQuestion = async (
   }
 
   const turnIndex = 1 + session.turns.length;
-  const result = await runQuestionTurn(session, { question });
+  const result = await runQuestionTurn(session, sidecar.bedrockMessages, { question });
 
   const turn: WritingTurn = {
     kind: "question",
@@ -455,19 +457,19 @@ const handleQuestion = async (
   session.turns.push(turn);
   session.questionCount += 1;
   session.updatedAt = turn.ts;
-  session._internal.messages.push(
+  sidecar.bedrockMessages.push(
     result.userMessage,
     result.assistantMessage,
     result.toolResultMessage,
   );
-  accumulateTurnUsage(session, turnIndex, result.usage);
+  accumulateTurnUsage(session, sidecar, turnIndex, result.usage);
 
   if (session.questionCount >= MAX_QUESTION_TURNS) {
     // Don't auto-end the session for question cap — drafts are the main
     // workflow. Just stop allowing further questions.
   }
 
-  await saveWritingSession(session);
+  await saveWritingBundle({ session, sidecar });
 
   writeEvent({
     type: "answer_complete",
@@ -490,9 +492,12 @@ const handleEnd = async (
     writeEvent({ type: "error", message: "batchId is required" });
     return;
   }
-  let session: WritingSessionRecord;
+  let session: WritingSession;
+  let sidecar: AgentSidecar;
   try {
-    session = await loadWritingSession({ studentId, batchId });
+    const bundle = await loadWritingBundle({ studentId, sessionId: batchId });
+    session = bundle.session;
+    sidecar = bundle.sidecar;
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === "NOT_FOUND" || code === "WRONG_TYPE") {
@@ -506,7 +511,7 @@ const handleEnd = async (
     session.status = "ended";
     session.endedReason = "completed";
     session.updatedAt = new Date().toISOString();
-    await saveWritingSession(session);
+    await saveWritingBundle({ session, sidecar });
   }
   writeEvent({
     type: "session_ended",

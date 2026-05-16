@@ -1,39 +1,62 @@
+import {
+  createPracticeBundle,
+  loadPracticeBundle,
+  savePracticeBundle,
+  listPracticeSessionsForOrigin,
+  PRACTICE_SESSION_MAX_AGE_HOURS,
+} from "../practice/practiceStorage";
+import type { CoachingPacket } from "../shared/session";
+import type { HomeworkSession, PracticeSession } from "../shared/session";
+import { saveSession } from "../shared/sessionStore";
+
 jest.mock("@aws-sdk/client-s3", () => {
-  const sendMock = jest.fn();
-  class NoSuchKey extends Error {
-    name = "NoSuchKey";
-  }
+  const store = new Map<string, string>();
+  const sendMock = jest.fn(async (cmd: { Body?: string; Key?: string; Prefix?: string }) => {
+    if (typeof cmd.Body === "string") {
+      store.set(cmd.Key!, cmd.Body);
+      return {};
+    }
+    if (cmd.Prefix) {
+      return {
+        Contents: Array.from(store.keys())
+          .filter((k) => k.startsWith(cmd.Prefix!))
+          .map((key) => ({ Key: key, LastModified: new Date("2026-05-01") })),
+        IsTruncated: false,
+      };
+    }
+    const body = store.get(cmd.Key!);
+    if (!body) {
+      const err: Error & { name?: string } = new Error("NoSuchKey");
+      err.name = "NoSuchKey";
+      throw err;
+    }
+    return { Body: { transformToString: async () => body } };
+  });
   return {
     S3Client: jest.fn(() => ({ send: sendMock })),
-    GetObjectCommand: jest.fn((input: unknown) => ({ __cmd: "Get", ...input as object })),
-    PutObjectCommand: jest.fn((input: unknown) => ({ __cmd: "Put", ...input as object })),
-    ListObjectsV2Command: jest.fn((input: unknown) => ({ __cmd: "List", ...input as object })),
-    NoSuchKey,
+    GetObjectCommand: jest.fn((input: unknown) => input),
+    PutObjectCommand: jest.fn((input: unknown) => input),
+    ListObjectsV2Command: jest.fn((input: unknown) => input),
+    NoSuchKey: class NoSuchKey extends Error {
+      name = "NoSuchKey";
+    },
     _sendMock: sendMock,
+    _store: store,
   };
 });
 
 jest.mock("../shared/logger", () => ({
-  logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
-  },
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-const { _sendMock: mockSend, NoSuchKey } = jest.requireMock("@aws-sdk/client-s3") as {
-  _sendMock: jest.Mock;
-  NoSuchKey: typeof Error;
+const s3Mock = jest.requireMock("@aws-sdk/client-s3") as {
+  _store: Map<string, string>;
 };
 
-import {
-  createPracticeSession,
-  loadPracticeSession,
-  listPracticeSessionsForBatch,
-  PRACTICE_SESSION_MAX_AGE_HOURS,
-} from "../practice/practiceStorage";
-import type { CoachingPacket, PracticeSession } from "../shared/types";
+beforeEach(() => {
+  s3Mock._store.clear();
+  process.env.S3_BUCKET_NAME = "test-bucket";
+});
 
 const PACKET: CoachingPacket = {
   questionId: 1,
@@ -46,182 +69,171 @@ const PACKET: CoachingPacket = {
   childHint: "What's 5+7?",
 };
 
-const sessionJson = (
-  overrides: Partial<PracticeSession> = {},
-): PracticeSession => ({
-  practiceSessionId: "batch-1:1",
+const ZERO = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+
+const homeworkFixture = (
+  sessionId: string,
+  questionId: number,
+): HomeworkSession => ({
+  sessionType: "homework",
+  sessionId,
   studentId: "student-1",
-  sourceBatchId: "batch-1",
-  sourceQuestionId: 1,
-  sourceCoachingPacket: PACKET,
-  createdAt: "2026-05-01T00:00:00Z",
+  timestamp: "2026-05-01T00:00:00Z",
   updatedAt: "2026-05-01T00:00:00Z",
-  status: "active",
-  problemCount: 0,
-  toolCallCount: 0,
-  problems: [],
-  messages: [],
-  toolLog: [],
-  totalUsage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
-  ...overrides,
+  usage: ZERO,
+  imageKeys: [],
+  questions: [{ questionId, input: "Q", packet: { ...PACKET, questionId } }],
 });
 
-beforeEach(() => {
-  mockSend.mockReset();
-  process.env.S3_BUCKET_NAME = "test-bucket";
-});
+describe("createPracticeBundle", () => {
+  it("creates a Practice session with its own UUID and origin link", async () => {
+    await saveSession(homeworkFixture("home-1", 1));
 
-// ── createPracticeSession ─────────────────────────────────────────────────
-
-describe("createPracticeSession", () => {
-  it("creates a fresh session when no prior practice exists", async () => {
-    // First call: load existing practice (NoSuchKey).
-    mockSend.mockRejectedValueOnce(new NoSuchKey("not found"));
-    // Second call: load source batch.
-    mockSend.mockResolvedValueOnce({
-      Body: {
-        transformToString: async () =>
-          JSON.stringify({
-            timestamp: "t",
-            questions: [{ questionId: 1, input: "Q", packet: PACKET }],
-          }),
-      },
-    });
-    // Third call: PutObject (saving the new session).
-    mockSend.mockResolvedValueOnce({});
-
-    const session = await createPracticeSession({
+    const { session, sidecar } = await createPracticeBundle({
       studentId: "student-1",
-      batchId: "batch-1",
-      questionId: 1,
+      originSessionId: "home-1",
+      originQuestionId: 1,
     });
 
-    expect(session.practiceSessionId).toBe("batch-1:1");
+    expect(session.sessionType).toBe("practice");
+    expect(session.sessionId).not.toBe("home-1");
+    expect(session.sessionId).not.toContain(":");
+    expect(session.origin).toEqual({ sessionId: "home-1", questionId: 1 });
+    expect(session.sourceCoachingPacket.subject).toBe("math");
     expect(session.status).toBe("active");
-    expect(session.sourceCoachingPacket.tldrAnswer).toBe("12");
+    expect(sidecar.bedrockMessages).toEqual([]);
   });
 
-  it("refuses to create when an active session already exists", async () => {
-    // updatedAt must be fresh to avoid the 24h auto-abandon path.
-    mockSend.mockResolvedValueOnce({
-      Body: {
-        transformToString: async () =>
-          JSON.stringify(
-            sessionJson({
-              status: "active",
-              updatedAt: new Date().toISOString(),
-            }),
-          ),
-      },
+  it("persists the new Practice session at its own flat key (not nested under origin)", async () => {
+    await saveSession(homeworkFixture("home-1", 1));
+
+    const { session } = await createPracticeBundle({
+      studentId: "student-1",
+      originSessionId: "home-1",
+      originQuestionId: 1,
     });
+
+    expect(s3Mock._store.has(`sessions/student-1/${session.sessionId}.json`)).toBe(true);
+    expect(s3Mock._store.has(`sessions/student-1/home-1/practice-1.json`)).toBe(false);
+  });
+
+  it("fails when the origin homework question does not exist", async () => {
+    await saveSession(homeworkFixture("home-1", 1));
 
     await expect(
-      createPracticeSession({
+      createPracticeBundle({
         studentId: "student-1",
-        batchId: "batch-1",
-        questionId: 1,
+        originSessionId: "home-1",
+        originQuestionId: 999,
       }),
-    ).rejects.toThrow(/already in progress/i);
+    ).rejects.toThrow(/Question 999/);
   });
 });
 
-// ── loadPracticeSession + auto-abandon ────────────────────────────────────
-
-describe("loadPracticeSession", () => {
-  it("returns the session as-is when status is active and not stale", async () => {
-    const fresh = sessionJson({ updatedAt: new Date().toISOString() });
-    mockSend.mockResolvedValueOnce({
-      Body: { transformToString: async () => JSON.stringify(fresh) },
-    });
-
-    const session = await loadPracticeSession({
+describe("loadPracticeBundle", () => {
+  it("loads session and sidecar together", async () => {
+    await saveSession(homeworkFixture("home-1", 1));
+    const { session } = await createPracticeBundle({
       studentId: "student-1",
-      batchId: "batch-1",
-      questionId: 1,
+      originSessionId: "home-1",
+      originQuestionId: 1,
     });
 
-    expect(session.status).toBe("active");
-    expect(session.endedReason).toBeUndefined();
+    const bundle = await loadPracticeBundle({
+      studentId: "student-1",
+      sessionId: session.sessionId,
+    });
+
+    expect(bundle.session.sessionType).toBe("practice");
+    expect(bundle.session.origin.sessionId).toBe("home-1");
+    expect(bundle.sidecar.bedrockMessages).toEqual([]);
   });
 
-  it("auto-abandons sessions older than the max age and persists the change", async () => {
-    const ancient = sessionJson({
-      updatedAt: new Date(
-        Date.now() - (PRACTICE_SESSION_MAX_AGE_HOURS + 1) * 3600 * 1000,
-      ).toISOString(),
-    });
-    mockSend.mockResolvedValueOnce({
-      Body: { transformToString: async () => JSON.stringify(ancient) },
-    });
-    mockSend.mockResolvedValueOnce({}); // PutObject (auto-abandon save)
-
-    const session = await loadPracticeSession({
+  it("flips active sessions older than the stale threshold to abandoned", async () => {
+    const ancient = new Date(
+      Date.now() - (PRACTICE_SESSION_MAX_AGE_HOURS + 1) * 3600 * 1000,
+    ).toISOString();
+    const stale: PracticeSession = {
+      sessionType: "practice",
+      sessionId: "stale-1",
       studentId: "student-1",
-      batchId: "batch-1",
-      questionId: 1,
+      timestamp: ancient,
+      updatedAt: ancient,
+      usage: ZERO,
+      status: "active",
+      origin: { sessionId: "home-1", questionId: 1 },
+      sourceCoachingPacket: PACKET,
+      problemCount: 0,
+      toolCallCount: 0,
+      problems: [],
+      toolLog: [],
+    };
+    await saveSession(stale);
+
+    const { session } = await loadPracticeBundle({
+      studentId: "student-1",
+      sessionId: "stale-1",
     });
 
     expect(session.status).toBe("ended");
     expect(session.endedReason).toBe("abandoned");
-    expect(mockSend).toHaveBeenCalledTimes(2); // Get + Put
+  });
+
+  it("rejects loading a non-practice session at the same key", async () => {
+    await saveSession(homeworkFixture("not-practice", 1));
+
+    await expect(
+      loadPracticeBundle({ studentId: "student-1", sessionId: "not-practice" }),
+    ).rejects.toMatchObject({ code: "WRONG_TYPE" });
   });
 });
 
-// ── listPracticeSessionsForBatch ──────────────────────────────────────────
-
-describe("listPracticeSessionsForBatch", () => {
-  it("returns summaries for each practice session in a batch", async () => {
-    mockSend.mockResolvedValueOnce({
-      Contents: [
-        { Key: "sessions/student-1/batch-1/practice-1.json" },
-        { Key: "sessions/student-1/batch-1/practice-3.json" },
-        { Key: "sessions/student-1/batch-1/image-0.jpeg" }, // ignored
-      ],
+describe("savePracticeBundle", () => {
+  it("persists session and sidecar to separate keys", async () => {
+    await saveSession(homeworkFixture("home-1", 1));
+    const bundle = await createPracticeBundle({
+      studentId: "student-1",
+      originSessionId: "home-1",
+      originQuestionId: 1,
     });
-    mockSend.mockResolvedValueOnce({
-      Body: {
-        transformToString: async () =>
-          JSON.stringify(
-            sessionJson({
-              practiceSessionId: "batch-1:1",
-              sourceQuestionId: 1,
-              status: "ended",
-              endedReason: "mastered",
-              problemCount: 4,
-            }),
-          ),
-      },
-    });
-    mockSend.mockResolvedValueOnce({
-      Body: {
-        transformToString: async () =>
-          JSON.stringify(
-            sessionJson({
-              practiceSessionId: "batch-1:3",
-              sourceQuestionId: 3,
-              status: "active",
-              problemCount: 2,
-            }),
-          ),
-      },
+    bundle.sidecar.bedrockMessages.push({
+      role: "user",
+      content: [{ type: "text", text: "trace fragment" }],
     });
 
-    const summaries = await listPracticeSessionsForBatch("student-1", "batch-1");
+    await savePracticeBundle(bundle);
 
-    expect(summaries).toHaveLength(2);
-    const byQ = new Map(summaries.map((s) => [s.questionId, s]));
-    expect(byQ.get(1)?.status).toBe("ended");
-    expect(byQ.get(1)?.endedReason).toBe("mastered");
-    expect(byQ.get(3)?.status).toBe("active");
-    expect(byQ.get(3)?.problemCount).toBe(2);
-  });
-
-  it("returns empty when no practice sessions exist", async () => {
-    mockSend.mockResolvedValueOnce({ Contents: [] });
-    const summaries = await listPracticeSessionsForBatch(
-      "student-1",
-      "batch-1",
+    const sessionJson = s3Mock._store.get(
+      `sessions/student-1/${bundle.session.sessionId}.json`,
     );
-    expect(summaries).toEqual([]);
+    const sidecarJson = s3Mock._store.get(
+      `sessions/student-1/${bundle.session.sessionId}.agent.json`,
+    );
+    expect(sessionJson).toBeDefined();
+    expect(sessionJson).not.toContain("trace fragment");
+    expect(sidecarJson).toContain("trace fragment");
+  });
+});
+
+describe("listPracticeSessionsForOrigin", () => {
+  it("returns practice summaries pointing at the given origin homework session", async () => {
+    await saveSession(homeworkFixture("home-1", 1));
+    await saveSession(homeworkFixture("home-2", 1));
+
+    await createPracticeBundle({
+      studentId: "student-1",
+      originSessionId: "home-1",
+      originQuestionId: 1,
+    });
+    await createPracticeBundle({
+      studentId: "student-1",
+      originSessionId: "home-2",
+      originQuestionId: 1,
+    });
+
+    const summaries = await listPracticeSessionsForOrigin("student-1", "home-1");
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].origin).toEqual({ sessionId: "home-1", questionId: 1 });
   });
 });

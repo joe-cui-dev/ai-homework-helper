@@ -8,26 +8,22 @@ jest.mock("aws-jwt-verify", () => ({
   },
 }));
 
-jest.mock("../shared/storage", () => ({
+jest.mock("../shared/sessionStore", () => ({
   listSessions: jest.fn(),
 }));
 
 jest.mock("../practice/practiceStorage", () => ({
-  listPracticeSessionsForBatch: jest.fn().mockResolvedValue([]),
+  listPracticeSessionsForOrigin: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock("@aws-sdk/s3-request-presigner", () => ({
   getSignedUrl: jest.fn(),
 }));
 
-jest.mock("@aws-sdk/client-s3", () => {
-  const sendMock = jest.fn();
-  return {
-    S3Client: jest.fn(() => ({ send: sendMock })),
-    GetObjectCommand: jest.fn((input: unknown) => input),
-    _sendMock: sendMock,
-  };
-});
+jest.mock("@aws-sdk/client-s3", () => ({
+  S3Client: jest.fn(() => ({ send: jest.fn() })),
+  GetObjectCommand: jest.fn((input: unknown) => input),
+}));
 
 jest.mock("../shared/logger", () => ({
   logger: {
@@ -44,8 +40,8 @@ const mockVerify = jest.fn();
 
 import type { APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { handler } from "../history/handler";
-import { listSessions } from "../shared/storage";
-import type { SessionRecord } from "../shared/storage";
+import { listSessions } from "../shared/sessionStore";
+import type { HomeworkSession } from "../shared/session";
 import type { CoachingPacket } from "../shared/types";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -82,11 +78,19 @@ const packet = (overrides: Partial<CoachingPacket> = {}): CoachingPacket => ({
   ...overrides,
 });
 
-const baseSession: SessionRecord = {
+const ZERO = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+
+const baseSession = (overrides: Partial<HomeworkSession> = {}): HomeworkSession => ({
+  sessionType: "homework",
   sessionId: "batch-abc",
+  studentId: "student-1",
   timestamp: "2024-01-01T00:00:00Z",
+  updatedAt: "2024-01-01T00:00:00Z",
+  usage: ZERO,
+  imageKeys: [],
   questions: [{ questionId: 1, input: "What is 2+2?", packet: packet() }],
-};
+  ...overrides,
+});
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -118,10 +122,9 @@ describe("history handler", () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
     mockListSessions.mockResolvedValueOnce({
       sessions: [
-        {
-          ...baseSession,
+        baseSession({
           imageKeys: ["sessions/student-1/batch-abc/image-0.jpeg"],
-        },
+        }),
       ],
       nextCursor: null,
     });
@@ -155,8 +158,7 @@ describe("history handler", () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
     mockListSessions.mockResolvedValueOnce({
       sessions: [
-        {
-          ...baseSession,
+        baseSession({
           questions: [
             { questionId: 1, input: "Q1", packet: packet({ subject: "math" }) },
             {
@@ -165,7 +167,7 @@ describe("history handler", () => {
               packet: packet({ questionId: 2, subject: "math" }),
             },
           ],
-        },
+        }),
       ],
       nextCursor: null,
     });
@@ -185,8 +187,7 @@ describe("history handler", () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
     mockListSessions.mockResolvedValueOnce({
       sessions: [
-        {
-          ...baseSession,
+        baseSession({
           questions: [
             { questionId: 1, input: "Q1", packet: packet({ subject: "math" }) },
             {
@@ -195,7 +196,7 @@ describe("history handler", () => {
               packet: packet({ questionId: 2, subject: "science" }),
             },
           ],
-        },
+        }),
       ],
       nextCursor: null,
     });
@@ -214,7 +215,7 @@ describe("history handler", () => {
   it("returns empty imageUrls for sessions with no images", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
     mockListSessions.mockResolvedValueOnce({
-      sessions: [baseSession],
+      sessions: [baseSession()],
       nextCursor: null,
     });
 
@@ -243,5 +244,41 @@ describe("history handler", () => {
     );
 
     expect(mockListSessions).toHaveBeenCalledWith("student-1", cursor, 5);
+  });
+
+  it("does not surface practice sessions as top-level cards", async () => {
+    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
+    mockListSessions.mockResolvedValueOnce({
+      sessions: [
+        baseSession(),
+        {
+          sessionType: "practice",
+          sessionId: "prac-1",
+          studentId: "student-1",
+          timestamp: "2024-01-02T00:00:00Z",
+          updatedAt: "2024-01-02T00:00:00Z",
+          usage: ZERO,
+          status: "active",
+          origin: { sessionId: "batch-abc", questionId: 1 },
+          sourceCoachingPacket: packet(),
+          problemCount: 0,
+          toolCallCount: 0,
+          problems: [],
+          toolLog: [],
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const response = (await handler(
+      makeEvent({ headers: { authorization: "Bearer valid-token" } }),
+      {} as never,
+    )) as APIGatewayProxyStructuredResultV2;
+
+    const body = JSON.parse(response.body as string) as {
+      sessions: { sessionId: string; sessionType: string }[];
+    };
+    expect(body.sessions).toHaveLength(1);
+    expect(body.sessions[0].sessionType).toBe("homework");
   });
 });

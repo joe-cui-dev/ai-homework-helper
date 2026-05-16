@@ -14,9 +14,10 @@ import type {
   CoachingNotePacket,
   DraftFeedbackPacket,
   WritingPlanPacket,
-  WritingSessionRecord,
   YearLevel,
 } from "../shared/types";
+import type { WritingSession } from "../shared/session";
+import type { AgentSidecar } from "../shared/sessionStore";
 import {
   buildCoachingNoteSystemPrompt,
   buildDraftFeedbackSystemPrompt,
@@ -229,7 +230,8 @@ export interface DraftTurnResult {
 }
 
 export const runDraftTurn = async (
-  session: WritingSessionRecord,
+  session: WritingSession,
+  priorMessages: BedrockMessage[],
   input: DraftTurnInput,
 ): Promise<DraftTurnResult> => {
   const userContent: Record<string, unknown>[] = [];
@@ -247,10 +249,7 @@ export const runDraftTurn = async (
   }
   const userMessage: BedrockMessage = { role: "user", content: userContent };
 
-  const messages: BedrockMessage[] = [
-    ...session._internal.messages,
-    userMessage,
-  ];
+  const messages: BedrockMessage[] = [...priorMessages, userMessage];
 
   logger.info("writing_draft_start", {
     draftIndex: session.draftCount,
@@ -327,7 +326,8 @@ export interface QuestionTurnResult {
 }
 
 export const runQuestionTurn = async (
-  session: WritingSessionRecord,
+  session: WritingSession,
+  priorMessages: BedrockMessage[],
   input: QuestionTurnInput,
 ): Promise<QuestionTurnResult> => {
   const userMessage: BedrockMessage = {
@@ -335,10 +335,7 @@ export const runQuestionTurn = async (
     content: [{ text: `Parent's clarifying question:\n\n${input.question.trim()}` }],
   };
 
-  const messages: BedrockMessage[] = [
-    ...session._internal.messages,
-    userMessage,
-  ];
+  const messages: BedrockMessage[] = [...priorMessages, userMessage];
 
   logger.info("writing_question_start", {
     questionIndex: session.questionCount,
@@ -433,11 +430,12 @@ const describePlanAnomalies = (plan: WritingPlanPacket): string[] => {
 // Aggregate per-turn usage into the session's cumulative TokenUsage. Mutates
 // the session in place.
 export const accumulateTurnUsage = (
-  session: WritingSessionRecord,
+  session: WritingSession,
+  sidecar: AgentSidecar,
   turnIndex: number,
   usage: RawTokenUsage,
 ): void => {
-  session._internal.usagePerTurn.push({
+  sidecar.usagePerTurn.push({
     turnIndex,
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,

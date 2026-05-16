@@ -1,24 +1,25 @@
 // ── Practice Lambda entry ────────────────────────────────────────────────────
 // Three POST routes on one Function URL, dispatched by event.rawPath:
-//   POST /practice/start  { batchId, questionId }
-//   POST /practice/turn   { practiceSessionId, parentMessage }
-//   POST /practice/end    { practiceSessionId }
+//   POST /practice/start  { originSessionId, questionId }
+//   POST /practice/turn   { sessionId, parentMessage }
+//   POST /practice/end    { sessionId }
 //
 // All routes:
 //   - JWT-validated via Cognito (sub → studentId).
 //   - NDJSON-streamed via the same awslambda.streamifyResponse pattern as
 //     handler.ts.
-//   - Persist the updated PracticeSession to S3.
+//   - Persist the updated Practice session + sidecar to S3.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { APIGatewayProxyEventV2 } from "aws-lambda";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { runPracticeTurn } from "./practice";
 import {
-  createPracticeSession,
-  loadPracticeSession,
-  savePracticeSession,
+  createPracticeBundle,
+  loadPracticeBundle,
+  savePracticeBundle,
 } from "./practiceStorage";
-import type { PracticeSession, PracticeStreamEvent } from "../shared/types";
+import type { PracticeBundle } from "./practiceStorage";
+import type { PracticeStreamEvent } from "../shared/types";
 import { logger } from "../shared/logger";
 
 const verifier = CognitoJwtVerifier.create({
@@ -37,18 +38,6 @@ const parseJsonBody = (event: APIGatewayProxyEventV2): Record<string, unknown> =
   } catch {
     return {};
   }
-};
-
-const parseLocator = (
-  practiceSessionId: unknown,
-): { batchId: string; questionId: number } | null => {
-  if (typeof practiceSessionId !== "string") return null;
-  const colon = practiceSessionId.indexOf(":");
-  if (colon <= 0) return null;
-  const batchId = practiceSessionId.slice(0, colon);
-  const questionId = parseInt(practiceSessionId.slice(colon + 1), 10);
-  if (!batchId || Number.isNaN(questionId)) return null;
-  return { batchId, questionId };
 };
 
 export const handler = awslambda.streamifyResponse(
@@ -90,51 +79,56 @@ export const handler = awslambda.streamifyResponse(
       const path = event.rawPath ?? "";
       const body = parseJsonBody(event);
 
-      let session: PracticeSession;
+      let bundle: PracticeBundle;
       let forceEndSession = false;
       let parentMessage: string | undefined;
 
       if (path.endsWith("/practice/start")) {
-        const batchId = typeof body.batchId === "string" ? body.batchId : "";
+        const originSessionId =
+          typeof body.originSessionId === "string"
+            ? body.originSessionId
+            : typeof body.batchId === "string"
+              ? body.batchId
+              : "";
         const questionId =
           typeof body.questionId === "number" ? body.questionId : NaN;
-        if (!batchId || Number.isNaN(questionId)) {
-          writeEvent({ type: "error", message: "batchId and questionId are required" });
+        if (!originSessionId || Number.isNaN(questionId)) {
+          writeEvent({
+            type: "error",
+            message: "originSessionId and questionId are required",
+          });
           return;
         }
         try {
-          session = await createPracticeSession({
+          bundle = await createPracticeBundle({
             studentId,
-            batchId,
-            questionId,
+            originSessionId,
+            originQuestionId: questionId,
           });
         } catch (err) {
-          if ((err as { code?: string }).code === "ALREADY_ACTIVE") {
-            writeEvent({ type: "error", message: (err as Error).message });
-            return;
-          }
-          throw err;
+          writeEvent({ type: "error", message: (err as Error).message });
+          return;
         }
-        logger.appendKeys({ practiceSessionId: session.practiceSessionId });
+        logger.appendKeys({ practiceSessionId: bundle.session.sessionId });
       } else if (
         path.endsWith("/practice/turn") ||
         path.endsWith("/practice/end")
       ) {
-        const loc = parseLocator(body.practiceSessionId);
-        if (!loc) {
+        const sessionId =
+          typeof body.sessionId === "string"
+            ? body.sessionId
+            : typeof body.practiceSessionId === "string"
+              ? body.practiceSessionId
+              : "";
+        if (!sessionId) {
           writeEvent({
             type: "error",
-            message:
-              "practiceSessionId must be a valid '{batchId}:{questionId}' string",
+            message: "sessionId is required",
           });
           return;
         }
         try {
-          session = await loadPracticeSession({
-            studentId,
-            batchId: loc.batchId,
-            questionId: loc.questionId,
-          });
+          bundle = await loadPracticeBundle({ studentId, sessionId });
         } catch {
           writeEvent({
             type: "error",
@@ -142,14 +136,14 @@ export const handler = awslambda.streamifyResponse(
           });
           return;
         }
-        logger.appendKeys({ practiceSessionId: session.practiceSessionId });
+        logger.appendKeys({ practiceSessionId: bundle.session.sessionId });
 
         if (path.endsWith("/practice/end")) {
           forceEndSession = true;
         } else {
           parentMessage =
             typeof body.parentMessage === "string" ? body.parentMessage : "";
-          if (session.status === "ended") {
+          if (bundle.session.status === "ended") {
             writeEvent({
               type: "error",
               message: "This practice session has already ended.",
@@ -166,7 +160,7 @@ export const handler = awslambda.streamifyResponse(
       }
 
       // ── Run the agent loop ──────────────────────────────────────────────
-      const result = await runPracticeTurn(session, {
+      const result = await runPracticeTurn(bundle.session, bundle.sidecar, {
         parentMessage,
         forceEndSession,
         onEvent: writeEvent,
@@ -174,17 +168,25 @@ export const handler = awslambda.streamifyResponse(
 
       // Persist before emitting turn_complete so a client crash mid-write
       // doesn't lose the agent's work.
-      await savePracticeSession(result.session);
+      await savePracticeBundle({ session: result.session, sidecar: bundle.sidecar });
 
       writeEvent({
         type: "turn_complete",
         agentMessage: result.agentMessage,
         problem: result.problem,
         isSessionEnded: result.isSessionEnded,
-        endedReason: result.endedReason,
+        // PracticeEndedReason now includes "tool_call_cap_reached" (ADR 0004)
+        // which isn't yet in the wire PracticeStreamEvent.endedReason union.
+        // Frontend update lands in a follow-up; cast until then.
+        endedReason: result.endedReason as PracticeStreamEvent extends {
+          type: "turn_complete";
+          endedReason?: infer R;
+        }
+          ? R
+          : never,
         finalSummary: result.finalSummary,
         turnUsage: result.turnUsage,
-        sessionUsage: result.session.totalUsage,
+        sessionUsage: result.session.usage,
       });
 
       logger.info("practice_turn_complete", {

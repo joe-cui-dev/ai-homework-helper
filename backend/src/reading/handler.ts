@@ -16,7 +16,8 @@ import { v4 as uuidv4 } from "uuid";
 import { sumUsage } from "../shared/bedrock";
 import { analyzeBook } from "./bookAnalyzer";
 import { generateReadingPackets } from "./readingPacket";
-import { saveSession, uploadSessionImages } from "../shared/storage";
+import { saveSession, uploadSessionImages } from "../shared/sessionStore";
+import type { ReadingSession } from "../shared/session";
 import type { ReadingBatchPacket, StreamEvent } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -228,18 +229,19 @@ export const handler = awslambda.streamifyResponse(
       }
 
       try {
-        await saveSession(
-          batchId,
-          {
-            timestamp: new Date().toISOString(),
-            sessionType: "reading",
-            bookContext: analysis.bookContext,
-            readingPackets: packets,
-          },
+        const now = new Date().toISOString();
+        const session: ReadingSession = {
+          sessionType: "reading",
+          sessionId: batchId,
           studentId,
-          batchImageKeys.length ? batchImageKeys : undefined,
-          batchUsage,
-        );
+          timestamp: now,
+          updatedAt: now,
+          usage: batchUsage,
+          imageKeys: batchImageKeys,
+          bookContext: analysis.bookContext,
+          readingPackets: packets,
+        };
+        await saveSession(session);
       } catch (saveErr) {
         logger.error(
           "reading_save_session_failed",

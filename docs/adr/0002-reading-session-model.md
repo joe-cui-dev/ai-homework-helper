@@ -1,7 +1,9 @@
 # ADR 0002: Reading Session model & ReadingPacket type
 
-**Status:** Accepted
+**Status:** Superseded (in part) by [ADR 0004](./0004-unified-session-model.md)
 **Date:** 2026-05-05
+
+> ADR 0004 supersedes the storage and discriminator decisions in this ADR (single optional `sessionType` field on a kitchen-sink `SessionRecord`). The `ReadingPacket` shape, the cover-only-generation prohibition, and the two-step backend pipeline are unchanged.
 
 ## Context
 

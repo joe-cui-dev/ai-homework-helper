@@ -1,39 +1,45 @@
 // ── Practice Session storage ─────────────────────────────────────────────────
-// One JSON object per practice session, keyed at:
-//   sessions/{studentId}/{batchId}/practice-{questionId}.json
+// Practice is a top-level Session kind (ADR 0004). Stored at
+//   sessions/{studentId}/{sessionId}.json
+// with Bedrock conversation state in the sidecar
+//   sessions/{studentId}/{sessionId}.agent.json
 //
-// Sessions are loaded fresh per Lambda invocation (stateless turn model).
+// The originating Homework question is recorded inside the session JSON as
+// `origin: { sessionId, questionId }`. Practice no longer lives under the
+// origin's key prefix.
+//
 // Sessions older than PRACTICE_SESSION_MAX_AGE_HOURS since updatedAt are
-// auto-flipped to status="ended", endedReason="abandoned" on next read.
+// auto-flipped to ended/abandoned on next read.
 // ─────────────────────────────────────────────────────────────────────────────
+import { randomUUID } from "node:crypto";
+import type { PracticeSession } from "../shared/session";
+import type { AgentSidecar } from "../shared/sessionStore";
 import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-  ListObjectsV2Command,
-  NoSuchKey,
-} from "@aws-sdk/client-s3";
-import type { CoachingPacket, PracticeSession, TokenUsage } from "../shared/types";
+  loadAgentSidecar,
+  loadSession,
+  listSessions,
+  saveAgentSidecar,
+  saveSession,
+} from "../shared/sessionStore";
 import { logger } from "../shared/logger";
-
-const s3 = new S3Client({});
 
 export const PRACTICE_SESSION_MAX_AGE_HOURS = 24;
 
-const bucket = (): string => {
-  const b = process.env.S3_BUCKET_NAME;
-  if (!b) throw new Error("S3_BUCKET_NAME environment variable is not set");
-  return b;
-};
+export interface PracticeBundle {
+  session: PracticeSession;
+  sidecar: AgentSidecar;
+}
 
-const practiceKey = (
-  studentId: string,
-  batchId: string,
-  questionId: number,
-): string => `sessions/${studentId}/${batchId}/practice-${questionId}.json`;
+export interface PracticeLocator {
+  studentId: string;
+  sessionId: string;
+}
 
-const sessionKey = (studentId: string, batchId: string): string =>
-  `sessions/${studentId}/${batchId}.json`;
+export interface PracticeOriginInput {
+  studentId: string;
+  originSessionId: string;
+  originQuestionId: number;
+}
 
 const isStale = (session: PracticeSession): boolean => {
   if (session.status === "ended") return false;
@@ -41,107 +47,73 @@ const isStale = (session: PracticeSession): boolean => {
   return ageMs > PRACTICE_SESSION_MAX_AGE_HOURS * 3600 * 1000;
 };
 
-export interface PracticeSessionLocator {
-  studentId: string;
-  batchId: string;
-  questionId: number;
-}
-
-// Look up the source CoachingPacket from the parent batch session JSON.
-// Used by createPracticeSession to snapshot the packet at session start.
-const loadSourceCoachingPacket = async (
-  studentId: string,
-  batchId: string,
-  questionId: number,
-): Promise<CoachingPacket> => {
-  const response = await s3.send(
-    new GetObjectCommand({
-      Bucket: bucket(),
-      Key: sessionKey(studentId, batchId),
-    }),
+export const createPracticeBundle = async (
+  input: PracticeOriginInput,
+): Promise<PracticeBundle> => {
+  const origin = await loadSession(input.studentId, input.originSessionId);
+  if (!origin || origin.sessionType !== "homework") {
+    throw new Error(`Origin homework session ${input.originSessionId} not found.`);
+  }
+  const sourceQuestion = origin.questions.find(
+    (q) => q.questionId === input.originQuestionId,
   );
-  const body = await response.Body?.transformToString("utf-8");
-  if (!body) throw new Error(`Source session ${batchId} not found.`);
-  const raw = JSON.parse(body) as {
-    questions?: Array<{ questionId: number; packet: CoachingPacket }>;
-  };
-  const match = raw.questions?.find((q) => q.questionId === questionId);
-  if (!match) {
+  if (!sourceQuestion) {
     throw new Error(
-      `Question ${questionId} not found in batch ${batchId}.`,
+      `Question ${input.originQuestionId} not found in session ${input.originSessionId}.`,
     );
   }
-  return match.packet;
-};
 
-export const createPracticeSession = async (
-  loc: PracticeSessionLocator,
-): Promise<PracticeSession> => {
-  const { studentId, batchId, questionId } = loc;
-
-  // Refuse if a session already exists for this composite key.
-  try {
-    const existing = await loadPracticeSession(loc);
-    if (existing.status === "active") {
-      throw Object.assign(
-        new Error(
-          "A practice session is already in progress for this question. Resume it instead of starting a new one.",
-        ),
-        { code: "ALREADY_ACTIVE" },
-      );
-    }
-    // If existing session is "ended", fall through and replace it. The parent
-    // is starting a fresh attempt at the same source question.
-  } catch (err) {
-    if ((err as { code?: string }).code === "ALREADY_ACTIVE") throw err;
-    if (!(err instanceof NoSuchKey || (err as { name?: string }).name === "NoSuchKey")) {
-      // Real read error — surface.
-      // (NoSuchKey is the expected "no existing session" path; anything else is a bug.)
-    }
-  }
-
-  const sourceCoachingPacket = await loadSourceCoachingPacket(
-    studentId,
-    batchId,
-    questionId,
-  );
   const now = new Date().toISOString();
   const session: PracticeSession = {
-    practiceSessionId: `${batchId}:${questionId}`,
-    studentId,
-    sourceBatchId: batchId,
-    sourceQuestionId: questionId,
-    sourceCoachingPacket,
-    createdAt: now,
+    sessionType: "practice",
+    sessionId: randomUUID(),
+    studentId: input.studentId,
+    timestamp: now,
     updatedAt: now,
+    usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
     status: "active",
+    origin: {
+      sessionId: input.originSessionId,
+      questionId: input.originQuestionId,
+    },
+    sourceCoachingPacket: sourceQuestion.packet,
     problemCount: 0,
     toolCallCount: 0,
     problems: [],
-    messages: [],
     toolLog: [],
-    totalUsage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   };
-  await savePracticeSession(session);
-  return session;
+
+  await saveSession(session);
+  return {
+    session,
+    sidecar: { bedrockMessages: [], usagePerTurn: [] },
+  };
 };
 
-export const loadPracticeSession = async (
-  loc: PracticeSessionLocator,
-): Promise<PracticeSession> => {
-  const response = await s3.send(
-    new GetObjectCommand({
-      Bucket: bucket(),
-      Key: practiceKey(loc.studentId, loc.batchId, loc.questionId),
-    }),
-  );
-  const body = await response.Body?.transformToString("utf-8");
-  if (!body) throw new Error("Practice session is empty.");
-  const session = JSON.parse(body) as PracticeSession;
-  // Defensive: older sessions written before usage tracking landed.
-  if (!session.totalUsage) {
-    session.totalUsage = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+export const loadPracticeBundle = async (
+  loc: PracticeLocator,
+): Promise<PracticeBundle> => {
+  const session = await loadSession(loc.studentId, loc.sessionId);
+  if (!session) {
+    const err = new Error("Practice session not found.");
+    (err as { code?: string }).code = "NOT_FOUND";
+    throw err;
   }
+  if (session.sessionType !== "practice") {
+    const err = new Error("This session is not a practice session.");
+    (err as { code?: string }).code = "WRONG_TYPE";
+    throw err;
+  }
+  if (session.studentId !== loc.studentId) {
+    const err = new Error("Practice session not found.");
+    (err as { code?: string }).code = "NOT_FOUND";
+    throw err;
+  }
+
+  const sidecar: AgentSidecar = (await loadAgentSidecar(
+    loc.studentId,
+    loc.sessionId,
+  )) ?? { bedrockMessages: [], usagePerTurn: [] };
 
   if (isStale(session)) {
     session.status = "ended";
@@ -149,76 +121,67 @@ export const loadPracticeSession = async (
     session.finalSummary =
       session.finalSummary ??
       "Session expired after 24 hours of inactivity.";
-    await savePracticeSession(session);
+    await saveSession(session);
     logger.info("practice_session_auto_abandoned", {
-      practiceSessionId: session.practiceSessionId,
+      sessionId: session.sessionId,
     });
   }
 
-  return session;
+  return { session, sidecar };
 };
 
-export const savePracticeSession = async (
-  session: PracticeSession,
+export const savePracticeBundle = async (
+  bundle: PracticeBundle,
 ): Promise<void> => {
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: bucket(),
-      Key: practiceKey(
-        session.studentId,
-        session.sourceBatchId,
-        session.sourceQuestionId,
-      ),
-      Body: JSON.stringify(session),
-      ContentType: "application/json",
-    }),
+  await saveSession(bundle.session);
+  await saveAgentSidecar(
+    bundle.session.studentId,
+    bundle.session.sessionId,
+    bundle.sidecar,
   );
-  logger.info("practice_session_save", {
-    practiceSessionId: session.practiceSessionId,
-    status: session.status,
+  logger.info("practice_bundle_save", {
+    sessionId: bundle.session.sessionId,
+    status: bundle.session.status,
   });
 };
 
 // Used by history-handler.ts to surface "Practice ✓" pills per question.
+// With the flat key layout (ADR 0004) we list all sessions and filter to
+// Practice sessions whose origin matches.
 export interface PracticeSessionSummary {
-  questionId: number;
+  sessionId: string;
+  origin: { sessionId: string; questionId: number };
   status: PracticeSession["status"];
   endedReason?: PracticeSession["endedReason"];
   problemCount: number;
   updatedAt: string;
-  totalUsage?: TokenUsage;
+  usage: PracticeSession["usage"];
 }
 
-export const listPracticeSessionsForBatch = async (
+export const listPracticeSessionsForOrigin = async (
   studentId: string,
-  batchId: string,
+  originSessionId: string,
 ): Promise<PracticeSessionSummary[]> => {
-  const list = await s3.send(
-    new ListObjectsV2Command({
-      Bucket: bucket(),
-      Prefix: `sessions/${studentId}/${batchId}/practice-`,
-    }),
-  );
-  if (!list.Contents || list.Contents.length === 0) return [];
-  const summaries = await Promise.all(
-    list.Contents.filter((obj): obj is typeof obj & { Key: string } =>
-      obj.Key !== undefined && obj.Key.endsWith(".json"),
-    ).map(async (obj): Promise<PracticeSessionSummary | null> => {
-      const response = await s3.send(
-        new GetObjectCommand({ Bucket: bucket(), Key: obj.Key }),
-      );
-      const body = await response.Body?.transformToString("utf-8");
-      if (!body) return null;
-      const session = JSON.parse(body) as PracticeSession;
-      return {
-        questionId: session.sourceQuestionId,
-        status: session.status,
-        endedReason: session.endedReason,
-        problemCount: session.problemCount,
-        updatedAt: session.updatedAt,
-        totalUsage: session.totalUsage,
-      };
-    }),
-  );
-  return summaries.filter((s): s is PracticeSessionSummary => s !== null);
+  // For an early-stage app this is fine; if session counts grow we can
+  // maintain an index. listSessions paginates so we walk pages.
+  const results: PracticeSessionSummary[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await listSessions(studentId, cursor, 100);
+    for (const s of page.sessions) {
+      if (s.sessionType === "practice" && s.origin.sessionId === originSessionId) {
+        results.push({
+          sessionId: s.sessionId,
+          origin: s.origin,
+          status: s.status,
+          endedReason: s.endedReason,
+          problemCount: s.problemCount,
+          updatedAt: s.updatedAt,
+          usage: s.usage,
+        });
+      }
+    }
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
+  return results;
 };

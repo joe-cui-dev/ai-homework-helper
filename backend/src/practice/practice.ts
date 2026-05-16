@@ -22,12 +22,12 @@ import {
 } from "../shared/bedrock";
 import type {
   CoachingPacket,
-  PracticeProblem,
-  PracticeSession,
   PracticeStreamEvent,
   TeachingStyle,
   Verdict,
 } from "../shared/types";
+import type { PracticeProblem, PracticeSession } from "../shared/session";
+import type { AgentSidecar } from "../shared/sessionStore";
 import { logger } from "../shared/logger";
 
 export const MAX_ITERATIONS_PER_TURN = 5;
@@ -515,9 +515,11 @@ export interface RunTurnOptions {
 
 export const runPracticeTurn = async (
   session: PracticeSession,
+  sidecar: AgentSidecar,
   options: RunTurnOptions = {},
 ): Promise<TurnResult> => {
   const { parentMessage, forceEndSession, onEvent } = options;
+  const messages = sidecar.bedrockMessages;
 
   // Append parent input (if any) BEFORE the loop, so the agent sees it on its
   // first iteration.
@@ -525,9 +527,9 @@ export const runPracticeTurn = async (
     const text = forceEndSession
       ? `[The parent has clicked End practice. Produce a recap and call end_turn with isSessionEnded=true and endedReason="abandoned".]${parentMessage ? `\n\nParent note: ${parentMessage}` : ""}`
       : parentMessage;
-    session.messages.push({ role: "user", content: [{ text }] });
+    messages.push({ role: "user", content: [{ text }] });
   } else if (forceEndSession) {
-    session.messages.push({
+    messages.push({
       role: "user",
       content: [
         {
@@ -535,9 +537,9 @@ export const runPracticeTurn = async (
         },
       ],
     });
-  } else if (session.messages.length === 0) {
+  } else if (messages.length === 0) {
     // Cold start of a session — seed with a synthetic kickoff message.
-    session.messages.push({
+    messages.push({
       role: "user",
       content: [{ text: "[Start the session. Produce a warm-up problem.]" }],
     });
@@ -574,7 +576,7 @@ export const runPracticeTurn = async (
     // (kickoff, forceEnd, tool results) trigger PROMPT_ATTACK at HIGH sensitivity.
     // Content safety is enforced inside each tool via callClaude (InvokeModel).
     const response = await converseWithTools(
-      session.messages,
+      messages,
       TOOL_SCHEMA,
       systemPrompt,
       toolChoice,
@@ -583,7 +585,7 @@ export const runPracticeTurn = async (
     );
     accumulateUsage(response.usage);
 
-    session.messages.push(response.message);
+    messages.push(response.message);
 
     if (response.stopReason === "guardrail_intervened") {
       const guardrailMessage =
@@ -669,7 +671,7 @@ export const runPracticeTurn = async (
       }
     }
 
-    session.messages.push({ role: "user", content: toolResultBlocks });
+    messages.push({ role: "user", content: toolResultBlocks });
 
     if (endTurnInput) {
       session.updatedAt = new Date().toISOString();
@@ -679,7 +681,7 @@ export const runPracticeTurn = async (
         session.finalSummary = endTurnInput.finalSummary;
       }
       const turnUsage = buildUsage(turnInput, turnOutput);
-      session.totalUsage = sumUsage(session.totalUsage, turnUsage);
+      session.usage = sumUsage(session.usage, turnUsage);
       return {
         session,
         agentMessage: endTurnInput.agentMessage,

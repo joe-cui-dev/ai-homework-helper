@@ -4,7 +4,9 @@ import {
   MAX_PROBLEMS_PER_SESSION,
   MAX_TOOL_CALLS_PER_SESSION,
 } from "../practice/practice";
-import type { CoachingPacket, PracticeSession } from "../shared/types";
+import type { CoachingPacket } from "../shared/types";
+import type { PracticeSession } from "../shared/session";
+import type { AgentSidecar } from "../shared/sessionStore";
 
 jest.mock("../shared/bedrock", () => ({
   converseWithTools: jest.fn(),
@@ -51,21 +53,25 @@ const PACKET: CoachingPacket = {
 };
 
 const blankSession = (overrides: Partial<PracticeSession> = {}): PracticeSession => ({
-  practiceSessionId: "batch-1:1",
+  sessionType: "practice",
+  sessionId: "p-1",
   studentId: "student-1",
-  sourceBatchId: "batch-1",
-  sourceQuestionId: 1,
-  sourceCoachingPacket: PACKET,
-  createdAt: "2026-05-01T00:00:00Z",
+  timestamp: "2026-05-01T00:00:00Z",
   updatedAt: "2026-05-01T00:00:00Z",
+  usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   status: "active",
+  origin: { sessionId: "batch-1", questionId: 1 },
+  sourceCoachingPacket: PACKET,
   problemCount: 0,
   toolCallCount: 0,
   problems: [],
-  messages: [],
   toolLog: [],
-  totalUsage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   ...overrides,
+});
+
+const blankSidecar = (): AgentSidecar => ({
+  bedrockMessages: [],
+  usagePerTurn: [],
 });
 
 const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -141,8 +147,9 @@ describe("runPracticeTurn — cold start", () => {
       );
 
     const session = blankSession();
+    const sidecar = blankSidecar();
     const events: string[] = [];
-    const result = await runPracticeTurn(session, {
+    const result = await runPracticeTurn(session, sidecar, {
       onEvent: (e) => events.push(`${e.type}:${"tool" in e ? e.tool : ""}`),
     });
 
@@ -170,6 +177,7 @@ describe("runPracticeTurn — recovery branching", () => {
         { problemIndex: 1, problem: "8+6", expectedAnswer: "14", difficulty: "same" },
       ],
     });
+    const sidecar = blankSidecar();
 
     callClaude
       .mockResolvedValueOnce(
@@ -219,7 +227,7 @@ describe("runPracticeTurn — recovery branching", () => {
         ]),
       );
 
-    const result = await runPracticeTurn(session, {
+    const result = await runPracticeTurn(session, sidecar, {
       parentMessage: "Kid said 2",
     });
 
@@ -244,6 +252,7 @@ describe("runPracticeTurn — mastery", () => {
         { problemIndex: 2, problem: "p3", expectedAnswer: "c", difficulty: "harder" },
       ],
     });
+    const sidecar = blankSidecar();
 
     callClaude.mockResolvedValueOnce(
       claudeResult(
@@ -270,7 +279,7 @@ describe("runPracticeTurn — mastery", () => {
         ]),
       );
 
-    const result = await runPracticeTurn(session, {
+    const result = await runPracticeTurn(session, sidecar, {
       parentMessage: "Kid said c",
     });
 
@@ -295,6 +304,7 @@ describe("runPracticeTurn — guardrails", () => {
         difficulty: "same" as const,
       })),
     });
+    const sidecar = blankSidecar();
 
     converseWithTools
       .mockResolvedValueOnce(
@@ -316,14 +326,14 @@ describe("runPracticeTurn — guardrails", () => {
         ]),
       );
 
-    const result = await runPracticeTurn(session, {
+    const result = await runPracticeTurn(session, sidecar, {
       parentMessage: "more please",
     });
     expect(result.isSessionEnded).toBe(true);
 
     // The dispatcher returns an error toolResult to the agent — verify by
     // checking that the conversation includes a status:"error" tool result.
-    const hasError = session.messages.some((m) =>
+    const hasError = sidecar.bedrockMessages.some((m) =>
       (m.content ?? []).some((b) => {
         const tr = (b as Record<string, unknown>).toolResult as
           | { status?: string }
@@ -339,6 +349,7 @@ describe("runPracticeTurn — guardrails", () => {
     const session = blankSession({
       toolCallCount: MAX_TOOL_CALLS_PER_SESSION,
     });
+    const sidecar = blankSidecar();
 
     converseWithTools
       .mockResolvedValueOnce(
@@ -358,8 +369,8 @@ describe("runPracticeTurn — guardrails", () => {
         ]),
       );
 
-    await runPracticeTurn(session, { parentMessage: "still stuck" });
-    const hasError = session.messages.some((m) =>
+    await runPracticeTurn(session, sidecar, { parentMessage: "still stuck" });
+    const hasError = sidecar.bedrockMessages.some((m) =>
       (m.content ?? []).some((b) => {
         const tr = (b as Record<string, unknown>).toolResult as
           | { status?: string }
@@ -382,6 +393,7 @@ describe("runPracticeTurn — forceEndSession", () => {
         { problemIndex: 1, problem: "p2", expectedAnswer: "b", difficulty: "same" },
       ],
     });
+    const sidecar = blankSidecar();
 
     converseWithTools.mockResolvedValueOnce(
       toolUseResponse([
@@ -397,7 +409,7 @@ describe("runPracticeTurn — forceEndSession", () => {
       ]),
     );
 
-    const result = await runPracticeTurn(session, { forceEndSession: true });
+    const result = await runPracticeTurn(session, sidecar, { forceEndSession: true });
 
     expect(result.isSessionEnded).toBe(true);
     expect(result.endedReason).toBe("abandoned");
@@ -420,7 +432,7 @@ describe("runPracticeTurn — guardrail", () => {
     });
 
     await expect(
-      runPracticeTurn(blankSession(), { parentMessage: "bad" }),
+      runPracticeTurn(blankSession(), blankSidecar(), { parentMessage: "bad" }),
     ).rejects.toThrow(/Blocked by content filter/);
   });
 });

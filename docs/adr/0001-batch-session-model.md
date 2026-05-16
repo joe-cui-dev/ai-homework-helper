@@ -1,6 +1,6 @@
 # ADR 0001: Batch-level session model
 
-**Status:** Accepted  
+**Status:** Superseded by [ADR 0004](./0004-unified-session-model.md)
 **Date:** 2026-05-01
 
 ## Context

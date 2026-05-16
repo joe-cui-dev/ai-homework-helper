@@ -1,125 +1,39 @@
 // ── Writing Session storage ──────────────────────────────────────────────────
-// One JSON object per session at sessions/{studentId}/{batchId}.json. Mutated
-// across HTTP requests (read-modify-write per turn). _internal carries Bedrock
-// state and per-turn raw usage — history reader skips it. See ADR 0003.
-//
-// Lazy stale-flip: sessions older than WRITING_SESSION_MAX_AGE_HOURS since
-// updatedAt are flipped to status="ended", endedReason="abandoned" on next
-// read, mirroring practiceStorage.
+// User-facing WritingSession at sessions/{studentId}/{sessionId}.json and the
+// Bedrock conversation sidecar at .agent.json. The bundle API is the only
+// surface the handler uses. Lazy stale-flip applied on read.
+// See ADR 0004.
 // ─────────────────────────────────────────────────────────────────────────────
-import {
-  S3Client,
-  PutObjectCommand,
-  GetObjectCommand,
-  NoSuchKey,
-} from "@aws-sdk/client-s3";
 import type { BedrockMessage } from "../shared/bedrock";
-import type { WritingSessionRecord } from "../shared/types";
+import type { WritingSession } from "../shared/session";
+import {
+  loadSession,
+  loadAgentSidecar,
+  saveSession,
+  saveAgentSidecar,
+} from "../shared/sessionStore";
+import type { AgentSidecar } from "../shared/sessionStore";
 import { logger } from "../shared/logger";
-
-const s3 = new S3Client({});
 
 export const WRITING_SESSION_MAX_AGE_HOURS = 24;
 export const MAX_DRAFT_TURNS = 5;
 export const MAX_QUESTION_TURNS = 3;
 
-const bucket = (): string => {
-  const b = process.env.S3_BUCKET_NAME;
-  if (!b) throw new Error("S3_BUCKET_NAME environment variable is not set");
-  return b;
-};
-
-const sessionKey = (studentId: string, batchId: string): string =>
-  `sessions/${studentId}/${batchId}.json`;
-
-const isStale = (record: WritingSessionRecord): boolean => {
-  if (record.status === "ended") return false;
-  const ageMs = Date.now() - new Date(record.updatedAt).getTime();
-  return ageMs > WRITING_SESSION_MAX_AGE_HOURS * 3600 * 1000;
-};
+export interface WritingBundle {
+  session: WritingSession;
+  sidecar: AgentSidecar;
+}
 
 export interface WritingSessionLocator {
   studentId: string;
-  batchId: string;
+  sessionId: string;
 }
 
-// Load a writing session by batchId. Performs lazy stale-flip: if the session
-// is "active" but older than 24 h, flips to ended/abandoned and persists
-// before returning. Throws if the session does not exist or belongs to
-// another student.
-export const loadWritingSession = async (
-  loc: WritingSessionLocator,
-): Promise<WritingSessionRecord> => {
-  let response;
-  try {
-    response = await s3.send(
-      new GetObjectCommand({
-        Bucket: bucket(),
-        Key: sessionKey(loc.studentId, loc.batchId),
-      }),
-    );
-  } catch (err) {
-    if (err instanceof NoSuchKey || (err as { name?: string }).name === "NoSuchKey") {
-      const error = new Error("Writing session not found.");
-      (error as { code?: string }).code = "NOT_FOUND";
-      throw error;
-    }
-    throw err;
-  }
-  const body = await response.Body?.transformToString("utf-8");
-  if (!body) throw new Error("Writing session is empty.");
-  const record = JSON.parse(body) as WritingSessionRecord;
-
-  // Defensive: a session at this path may have been written by Homework or
-  // Reading. Reject so callers don't accidentally mutate a non-Writing record.
-  if (record.sessionType !== "writing") {
-    const error = new Error(
-      "This session is not a writing session.",
-    );
-    (error as { code?: string }).code = "WRONG_TYPE";
-    throw error;
-  }
-
-  // Tenancy check: studentId on the record must match the caller. If the
-  // record is missing studentId (legacy or partial write), refuse.
-  if (record.studentId !== loc.studentId) {
-    const error = new Error("Writing session not found.");
-    (error as { code?: string }).code = "NOT_FOUND";
-    throw error;
-  }
-
-  // Self-heal sessions persisted before image-block redaction landed: any
-  // image block whose `bytes` is no longer a Buffer/Uint8Array (e.g. the
-  // JSON.parse-revived {type:"Buffer", data:[]} shape) gets replaced with a
-  // text placeholder. Without this, the AWS SDK throws
-  //   "@smithy/util-base64: toBase64 encoder function only accepts string |
-  //    Uint8Array"
-  // on the next turn that replays history.
-  if (record._internal?.messages?.length) {
-    record._internal.messages = sanitiseHistoryMessages(
-      record._internal.messages,
-    );
-  }
-
-  if (isStale(record)) {
-    record.status = "ended";
-    record.endedReason = "abandoned";
-    await saveWritingSession(record);
-    logger.info("writing_session_auto_abandoned", {
-      sessionId: record.sessionId,
-    });
-  }
-
-  return record;
-};
-
-// Save the full session record (including _internal). Atomic at the S3 object
-// level — read-modify-write inside the Lambda is safe so long as we don't
-// have concurrent turns for the same session, which the UI wizard prevents.
-// Replace any image content block whose `bytes` is not a real Buffer/Uint8Array
-// with a text placeholder. Detects the failure mode where Buffer was
-// JSON.stringify'd to {type:"Buffer", data:[...]} and JSON.parse'd back as a
-// plain object — which the AWS SDK's base64 encoder can't accept on a replay.
+// Heal image content blocks that no longer carry usable bytes. Bedrock images
+// arrive as Buffer/Uint8Array but the JSON.stringify round-trip turns Buffer
+// into {type:"Buffer", data:[...]} which the AWS SDK's base64 encoder rejects
+// on replay ("@smithy/util-base64: toBase64 encoder function only accepts
+// string | Uint8Array"). Replace any such block with a text placeholder.
 const sanitiseHistoryMessages = (
   messages: BedrockMessage[],
 ): BedrockMessage[] => {
@@ -149,21 +63,67 @@ const sanitiseHistoryMessages = (
   return out;
 };
 
-export const saveWritingSession = async (
-  record: WritingSessionRecord,
+export const loadWritingBundle = async (
+  loc: WritingSessionLocator,
+): Promise<WritingBundle> => {
+  const session = await loadSession(loc.studentId, loc.sessionId);
+  if (!session) {
+    const error = new Error("Writing session not found.");
+    (error as { code?: string }).code = "NOT_FOUND";
+    throw error;
+  }
+  if (session.sessionType !== "writing") {
+    const error = new Error("This session is not a writing session.");
+    (error as { code?: string }).code = "WRONG_TYPE";
+    throw error;
+  }
+  if (session.studentId !== loc.studentId) {
+    const error = new Error("Writing session not found.");
+    (error as { code?: string }).code = "NOT_FOUND";
+    throw error;
+  }
+
+  const sidecar: AgentSidecar = (await loadAgentSidecar(
+    loc.studentId,
+    loc.sessionId,
+  )) ?? { bedrockMessages: [], usagePerTurn: [] };
+
+  if (sidecar.bedrockMessages.length) {
+    sidecar.bedrockMessages = sanitiseHistoryMessages(sidecar.bedrockMessages);
+  }
+
+  const ageMs = Date.now() - new Date(session.updatedAt).getTime();
+  const stale =
+    session.status === "active" &&
+    ageMs > WRITING_SESSION_MAX_AGE_HOURS * 3600 * 1000;
+  if (stale) {
+    session.status = "ended";
+    session.endedReason = "abandoned";
+    await saveSession(session);
+    logger.info("writing_session_auto_abandoned", {
+      sessionId: session.sessionId,
+    });
+  }
+
+  return { session, sidecar };
+};
+
+export const saveWritingBundle = async (
+  bundle: WritingBundle,
 ): Promise<void> => {
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: bucket(),
-      Key: sessionKey(record.studentId, record.sessionId),
-      Body: JSON.stringify(record),
-      ContentType: "application/json",
-    }),
+  // Write order: user-facing session first, then Bedrock sidecar. If the
+  // sidecar write fails on an active session, the next turn can detect the
+  // mismatch and either re-derive or refuse — never silently corrupt.
+  await saveSession(bundle.session);
+  await saveAgentSidecar(
+    bundle.session.studentId,
+    bundle.session.sessionId,
+    bundle.sidecar,
   );
-  logger.info("writing_session_save", {
-    sessionId: record.sessionId,
-    status: record.status,
-    draftCount: record.draftCount,
-    questionCount: record.questionCount,
+  logger.info("writing_bundle_save", {
+    sessionId: bundle.session.sessionId,
+    status: bundle.session.status,
+    draftCount: bundle.session.draftCount,
+    questionCount: bundle.session.questionCount,
   });
 };

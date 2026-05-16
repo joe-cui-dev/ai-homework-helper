@@ -14,9 +14,9 @@ jest.mock("../practice/practice", () => ({
 }));
 
 jest.mock("../practice/practiceStorage", () => ({
-  createPracticeSession: jest.fn(),
-  loadPracticeSession: jest.fn(),
-  savePracticeSession: jest.fn(),
+  createPracticeBundle: jest.fn(),
+  loadPracticeBundle: jest.fn(),
+  savePracticeBundle: jest.fn(),
 }));
 
 jest.mock("../shared/logger", () => ({
@@ -54,16 +54,18 @@ import type { Context } from "aws-lambda";
 import { handler } from "../practice/handler";
 import { runPracticeTurn } from "../practice/practice";
 import {
-  createPracticeSession,
-  loadPracticeSession,
-  savePracticeSession,
+  createPracticeBundle,
+  loadPracticeBundle,
+  savePracticeBundle,
 } from "../practice/practiceStorage";
-import type { CoachingPacket, PracticeSession } from "../shared/types";
+import type { CoachingPacket } from "../shared/types";
+import type { PracticeSession } from "../shared/session";
+import type { AgentSidecar } from "../shared/sessionStore";
 
 const mockRunPracticeTurn = runPracticeTurn as jest.MockedFunction<typeof runPracticeTurn>;
-const mockCreate = createPracticeSession as jest.MockedFunction<typeof createPracticeSession>;
-const mockLoad = loadPracticeSession as jest.MockedFunction<typeof loadPracticeSession>;
-const mockSave = savePracticeSession as jest.MockedFunction<typeof savePracticeSession>;
+const mockCreate = createPracticeBundle as jest.MockedFunction<typeof createPracticeBundle>;
+const mockLoad = loadPracticeBundle as jest.MockedFunction<typeof loadPracticeBundle>;
+const mockSave = savePracticeBundle as jest.MockedFunction<typeof savePracticeBundle>;
 
 const PACKET: CoachingPacket = {
   questionId: 1,
@@ -76,25 +78,31 @@ const PACKET: CoachingPacket = {
   childHint: "?",
 };
 
+const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+
 const session = (overrides: Partial<PracticeSession> = {}): PracticeSession => ({
-  practiceSessionId: "batch-1:1",
+  sessionType: "practice",
+  sessionId: "prac-uuid",
   studentId: "student-1",
-  sourceBatchId: "batch-1",
-  sourceQuestionId: 1,
-  sourceCoachingPacket: PACKET,
-  createdAt: "2026-05-01T00:00:00Z",
+  timestamp: "2026-05-01T00:00:00Z",
   updatedAt: "2026-05-01T00:00:00Z",
+  usage: ZERO_USAGE,
   status: "active",
+  origin: { sessionId: "home-1", questionId: 1 },
+  sourceCoachingPacket: PACKET,
   problemCount: 0,
   toolCallCount: 0,
   problems: [],
-  messages: [],
   toolLog: [],
-  totalUsage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   ...overrides,
 });
 
-const ZERO_USAGE = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+const sidecar = (): AgentSidecar => ({ bedrockMessages: [], usagePerTurn: [] });
+
+const bundle = (overrides: Partial<PracticeSession> = {}) => ({
+  session: session(overrides),
+  sidecar: sidecar(),
+});
 
 const event = (
   rawPath: string,
@@ -143,17 +151,21 @@ describe("practice-handler routing", () => {
 
   it("returns error event when JWT invalid", async () => {
     mockVerify.mockRejectedValueOnce(new Error("bad"));
-    await handler(event("/practice/turn", { practiceSessionId: "batch-1:1" }), makeStream() as never, {} as Context);
+    await handler(
+      event("/practice/turn", { sessionId: "prac-uuid" }),
+      makeStream() as never,
+      {} as Context,
+    );
     expect(lastEvent().type).toBe("error");
     expect(lastEvent().message).toMatch(/Invalid/);
   });
 
-  it("/practice/start creates session and runs an opening turn", async () => {
+  it("/practice/start creates session from origin and runs an opening turn", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
-    const created = session();
+    const created = bundle();
     mockCreate.mockResolvedValueOnce(created);
     mockRunPracticeTurn.mockResolvedValueOnce({
-      session: created,
+      session: created.session,
       agentMessage: "Let's start.",
       problem: "5+7",
       isSessionEnded: false,
@@ -161,47 +173,69 @@ describe("practice-handler routing", () => {
     });
 
     await handler(
-      event("/practice/start", { batchId: "batch-1", questionId: 1 }),
+      event("/practice/start", { originSessionId: "home-1", questionId: 1 }),
       makeStream() as never,
       {} as Context,
     );
 
     expect(mockCreate).toHaveBeenCalledWith({
       studentId: "student-1",
-      batchId: "batch-1",
-      questionId: 1,
+      originSessionId: "home-1",
+      originQuestionId: 1,
     });
     expect(mockRunPracticeTurn).toHaveBeenCalled();
-    expect(mockSave).toHaveBeenCalledWith(created);
+    expect(mockSave).toHaveBeenCalled();
     const final = lastEvent();
     expect(final.type).toBe("turn_complete");
     expect(final.problem).toBe("5+7");
   });
 
-  it("/practice/start surfaces ALREADY_ACTIVE conflict cleanly", async () => {
+  it("/practice/start accepts legacy batchId field for compatibility during cutover", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
-    const conflict = Object.assign(new Error("already in progress"), {
-      code: "ALREADY_ACTIVE",
+    const created = bundle();
+    mockCreate.mockResolvedValueOnce(created);
+    mockRunPracticeTurn.mockResolvedValueOnce({
+      session: created.session,
+      agentMessage: "Let's start.",
+      problem: "5+7",
+      isSessionEnded: false,
+      turnUsage: ZERO_USAGE,
     });
-    mockCreate.mockRejectedValueOnce(conflict);
 
     await handler(
-      event("/practice/start", { batchId: "batch-1", questionId: 1 }),
+      event("/practice/start", { batchId: "home-1", questionId: 1 }),
+      makeStream() as never,
+      {} as Context,
+    );
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      studentId: "student-1",
+      originSessionId: "home-1",
+      originQuestionId: 1,
+    });
+  });
+
+  it("/practice/start surfaces creation failure as an error event", async () => {
+    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
+    mockCreate.mockRejectedValueOnce(new Error("Question 1 not found in session home-1."));
+
+    await handler(
+      event("/practice/start", { originSessionId: "home-1", questionId: 1 }),
       makeStream() as never,
       {} as Context,
     );
 
     expect(lastEvent().type).toBe("error");
-    expect(lastEvent().message).toMatch(/already in progress/);
+    expect(lastEvent().message).toMatch(/not found/);
     expect(mockRunPracticeTurn).not.toHaveBeenCalled();
   });
 
-  it("/practice/turn loads session and runs the agent with parentMessage", async () => {
+  it("/practice/turn loads bundle and runs the agent with parentMessage", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
-    const loaded = session();
+    const loaded = bundle();
     mockLoad.mockResolvedValueOnce(loaded);
     mockRunPracticeTurn.mockResolvedValueOnce({
-      session: loaded,
+      session: loaded.session,
       agentMessage: "Try this next.",
       problem: "8+6",
       isSessionEnded: false,
@@ -210,7 +244,7 @@ describe("practice-handler routing", () => {
 
     await handler(
       event("/practice/turn", {
-        practiceSessionId: "batch-1:1",
+        sessionId: "prac-uuid",
         parentMessage: "kid said 12",
       }),
       makeStream() as never,
@@ -218,7 +252,8 @@ describe("practice-handler routing", () => {
     );
 
     expect(mockRunPracticeTurn).toHaveBeenCalledWith(
-      loaded,
+      loaded.session,
+      loaded.sidecar,
       expect.objectContaining({ parentMessage: "kid said 12", forceEndSession: false }),
     );
     expect(mockSave).toHaveBeenCalled();
@@ -227,13 +262,14 @@ describe("practice-handler routing", () => {
 
   it("/practice/turn rejects if session is already ended", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
-    mockLoad.mockResolvedValueOnce(
-      session({ status: "ended", endedReason: "mastered" }),
-    );
+    mockLoad.mockResolvedValueOnce({
+      session: session({ status: "ended", endedReason: "mastered" }),
+      sidecar: sidecar(),
+    });
 
     await handler(
       event("/practice/turn", {
-        practiceSessionId: "batch-1:1",
+        sessionId: "prac-uuid",
         parentMessage: "more please",
       }),
       makeStream() as never,
@@ -247,10 +283,10 @@ describe("practice-handler routing", () => {
 
   it("/practice/end calls runPracticeTurn with forceEndSession", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
-    const loaded = session();
+    const loaded = bundle();
     mockLoad.mockResolvedValueOnce(loaded);
     mockRunPracticeTurn.mockResolvedValueOnce({
-      session: { ...loaded, status: "ended", endedReason: "abandoned" },
+      session: { ...loaded.session, status: "ended", endedReason: "abandoned" },
       agentMessage: "Recap…",
       isSessionEnded: true,
       endedReason: "abandoned",
@@ -259,13 +295,14 @@ describe("practice-handler routing", () => {
     });
 
     await handler(
-      event("/practice/end", { practiceSessionId: "batch-1:1" }),
+      event("/practice/end", { sessionId: "prac-uuid" }),
       makeStream() as never,
       {} as Context,
     );
 
     expect(mockRunPracticeTurn).toHaveBeenCalledWith(
-      loaded,
+      loaded.session,
+      loaded.sidecar,
       expect.objectContaining({ forceEndSession: true }),
     );
     const final = lastEvent();

@@ -20,7 +20,8 @@ import {
   chunkQuestionsForPacketCall,
   generateCoachingPackets,
 } from "./coachingPacket";
-import { saveSession, uploadSessionImages } from "../shared/storage";
+import { saveSession, uploadSessionImages } from "../shared/sessionStore";
+import type { HomeworkSession } from "../shared/session";
 import type { BatchPacket, StreamEvent } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -289,20 +290,22 @@ export const handler = awslambda.streamifyResponse(
 
       // Persist the batch.
       try {
-        await saveSession(
-          batchId,
-          {
-            timestamp: new Date().toISOString(),
-            questions: allBatchPackets.map((p) => ({
-              questionId: p.questionId,
-              input: p.questionText,
-              packet: p.packet,
-            })),
-          },
+        const now = new Date().toISOString();
+        const session: HomeworkSession = {
+          sessionType: "homework",
+          sessionId: batchId,
           studentId,
-          batchImageKeys.length ? batchImageKeys : undefined,
-          batchUsage,
-        );
+          timestamp: now,
+          updatedAt: now,
+          usage: batchUsage,
+          imageKeys: batchImageKeys,
+          questions: allBatchPackets.map((p) => ({
+            questionId: p.questionId,
+            input: p.questionText,
+            packet: p.packet,
+          })),
+        };
+        await saveSession(session);
       } catch (saveErr) {
         logger.error(
           "save_session_failed",

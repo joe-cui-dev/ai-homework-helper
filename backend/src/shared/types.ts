@@ -178,45 +178,10 @@ export type TeachingStyle =
   | "number_line"
   | "real_world";
 
+// Practice session ended-reason wire enum. Domain types in shared/session.ts
+// own PracticeEndedReason which is the source of truth; PracticeStreamEvent
+// remains lenient via the legacy `EndedReason` until the wire format is bumped.
 export type EndedReason = "mastered" | "partial" | "abandoned";
-
-// One generated practice problem and its expected answer. Cached server-side
-// keyed by problemIndex inside the PracticeSession; the answer is never sent
-// to the client until the agent calls evaluate_attempt.
-export interface PracticeProblem {
-  problemIndex: number;
-  problem: string;
-  expectedAnswer: string;
-  difficulty: "easier" | "same" | "harder";
-}
-
-export interface PracticeToolLogEntry {
-  turn: number;
-  tool: string;
-  ts: string;
-}
-
-import type { BedrockMessage } from "./bedrock";
-
-export interface PracticeSession {
-  practiceSessionId: string;
-  studentId: string;
-  sourceBatchId: string;
-  sourceQuestionId: number;
-  sourceCoachingPacket: CoachingPacket;
-  createdAt: string;
-  updatedAt: string;
-  status: "active" | "ended";
-  endedReason?: EndedReason;
-  problemCount: number;
-  toolCallCount: number;
-  problems: PracticeProblem[];
-  messages: BedrockMessage[];
-  toolLog: PracticeToolLogEntry[];
-  finalSummary?: string;
-  // Cumulative usage across every turn in this practice session.
-  totalUsage: TokenUsage;
-}
 
 // Wire format from /practice/start, /practice/turn, /practice/end.
 // Distinct from the Phase 1 StreamEvent union — the frontend has two parsers,
@@ -352,7 +317,7 @@ export interface CoachingNotePacket {
   relatedGuidanceField?: string;
 }
 
-// Per-turn record appended to WritingSessionRecord.turns after turn 1.
+// Per-turn record appended to WritingSession.turns after turn 1 (ADR 0004).
 export type WritingTurn =
   | {
       kind: "draft";
@@ -374,59 +339,6 @@ export type WritingEndedReason =
   | "abandoned"
   | "max_drafts"
   | "max_questions";
-
-// Per-turn raw usage entry. Lives under _internal — never echoed in history.
-export interface WritingTurnUsage {
-  turnIndex: number;
-  inputTokens: number;
-  outputTokens: number;
-}
-
-// Internal namespace inside the SessionRecord JSON. The history reader and
-// getRecentSessions skip this field — see ADR 0003.
-export interface WritingSessionInternal {
-  messages: BedrockMessage[];
-  usagePerTurn: WritingTurnUsage[];
-}
-
-// Full Writing Session record persisted at sessions/{studentId}/{batchId}.json.
-// Public fields conform to the SessionRecord polymorphism (sessionType="writing").
-// _internal carries Bedrock state and is never returned to the frontend.
-export interface WritingSessionRecord {
-  sessionId: string;
-  studentId: string;
-  sessionType: "writing";
-  timestamp: string;
-  updatedAt: string;
-  status: "active" | "ended";
-  endedReason?: WritingEndedReason;
-  prompt: { input: string; imageKeys?: string[] };
-  plan: WritingPlanPacket;
-  turns: WritingTurn[];
-  draftCount: number;
-  questionCount: number;
-  imageKeys: string[];
-  usage: TokenUsage;
-  _internal: WritingSessionInternal;
-}
-
-// Public projection of a Writing Session — the shape returned by the History
-// Lambda for history listings and resume. _internal is stripped.
-export interface WritingSessionPublic {
-  sessionId: string;
-  sessionType: "writing";
-  timestamp: string;
-  updatedAt: string;
-  status: "active" | "ended";
-  endedReason?: WritingEndedReason;
-  prompt: { input: string; imageKeys?: string[] };
-  plan: WritingPlanPacket;
-  turns: WritingTurn[];
-  draftCount: number;
-  questionCount: number;
-  imageKeys: string[];
-  usage?: TokenUsage;
-}
 
 // Wire format for the Writing Lambda's four NDJSON streaming endpoints.
 export type WritingStreamEvent =
