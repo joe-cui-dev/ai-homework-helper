@@ -76,6 +76,26 @@ const objectArray = <T>(
   return [];
 };
 
+const asObject = (v: unknown): Record<string, unknown> | undefined => {
+  if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+    return v as Record<string, unknown>;
+  }
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    if (trimmed.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        // fall through
+      }
+    }
+  }
+  return undefined;
+};
+
 const asString = (v: unknown): string => {
   if (typeof v === "string") return v;
   if (v == null) return "";
@@ -125,10 +145,7 @@ const asRubricDimension = (
 };
 
 const asModelAnswerPair = (v: unknown): ModelAnswerPair => {
-  const obj = (typeof v === "object" && v !== null ? v : {}) as Record<
-    string,
-    unknown
-  >;
+  const obj = asObject(v) ?? {};
   return {
     atYearLevel: asString(obj.atYearLevel),
     aboveYearLevel: asString(obj.aboveYearLevel),
@@ -174,9 +191,7 @@ export const normaliseDraftFeedback = (
           stars[1] ?? { evidenceQuote: "", comment: "" },
         ];
 
-  const wishObj = packet.oneWish as unknown as
-    | Record<string, unknown>
-    | undefined;
+  const wishObj = asObject(packet.oneWish);
   const oneWish = {
     evidenceQuote: asString(wishObj?.evidenceQuote),
     comment: asString(wishObj?.comment),

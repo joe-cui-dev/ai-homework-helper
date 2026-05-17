@@ -79,6 +79,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
   );
   const [error, setError] = useState<string | null>(null);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const pendingDraftImagesRef = useRef<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   const reset = useCallback(() => {
@@ -121,13 +122,17 @@ export const useWritingSession = (): UseWritingSessionReturn => {
       } else if (event.type === "transcribing") {
         setStatus("transcribing");
       } else if (event.type === "feedback_complete") {
+        const submittedImages = pendingDraftImagesRef.current;
+        pendingDraftImagesRef.current = [];
         setTurns((prev) => [
           ...prev,
           {
             kind: "draft",
             turnIndex: event.turnIndex,
             ts: new Date().toISOString(),
-            input: {},
+            input: submittedImages.length
+              ? { imageUrls: submittedImages }
+              : {},
             packet: event.packet,
           },
         ]);
@@ -205,6 +210,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
       abortRef.current = controller;
       setStatus("submitting_draft");
       setError(null);
+      pendingDraftImagesRef.current = draft.images ?? [];
       // Optimistic placeholder turn so the UI shows pending state — replaced
       // when feedback_complete lands.
       try {

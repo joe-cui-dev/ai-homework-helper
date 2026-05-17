@@ -140,6 +140,7 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
             <DraftFeedbackCard
               key={turn.turnIndex}
               packet={turn.packet}
+              imageUrls={turn.input.imageUrls}
               draftIndex={
                 writing.turns
                   .slice(0, writing.turns.indexOf(turn) + 1)

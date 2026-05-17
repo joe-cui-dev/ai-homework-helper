@@ -43,11 +43,13 @@ const SCORE_COLOUR = (score: number): string => {
 interface DraftFeedbackCardProps {
   packet: DraftFeedbackPacket;
   draftIndex: number;
+  imageUrls?: string[];
 }
 
 export function DraftFeedbackCard({
   packet: rawPacket,
   draftIndex,
+  imageUrls,
 }: DraftFeedbackCardProps) {
   const packet = normaliseDraftFeedback(rawPacket);
   const nextStep = NEXT_STEP_LABEL[packet.nextStep] ?? {
@@ -74,6 +76,19 @@ export function DraftFeedbackCard({
           {packet.rubric.overallBand}
         </span>
       </header>
+
+      {imageUrls && imageUrls.length > 0 && (
+        <div className="space-y-2">
+          {imageUrls.map((url, i) => (
+            <img
+              key={i}
+              src={url}
+              alt={`Draft ${draftIndex} page ${i + 1}`}
+              className="w-full rounded-xl border border-gray-200 object-contain bg-white"
+            />
+          ))}
+        </div>
+      )}
 
       <details className="rounded-xl bg-gray-50 border border-gray-100 px-3 py-2">
         <summary className="cursor-pointer text-xs font-bold uppercase tracking-wide text-gray-500 select-none">

@@ -162,7 +162,23 @@ export const handler = async (
         summary.updatedAt = record.updatedAt;
         summary.prompt = record.prompt;
         summary.plan = record.plan;
-        summary.turns = record.turns;
+        summary.turns = await Promise.all(
+          record.turns.map(async (turn): Promise<WritingTurn> => {
+            if (turn.kind !== "draft" || !turn.input.imageKeys?.length) {
+              return turn;
+            }
+            const imageUrls = await Promise.all(
+              turn.input.imageKeys.map((key) =>
+                getSignedUrl(
+                  s3,
+                  new GetObjectCommand({ Bucket: bucket, Key: key }),
+                  { expiresIn: PRESIGN_EXPIRES_IN },
+                ),
+              ),
+            );
+            return { ...turn, input: { ...turn.input, imageUrls } };
+          }),
+        );
         summary.draftCount = record.draftCount;
         summary.questionCount = record.questionCount;
       }

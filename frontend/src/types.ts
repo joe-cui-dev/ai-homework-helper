@@ -276,7 +276,7 @@ export type WritingTurn =
       kind: "draft";
       turnIndex: number;
       ts: string;
-      input: { text?: string; imageKeys?: string[] };
+      input: { text?: string; imageKeys?: string[]; imageUrls?: string[] };
       packet: DraftFeedbackPacket;
     }
   | {
