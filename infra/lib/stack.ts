@@ -8,9 +8,17 @@ import * as bedrock from "aws-cdk-lib/aws-bedrock";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as cr from "aws-cdk-lib/custom-resources";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as targets from "aws-cdk-lib/aws-route53-targets";
 import { Construct } from "constructs";
 import * as path from "path";
+
+const SITE_DOMAIN = "homework.joe-cui.com";
+const HOSTED_ZONE_NAME = "joe-cui.com";
+const HOSTED_ZONE_ID = "Z07017401CSATAMC5HN1W";
 
 // before deploying. Enable model access in your target region first.
 // Cross-region inference profile ID required for newer Anthropic models;
@@ -26,7 +34,9 @@ const HAIKU_45_INPUT_PRICE_PER_MTOK = "1.00";
 const HAIKU_45_OUTPUT_PRICE_PER_MTOK = "5.00";
 
 interface AiHomeworkHelperStackProps extends cdk.StackProps {
-  portfolioDistributionId: string;
+  // Wildcard *.joe-cui.com ACM cert in us-east-1 — required region for CloudFront.
+  // Sourced from infra/.env (gitignored) via bin/app.ts.
+  siteCertArn: string;
 }
 
 export class AiHomeworkHelperStack extends cdk.Stack {
@@ -279,7 +289,7 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       authType: lambda.FunctionUrlAuthType.NONE,
       cors: {
         allowedOrigins: [
-          this.node.tryGetContext("allowedOrigin") ?? "https://joe-cui.com",
+          this.node.tryGetContext("allowedOrigin") ?? `https://${SITE_DOMAIN}`,
         ],
         allowedMethods: [lambda.HttpMethod.GET],
         allowedHeaders: ["Content-Type", "Authorization"],
@@ -395,7 +405,7 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       invokeMode: lambda.InvokeMode.RESPONSE_STREAM,
       cors: {
         allowedOrigins: [
-          this.node.tryGetContext("allowedOrigin") ?? "https://joe-cui.com",
+          this.node.tryGetContext("allowedOrigin") ?? `https://${SITE_DOMAIN}`,
         ],
         allowedMethods: [lambda.HttpMethod.POST],
         allowedHeaders: ["Content-Type", "Authorization"],
@@ -431,7 +441,7 @@ export class AiHomeworkHelperStack extends cdk.Stack {
     // ── Homework + Reading + Writing Function URLs (streaming) ─────────────
     const streamCors = {
       allowedOrigins: [
-        this.node.tryGetContext("allowedOrigin") ?? "https://joe-cui.com",
+        this.node.tryGetContext("allowedOrigin") ?? `https://${SITE_DOMAIN}`,
       ],
       allowedMethods: [lambda.HttpMethod.POST],
       allowedHeaders: ["Content-Type", "Authorization"],
@@ -458,27 +468,19 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       cors: streamCors,
     });
 
-    // ── CloudFront Function (SPA routing) ────────────────────────────────
+    // ── CloudFront distribution for homework.joe-cui.com ──────────────────
 
-    // CloudFront Function to rewrite SPA routes. The portfolio distribution serves
-    // multiple SPA apps, so we route /ai-homework-helper/* to the homework helper
-    // index.html, and let the frontend router handle it from there. All other
-    // paths are left alone (e.g. /blog/* goes to the blog SPA, /index.html
-    // goes to the root SPA, /api/* goes to the API Gateway, etc.).
+    // SPA URI rewrite: any non-asset URI maps to /index.html so React Router
+    // handles the deep-link client-side.
     const spaRewriteFunction = new cloudfront.Function(
       this,
       "SpaRewriteFunction",
       {
-        // The function code is a simple URI rewrite that directs all /ai-homework-helper/* requests to /ai-homework-helper/index.html,
-        // allowing the frontend router to handle SPA routing. All other URIs are passed through unchanged.
         code: cloudfront.FunctionCode.fromInline(`
 function handler(event) {
   var request = event.request;
-  var uri = request.uri;
-  if (uri.match(/\\.\\w+$/)) return request;
-  if (uri.startsWith('/ai-homework-helper')) {
-    request.uri = '/ai-homework-helper/index.html';
-  }
+  if (request.uri.match(/\\.\\w+$/)) return request;
+  request.uri = '/index.html';
   return request;
 }
 `),
@@ -486,43 +488,66 @@ function handler(event) {
       },
     );
 
-    // OAC for the portfolio distribution to access the frontend bucket.
-    // Select this OAC when adding the S3 origin in the CloudFront console.
-    const oac = new cloudfront.S3OriginAccessControl(this, "FrontendOAC");
-
-    // Bucket policy: grant the portfolio distribution read access via OAC.
-    frontendBucket.addToResourcePolicy(
-      new iam.PolicyStatement({
-        actions: ["s3:GetObject"],
-        principals: [new iam.ServicePrincipal("cloudfront.amazonaws.com")],
-        resources: [frontendBucket.arnForObjects("*")],
-        conditions: {
-          StringEquals: {
-            "AWS:SourceArn": `arn:aws:cloudfront::${this.account}:distribution/${props.portfolioDistributionId}`,
-          },
-        },
-      }),
+    const siteCert = acm.Certificate.fromCertificateArn(
+      this,
+      "SiteCertificate",
+      props.siteCertArn,
     );
 
-    // Import the existing portfolio distribution for BucketDeployment cache invalidation.
-    const portfolioDistribution =
-      cloudfront.Distribution.fromDistributionAttributes(
-        this,
-        "PortfolioDistribution",
-        {
-          distributionId: props.portfolioDistributionId,
-          domainName: "joe-cui.com",
+    const siteDistribution = new cloudfront.Distribution(
+      this,
+      "SiteDistribution",
+      {
+        defaultRootObject: "index.html",
+        domainNames: [SITE_DOMAIN],
+        certificate: siteCert,
+        defaultBehavior: {
+          origin: origins.S3BucketOrigin.withOriginAccessControl(frontendBucket),
+          viewerProtocolPolicy:
+            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          functionAssociations: [
+            {
+              function: spaRewriteFunction,
+              eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+            },
+          ],
         },
-      );
+        errorResponses: [
+          {
+            httpStatus: 403,
+            responseHttpStatus: 200,
+            responsePagePath: "/index.html",
+          },
+          {
+            httpStatus: 404,
+            responseHttpStatus: 200,
+            responsePagePath: "/index.html",
+          },
+        ],
+      },
+    );
+
+    // Route 53 alias: homework.joe-cui.com → new distribution.
+    const hostedZone = route53.HostedZone.fromHostedZoneAttributes(
+      this,
+      "HostedZone",
+      { hostedZoneId: HOSTED_ZONE_ID, zoneName: HOSTED_ZONE_NAME },
+    );
+    new route53.ARecord(this, "SiteAliasRecord", {
+      zone: hostedZone,
+      recordName: SITE_DOMAIN,
+      target: route53.RecordTarget.fromAlias(
+        new targets.CloudFrontTarget(siteDistribution),
+      ),
+    });
 
     new s3deploy.BucketDeployment(this, "FrontendDeployment", {
       sources: [
         s3deploy.Source.asset(path.join(__dirname, "../../frontend/dist")),
       ],
       destinationBucket: frontendBucket,
-      destinationKeyPrefix: "ai-homework-helper",
-      distribution: portfolioDistribution,
-      distributionPaths: ["/ai-homework-helper/*"],
+      distribution: siteDistribution,
+      distributionPaths: ["/*"],
       memoryLimit: 512,
       prune: true,
     });
@@ -567,19 +592,22 @@ function handler(event) {
 
     new cdk.CfnOutput(this, "FrontendBucketName", {
       value: frontendBucket.bucketName,
-      description: "S3 bucket — select as the origin in CloudFront console",
+      description: "S3 bucket backing the homework.joe-cui.com distribution",
     });
 
-    new cdk.CfnOutput(this, "OACId", {
-      value: oac.originAccessControlId,
-      description:
-        "OAC ID — select when adding the S3 origin in CloudFront console",
+    new cdk.CfnOutput(this, "SiteUrl", {
+      value: `https://${SITE_DOMAIN}`,
+      description: "Public app URL",
     });
 
-    new cdk.CfnOutput(this, "SpaFunctionArn", {
-      value: spaRewriteFunction.functionArn,
-      description:
-        "CloudFront Function ARN — attach to the /ai-homework-helper* behavior (viewer-request)",
+    new cdk.CfnOutput(this, "SiteDistributionId", {
+      value: siteDistribution.distributionId,
+      description: "CloudFront distribution ID for homework.joe-cui.com",
+    });
+
+    new cdk.CfnOutput(this, "SiteDistributionDomain", {
+      value: siteDistribution.distributionDomainName,
+      description: "CloudFront distribution domain (for Route 53 alias)",
     });
   }
 }

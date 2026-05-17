@@ -198,7 +198,7 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter basename="/ai-homework-helper">
+    <BrowserRouter>
       <AppShell email={user.email} token={user.token} onLogout={logout} />
     </BrowserRouter>
   );
