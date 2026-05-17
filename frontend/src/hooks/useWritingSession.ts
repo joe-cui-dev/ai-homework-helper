@@ -38,6 +38,7 @@ interface UseWritingSessionReturn {
   usage: TokenUsage | null;
   endedReason: WritingEndedReason | null;
   error: string | null;
+  imageUrls: string[];
   // Actions
   start: (
     prompt: { text: string; images?: string[] },
@@ -60,6 +61,7 @@ interface UseWritingSessionReturn {
     usage?: TokenUsage;
     status: "active" | "ended";
     endedReason?: WritingEndedReason;
+    imageUrls?: string[];
   }) => void;
   reset: () => void;
 }
@@ -76,6 +78,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   const reset = useCallback(() => {
@@ -89,6 +92,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
     setUsage(null);
     setEndedReason(null);
     setError(null);
+    setImageUrls([]);
   }, []);
 
   const hydrate = useCallback<UseWritingSessionReturn["hydrate"]>((input) => {
@@ -101,6 +105,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
     setEndedReason(input.endedReason ?? null);
     setStatus(input.status === "ended" ? "ended" : "ready");
     setError(null);
+    setImageUrls(input.imageUrls ?? []);
   }, []);
 
   const handleEvent = useCallback(
@@ -285,5 +290,6 @@ export const useWritingSession = (): UseWritingSessionReturn => {
     end,
     hydrate,
     reset,
+    imageUrls,
   };
 };

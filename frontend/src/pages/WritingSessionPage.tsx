@@ -51,6 +51,7 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
       usage: session.usage,
       status: session.status ?? "active",
       endedReason: session.endedReason,
+      imageUrls: session.imageUrls,
     });
   }, [sessionId, sessions, writing]);
 
@@ -116,6 +117,19 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
           </p>
         </div>
       </div>
+
+      {writing.imageUrls.length > 0 && (
+        <div className="space-y-3">
+          {writing.imageUrls.map((url, i) => (
+            <img
+              key={i}
+              src={url}
+              alt={`Assignment page ${i + 1}`}
+              className="w-full rounded-xl border border-gray-200 object-contain bg-white"
+            />
+          ))}
+        </div>
+      )}
 
       <WritingPlanCard plan={writing.plan} />
 
