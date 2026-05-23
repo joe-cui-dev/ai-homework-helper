@@ -9,6 +9,12 @@
     "install:all": "npm install",
     "dev": "npm run dev --workspace=frontend",
     "build": "npm run build --workspace=frontend",
-    "deploy": "npm run build --workspace=frontend && npm run deploy --workspace=infra"
+    "deploy": "npm run build --workspace=frontend && npm run deploy --workspace=infra",
+    "logs:homework": "aws logs tail $(aws logs describe-log-groups --region ap-southeast-2 --log-group-name-prefix 'AiHomeworkHelperStack-HomeworkFunctionLogs' --query 'logGroups[0].logGroupName' --output text) --region ap-southeast-2 --follow --format short",
+    "logs:reading": "aws logs tail $(aws logs describe-log-groups --region ap-southeast-2 --log-group-name-prefix 'AiHomeworkHelperStack-ReadingFunctionLogs' --query 'logGroups[0].logGroupName' --output text) --region ap-southeast-2 --follow --format short",
+    "logs:writing": "aws logs tail $(aws logs describe-log-groups --region ap-southeast-2 --log-group-name-prefix 'AiHomeworkHelperStack-WritingFunctionLogs' --query 'logGroups[0].logGroupName' --output text) --region ap-southeast-2 --follow --format short",
+    "logs:practice": "aws logs tail $(aws logs describe-log-groups --region ap-southeast-2 --log-group-name-prefix 'AiHomeworkHelperStack-PracticeFunctionLogs' --query 'logGroups[0].logGroupName' --output text) --region ap-southeast-2 --follow --format short",
+    "logs:history": "aws logs tail $(aws logs describe-log-groups --region ap-southeast-2 --log-group-name-prefix 'AiHomeworkHelperStack-HistoryFunctionLogs' --query 'logGroups[0].logGroupName' --output text) --region ap-southeast-2 --follow --format short",
+    "logs:bedrock": "aws logs tail $(aws logs describe-log-groups --region ap-southeast-2 --log-group-name-prefix 'AiHomeworkHelperStack-BedrockInvocationLogs' --query 'logGroups[0].logGroupName' --output text) --region ap-southeast-2 --follow --format short"
   }
 }
