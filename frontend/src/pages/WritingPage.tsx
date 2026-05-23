@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { compressImage } from "../services/api";
 import { useWritingSession } from "../hooks/useWritingSession";
 import { useSessionHistory } from "../hooks/useSessionHistory";
+import { ModuleHistoryButton } from "../components/ModuleHistoryButton";
 import type { SessionSummary, YearLevel } from "../types";
 
 const MAX_CHARS = 4000;
@@ -15,7 +16,7 @@ interface WritingPageProps {
 export const WritingPage = ({ token }: WritingPageProps) => {
   const navigate = useNavigate();
   const { status, sessionId, error, start } = useWritingSession();
-  const { sessions } = useSessionHistory(token);
+  const { sessions } = useSessionHistory(token, "writing");
 
   const [promptText, setPromptText] = useState("");
   const [yearLevel, setYearLevel] = useState<YearLevel | "">("");
@@ -80,6 +81,9 @@ export const WritingPage = ({ token }: WritingPageProps) => {
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-6 sm:py-10 space-y-8">
+      <div className="flex justify-end">
+        <ModuleHistoryButton token={token} module="writing" />
+      </div>
       <header className="space-y-1">
         <p className="text-xs font-bold uppercase tracking-widest text-violet-500">
           New writing assignment

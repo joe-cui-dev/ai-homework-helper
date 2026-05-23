@@ -33,10 +33,15 @@ interface QuestionWithPractice extends HomeworkQuestion {
   practiceSession?: PracticeSessionSummary;
 }
 
+type HistoryModule = "homework" | "reading" | "writing";
+
+const isHistoryModule = (v: string | undefined): v is HistoryModule =>
+  v === "homework" || v === "reading" || v === "writing";
+
 interface SessionSummary {
   sessionId: string;
   timestamp: string;
-  sessionType: "homework" | "reading" | "writing";
+  sessionType: HistoryModule;
   subjects: string[];
   imageUrls: string[];
   questions: QuestionWithPractice[];
@@ -90,16 +95,29 @@ export const handler = async (
   const qs = event.queryStringParameters ?? {};
   const cursor = qs.cursor;
   const limit = qs.limit ? parseInt(qs.limit, 10) : 10;
+  const typeParam = qs.type;
+  if (!isHistoryModule(typeParam)) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({
+        message:
+          "Missing or invalid `type` query parameter; expected one of homework|reading|writing",
+      }),
+    };
+  }
 
   const bucket = process.env.S3_BUCKET_NAME ?? "";
-  const { sessions, nextCursor } = await listSessions(studentId, cursor, limit);
-
-  // Practice sessions are surfaced as siblings under their origin Homework
-  // card, not as top-level cards (ADR 0004: data model peers; UI nests for now).
-  const topLevel = sessions.filter(
-    (s): s is Exclude<Session, { sessionType: "practice" }> =>
-      s.sessionType !== "practice",
+  const { sessions, nextCursor } = await listSessions(
+    studentId,
+    typeParam,
+    cursor,
+    limit,
   );
+
+  // Practice never appears under homework|reading|writing prefixes — it lives
+  // under its own practice/ prefix and is only fetched via
+  // listPracticeSessionsForOrigin to nest under each Homework card.
+  const topLevel = sessions as Exclude<Session, { sessionType: "practice" }>[];
 
   const summaries: SessionSummary[] = await Promise.all(
     topLevel.map(async (record) => {

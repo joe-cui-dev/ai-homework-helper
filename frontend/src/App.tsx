@@ -7,7 +7,6 @@ import {
   NavLink,
 } from "react-router-dom";
 import { AuthPage } from "./components/AuthPage";
-import { HistorySidebar } from "./components/HistorySidebar";
 import { HomeworkPage } from "./pages/HomeworkPage";
 import { ReadingPage } from "./pages/ReadingPage";
 import { PracticePage } from "./pages/PracticePage";
@@ -24,7 +23,6 @@ function AppShell({
   token: string;
   onLogout: () => void;
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -36,12 +34,6 @@ function AppShell({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-indigo-50 to-purple-100">
-      <HistorySidebar
-        token={token}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
-
       <header className="bg-white/80 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           {/* Left: history + logo */}
@@ -78,12 +70,6 @@ function AppShell({
 
           {/* Centre: nav */}
           <nav className="hidden sm:flex gap-1 p-1 bg-gray-100/70 rounded-2xl flex-1 max-w-md">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="px-4 py-2 rounded-xl text-sm font-bold text-gray-500 hover:text-brand-600 transition-colors"
-            >
-              History
-            </button>
             <NavLink to="/homework" className={navLinkClass}>
               Homework
             </NavLink>
@@ -115,15 +101,6 @@ function AppShell({
         {menuOpen && (
           <div className="sm:hidden border-t border-gray-100 bg-white/90 backdrop-blur-sm">
             <div className="max-w-2xl mx-auto px-4 py-3 flex flex-col gap-1">
-              <button
-                onClick={() => {
-                  setSidebarOpen(true);
-                  setMenuOpen(false);
-                }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-gray-500 hover:text-brand-600 hover:bg-brand-50 transition-colors"
-              >
-                History
-              </button>
               <NavLink
                 to="/homework"
                 className={navLinkClass}

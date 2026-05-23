@@ -3,7 +3,7 @@
 ## Terms
 
 ### Session
-One persisted unit of AI interaction. Stored at `sessions/{studentId}/{sessionId}.json` with a 30-day lifecycle. Each session maps to one history card. See [ADR 0004](docs/adr/0004-unified-session-model.md).
+One persisted unit of AI interaction. Stored at `sessions/{studentId}/{sessionType}/{sessionId}.json` with a 30-day lifecycle. Each session maps to one history card. See [ADR 0004](docs/adr/0004-unified-session-model.md) (data model) and [ADR 0005](docs/adr/0005-session-key-includes-type.md) (key layout).
 
 A Session is a discriminated union on `sessionType` with four peer kinds:
 - **Homework Session** (`sessionType: "homework"`) — questions are *extracted* from a worksheet image. Holds a `questions` array of `{ input, packet }` (CoachingPacket). Written once.
@@ -11,7 +11,7 @@ A Session is a discriminated union on `sessionType` with four peer kinds:
 - **Writing Session** (`sessionType: "writing"`) — multi-turn coaching for one writing assignment. The same S3 object is **mutated across HTTP requests** (plan turn, then 1..N draft turns and 0..N question turns). Holds `prompt`, `plan` (WritingPlan), `turns`, and per-variant `status`/`endedReason`.
 - **Practice Session** (`sessionType: "practice"`) — multi-turn tutoring loop spawned from a Homework question. Holds an `origin: { sessionId, questionId }` reference, the source CoachingPacket snapshot, `problems`, `toolLog`, and per-variant `status`/`endedReason`. Practice is a top-level Session kind, not a child of Homework.
 
-For Writing and Practice, raw Bedrock conversation state (`messages[]`, per-turn raw usage) lives in a **sidecar** S3 object at `sessions/{studentId}/{sessionId}.agent.json`. The user-facing Session JSON contains no Bedrock implementation detail.
+For Writing and Practice, raw Bedrock conversation state (`messages[]`, per-turn raw usage) lives in a **sidecar** S3 object at `sessions/{studentId}/{sessionType}/{sessionId}.agent.json`. The user-facing Session JSON contains no Bedrock implementation detail.
 
 ### Reading Session
 A session where the parent uploads a book (cover + a few pages of content) and the AI generates 5 grounded comprehension questions instead of solving an existing homework problem. The reader of the output is still the Parent-as-Coach. Reading-question generation is *always* grounded in the uploaded pages — generating from cover-only training-data knowledge is forbidden (see ADR 0002). If the AI judges the uploaded pages too thin to write 5 quality questions, it streams a `needs_more_pages` event with a specific request to the parent and saves no session.
@@ -47,13 +47,13 @@ A single extracted question within a session, with its own `input`, `subject`, `
 A browsable list of a student's past sessions, ordered newest-first. Distinct from the agent's internal `fetch_session_history` tool, which retrieves the 3 most recent sessions for personalisation context. The history browser surfaces sessions to the student via the UI.
 
 ### History Browser
-The student-facing UI feature for reviewing past sessions. Implemented as a sidebar on desktop and a collapsible drawer on mobile. Shows session cards with subject badges, truncated question preview, and uploaded image thumbnails. Paginated at 10 sessions per page.
+The parent-facing UI feature for reviewing past sessions, scoped to a single module. Each of the Homework, Reading, and Writing pages renders its own History button that opens a sliding sidebar (collapsible drawer on mobile) showing only that module's sessions. Practice sessions are not browsed directly — they appear as siblings nested under their origin Homework card. Cards show subject badges (Homework only), truncated question preview, and uploaded image thumbnails. Paginated at 10 sessions per page, filtered server-side via `?type=homework|reading|writing`.
 
 ### Session Card
 A single entry in the history browser representing one session (batch). Displays: all distinct subject badges, timestamp, first question's text truncated to 2 lines, a "+N more" badge when there are additional questions, and uploaded image thumbnails.
 
 ### Image Key
-The S3 object key for an uploaded image associated with a session. Format: `sessions/{studentId}/{sessionId}/image-{i}.{ext}` (Homework, Reading) or `sessions/{studentId}/{sessionId}/{role}-{turnIndex?}-image-{i}.{ext}` (Writing — `prompt-image-0.jpeg`, `draft-2-image-0.jpeg`). Stored once per session — all questions within the session share the same image keys. Distinct from the base64 data URL used during request processing — the key is a stable S3 reference; the data URL is transient.
+The S3 object key for an uploaded image associated with a session. Format: `sessions/{studentId}/{sessionType}/{sessionId}/image-{i}.{ext}` (Homework, Reading) or `sessions/{studentId}/writing/{sessionId}/{role}-{turnIndex?}-image-{i}.{ext}` (Writing — `prompt-image-0.jpeg`, `draft-2-image-0.jpeg`). Stored once per session — all questions within the session share the same image keys. Distinct from the base64 data URL used during request processing — the key is a stable S3 reference; the data URL is transient.
 
 ### Pre-signed URL
 A time-limited S3 URL granting temporary read access to a specific image object. Generated by the history Lambda with a 1-hour expiry. Used by the frontend to render images in session cards without exposing AWS credentials.
@@ -62,7 +62,7 @@ A time-limited S3 URL granting temporary read access to a specific image object.
 The unique identifier for a student, extracted exclusively from the `sub` claim in the Cognito JWT. Never supplied by the client directly — prevents spoofing.
 
 ### sessionId
-The session's stable UUID identifier and the S3 key stem. One identifier name for all four session kinds — there is no longer a separate "batchId".
+The session's stable UUID identifier and the S3 key stem within its `sessionType` prefix (`sessions/{studentId}/{sessionType}/{sessionId}.json`). One identifier name for all four session kinds — there is no longer a separate "batchId".
 
 ### Homework Page
 The `/homework` route — entry point for submitting homework images and receiving Coaching Packets. Backed by `HomeworkFunction` (Lambda).

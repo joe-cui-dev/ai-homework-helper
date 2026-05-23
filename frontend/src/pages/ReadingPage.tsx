@@ -1,5 +1,6 @@
 import { ReadingInput } from "../components/ReadingInput";
 import { ReadingPacketCard } from "../components/ReadingPacketCard";
+import { ModuleHistoryButton } from "../components/ModuleHistoryButton";
 import { useReadingStream } from "../hooks/useReadingStream";
 import { formatUsage } from "../utils/formatUsage";
 
@@ -24,6 +25,9 @@ export const ReadingPage = ({ token }: ReadingPageProps) => {
 
   return (
     <main className="max-w-2xl mx-auto px-3 sm:px-4 py-5 sm:py-8 space-y-4 sm:space-y-6">
+      <div className="flex justify-end">
+        <ModuleHistoryButton token={token} module="reading" />
+      </div>
       {reading.status === "idle" && (
         <div className="text-center space-y-1 pb-2">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-800">

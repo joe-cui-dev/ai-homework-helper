@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { QuestionInput } from "../components/QuestionInput";
 import { QuestionResultList } from "../components/QuestionResultList";
 import { ProgressFeed } from "../components/ProgressFeed";
+import { ModuleHistoryButton } from "../components/ModuleHistoryButton";
 import { useHomeworkStream } from "../hooks/useHomeworkStream";
 import { formatUsage } from "../utils/formatUsage";
 import type { CoachingPacket } from "../types";
@@ -36,6 +37,9 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
 
   return (
     <main className="max-w-2xl mx-auto px-3 sm:px-4 py-5 sm:py-8 space-y-4 sm:space-y-6">
+      <div className="flex justify-end">
+        <ModuleHistoryButton token={token} module="homework" />
+      </div>
       {homework.status === "idle" && (
         <div className="text-center space-y-1 pb-2">
           <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-800">

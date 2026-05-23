@@ -95,7 +95,8 @@ describe("Session round-trip", () => {
     };
 
     await saveSession(session);
-    const loaded = await loadSession("student-1", "abc-123");
+    expect(s3Mock._store.has("sessions/student-1/homework/abc-123.json")).toBe(true);
+    const loaded = await loadSession("student-1", "homework", "abc-123");
 
     expect(loaded).not.toBeNull();
     if (!loaded) return;
@@ -138,7 +139,8 @@ describe("Session round-trip", () => {
     };
 
     await saveSession(session);
-    const loaded = await loadSession("student-1", "read-1");
+    expect(s3Mock._store.has("sessions/student-1/reading/read-1.json")).toBe(true);
+    const loaded = await loadSession("student-1", "reading", "read-1");
 
     expect(loaded).not.toBeNull();
     if (!loaded) return;
@@ -220,7 +222,8 @@ describe("Session round-trip", () => {
     };
 
     await saveSession(session);
-    const loaded = await loadSession("student-1", "write-1");
+    expect(s3Mock._store.has("sessions/student-1/writing/write-1.json")).toBe(true);
+    const loaded = await loadSession("student-1", "writing", "write-1");
 
     expect(loaded).not.toBeNull();
     if (!loaded) return;
@@ -265,11 +268,11 @@ describe("Session round-trip", () => {
 
     await saveSession(session);
 
-    // Key is flat under the student — not nested under the origin homework.
-    expect(s3Mock._store.has("sessions/student-1/prac-uuid-1.json")).toBe(true);
+    // Key is under the practice/ prefix — not nested under the origin homework.
+    expect(s3Mock._store.has("sessions/student-1/practice/prac-uuid-1.json")).toBe(true);
     expect(s3Mock._store.has("sessions/student-1/homework-batch-9/practice-2.json")).toBe(false);
 
-    const loaded = await loadSession("student-1", "prac-uuid-1");
+    const loaded = await loadSession("student-1", "practice", "prac-uuid-1");
     expect(loaded).not.toBeNull();
     if (!loaded) return;
     expect(loaded.sessionType).toBe("practice");
@@ -301,9 +304,9 @@ describe("listSessions", () => {
       if (cmd.Prefix) {
         return {
           Contents: [
-            { Key: "sessions/student-1/a.json", LastModified: new Date("2024-01-01") },
-            { Key: "sessions/student-1/b.json", LastModified: new Date("2024-01-03") },
-            { Key: "sessions/student-1/c.json", LastModified: new Date("2024-01-02") },
+            { Key: "sessions/student-1/homework/a.json", LastModified: new Date("2024-01-01") },
+            { Key: "sessions/student-1/homework/b.json", LastModified: new Date("2024-01-03") },
+            { Key: "sessions/student-1/homework/c.json", LastModified: new Date("2024-01-02") },
           ],
           IsTruncated: false,
         };
@@ -325,7 +328,7 @@ describe("listSessions", () => {
     await saveSession(homeworkFixture("b", "2024-01-03T00:00:00Z"));
     await saveSession(homeworkFixture("c", "2024-01-02T00:00:00Z"));
 
-    const { sessions, nextCursor } = await listSessions("student-1");
+    const { sessions, nextCursor } = await listSessions("student-1", "homework");
 
     expect(nextCursor).toBeNull();
     expect(sessions.map((s) => s.sessionId)).toEqual(["b", "c", "a"]);
@@ -337,9 +340,9 @@ describe("listSessions", () => {
       if (cmd.Prefix) {
         return {
           Contents: [
-            { Key: "sessions/student-1/x.json", LastModified: new Date("2024-01-01") },
-            { Key: "sessions/student-1/x.agent.json", LastModified: new Date("2024-01-01") },
-            { Key: "sessions/student-1/x/image-0.jpeg", LastModified: new Date("2024-01-01") },
+            { Key: "sessions/student-1/homework/x.json", LastModified: new Date("2024-01-01") },
+            { Key: "sessions/student-1/homework/x.agent.json", LastModified: new Date("2024-01-01") },
+            { Key: "sessions/student-1/homework/x/image-0.jpeg", LastModified: new Date("2024-01-01") },
           ],
           IsTruncated: false,
         };
@@ -358,7 +361,7 @@ describe("listSessions", () => {
     });
     await saveSession(homeworkFixture("x", "2024-01-01T00:00:00Z"));
 
-    const { sessions } = await listSessions("student-1");
+    const { sessions } = await listSessions("student-1", "homework");
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0].sessionId).toBe("x");
@@ -367,7 +370,7 @@ describe("listSessions", () => {
   it("paginates with cursor", async () => {
     const { _sendMock } = s3Mock;
     const contents = Array.from({ length: 12 }, (_, i) => ({
-      Key: `sessions/student-1/s${i}.json`,
+      Key: `sessions/student-1/homework/s${i}.json`,
       LastModified: new Date(2024, 0, i + 1),
     }));
     _sendMock.mockImplementation(async (cmd: { Body?: string; Key?: string; Prefix?: string }) => {
@@ -388,11 +391,16 @@ describe("listSessions", () => {
       await saveSession(homeworkFixture(`s${i}`, "2024-01-01T00:00:00Z"));
     }
 
-    const first = await listSessions("student-1", undefined, 10);
+    const first = await listSessions("student-1", "homework", undefined, 10);
     expect(first.sessions).toHaveLength(10);
     expect(first.nextCursor).not.toBeNull();
 
-    const second = await listSessions("student-1", first.nextCursor ?? undefined, 10);
+    const second = await listSessions(
+      "student-1",
+      "homework",
+      first.nextCursor ?? undefined,
+      10,
+    );
     expect(second.sessions).toHaveLength(2);
     expect(second.nextCursor).toBeNull();
   });
@@ -410,16 +418,16 @@ describe("Agent sidecar", () => {
       ],
     };
 
-    await saveAgentSidecar("student-1", "write-1", sidecar);
+    await saveAgentSidecar("student-1", "writing", "write-1", sidecar);
 
-    expect(s3Mock._store.has("sessions/student-1/write-1.agent.json")).toBe(true);
+    expect(s3Mock._store.has("sessions/student-1/writing/write-1.agent.json")).toBe(true);
 
-    const loaded = await loadAgentSidecar("student-1", "write-1");
+    const loaded = await loadAgentSidecar("student-1", "writing", "write-1");
     expect(loaded).toEqual(sidecar);
   });
 
   it("returns null when sidecar is missing", async () => {
-    const loaded = await loadAgentSidecar("student-1", "no-such-session");
+    const loaded = await loadAgentSidecar("student-1", "writing", "no-such-session");
     expect(loaded).toBeNull();
   });
 
@@ -460,12 +468,12 @@ describe("Agent sidecar", () => {
     });
 
     await saveSession(session);
-    await saveAgentSidecar("student-1", "hw-1", {
+    await saveAgentSidecar("student-1", "homework", "hw-1", {
       bedrockMessages: [],
       usagePerTurn: [],
     });
 
-    const { sessions } = await listSessions("student-1");
+    const { sessions } = await listSessions("student-1", "homework");
     expect(sessions).toHaveLength(1);
     expect(sessions[0].sessionId).toBe("hw-1");
   });
@@ -475,14 +483,14 @@ describe("uploadSessionImages", () => {
   it("uploads each image at the per-session key prefix and returns its keys", async () => {
     s3Mock._sendMock.mockResolvedValue({});
 
-    const keys = await uploadSessionImages("student-1", "sess-1", [
+    const keys = await uploadSessionImages("student-1", "homework", "sess-1", [
       "data:image/jpeg;base64,/9j/abc",
       "data:image/png;base64,iVBORw0",
     ]);
 
     expect(keys).toEqual([
-      "sessions/student-1/sess-1/image-0.jpeg",
-      "sessions/student-1/sess-1/image-1.png",
+      "sessions/student-1/homework/sess-1/image-0.jpeg",
+      "sessions/student-1/homework/sess-1/image-1.png",
     ]);
   });
 
@@ -491,18 +499,19 @@ describe("uploadSessionImages", () => {
 
     const keys = await uploadSessionImages(
       "student-1",
+      "writing",
       "sess-1",
       ["data:image/jpeg;base64,/9j/abc"],
       "draft-2-image",
     );
 
     expect(keys).toEqual([
-      "sessions/student-1/sess-1/draft-2-image-0.jpeg",
+      "sessions/student-1/writing/sess-1/draft-2-image-0.jpeg",
     ]);
   });
 
   it("returns empty array when no images provided", async () => {
-    const keys = await uploadSessionImages("student-1", "sess-1", []);
+    const keys = await uploadSessionImages("student-1", "homework", "sess-1", []);
     expect(keys).toEqual([]);
   });
 });

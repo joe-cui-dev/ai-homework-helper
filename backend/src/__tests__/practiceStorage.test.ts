@@ -104,7 +104,7 @@ describe("createPracticeBundle", () => {
     expect(sidecar.bedrockMessages).toEqual([]);
   });
 
-  it("persists the new Practice session at its own flat key (not nested under origin)", async () => {
+  it("persists the new Practice session under the practice/ prefix (not nested under origin)", async () => {
     await saveSession(homeworkFixture("home-1", 1));
 
     const { session } = await createPracticeBundle({
@@ -113,7 +113,9 @@ describe("createPracticeBundle", () => {
       originQuestionId: 1,
     });
 
-    expect(s3Mock._store.has(`sessions/student-1/${session.sessionId}.json`)).toBe(true);
+    expect(
+      s3Mock._store.has(`sessions/student-1/practice/${session.sessionId}.json`),
+    ).toBe(true);
     expect(s3Mock._store.has(`sessions/student-1/home-1/practice-1.json`)).toBe(false);
   });
 
@@ -179,12 +181,12 @@ describe("loadPracticeBundle", () => {
     expect(session.endedReason).toBe("abandoned");
   });
 
-  it("rejects loading a non-practice session at the same key", async () => {
+  it("returns NOT_FOUND when no practice session exists for the id (typed prefixes prevent cross-type collision)", async () => {
     await saveSession(homeworkFixture("not-practice", 1));
 
     await expect(
       loadPracticeBundle({ studentId: "student-1", sessionId: "not-practice" }),
-    ).rejects.toMatchObject({ code: "WRONG_TYPE" });
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
 
@@ -204,10 +206,10 @@ describe("savePracticeBundle", () => {
     await savePracticeBundle(bundle);
 
     const sessionJson = s3Mock._store.get(
-      `sessions/student-1/${bundle.session.sessionId}.json`,
+      `sessions/student-1/practice/${bundle.session.sessionId}.json`,
     );
     const sidecarJson = s3Mock._store.get(
-      `sessions/student-1/${bundle.session.sessionId}.agent.json`,
+      `sessions/student-1/practice/${bundle.session.sessionId}.agent.json`,
     );
     expect(sessionJson).toBeDefined();
     expect(sessionJson).not.toContain("trace fragment");

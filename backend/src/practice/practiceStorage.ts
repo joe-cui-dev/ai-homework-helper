@@ -1,12 +1,11 @@
 // ── Practice Session storage ─────────────────────────────────────────────────
-// Practice is a top-level Session kind (ADR 0004). Stored at
-//   sessions/{studentId}/{sessionId}.json
-// with Bedrock conversation state in the sidecar
-//   sessions/{studentId}/{sessionId}.agent.json
+// Practice is a top-level Session kind. Stored under the typed key layout
+// (ADR 0005, supersedes ADR 0004):
+//   sessions/{studentId}/practice/{sessionId}.json
+//   sessions/{studentId}/practice/{sessionId}.agent.json
 //
 // The originating Homework question is recorded inside the session JSON as
-// `origin: { sessionId, questionId }`. Practice no longer lives under the
-// origin's key prefix.
+// `origin: { sessionId, questionId }`.
 //
 // Sessions older than PRACTICE_SESSION_MAX_AGE_HOURS since updatedAt are
 // auto-flipped to ended/abandoned on next read.
@@ -50,7 +49,11 @@ const isStale = (session: PracticeSession): boolean => {
 export const createPracticeBundle = async (
   input: PracticeOriginInput,
 ): Promise<PracticeBundle> => {
-  const origin = await loadSession(input.studentId, input.originSessionId);
+  const origin = await loadSession(
+    input.studentId,
+    "homework",
+    input.originSessionId,
+  );
   if (!origin || origin.sessionType !== "homework") {
     throw new Error(`Origin homework session ${input.originSessionId} not found.`);
   }
@@ -93,7 +96,7 @@ export const createPracticeBundle = async (
 export const loadPracticeBundle = async (
   loc: PracticeLocator,
 ): Promise<PracticeBundle> => {
-  const session = await loadSession(loc.studentId, loc.sessionId);
+  const session = await loadSession(loc.studentId, "practice", loc.sessionId);
   if (!session) {
     const err = new Error("Practice session not found.");
     (err as { code?: string }).code = "NOT_FOUND";
@@ -112,6 +115,7 @@ export const loadPracticeBundle = async (
 
   const sidecar: AgentSidecar = (await loadAgentSidecar(
     loc.studentId,
+    "practice",
     loc.sessionId,
   )) ?? { bedrockMessages: [], usagePerTurn: [] };
 
@@ -136,6 +140,7 @@ export const savePracticeBundle = async (
   await saveSession(bundle.session);
   await saveAgentSidecar(
     bundle.session.studentId,
+    "practice",
     bundle.session.sessionId,
     bundle.sidecar,
   );
@@ -146,8 +151,8 @@ export const savePracticeBundle = async (
 };
 
 // Used by history-handler.ts to surface "Practice ✓" pills per question.
-// With the flat key layout (ADR 0004) we list all sessions and filter to
-// Practice sessions whose origin matches.
+// With the typed prefix layout (ADR 0005), we list only the practice/ prefix
+// and filter to those whose origin matches.
 export interface PracticeSessionSummary {
   sessionId: string;
   origin: { sessionId: string; questionId: number };
@@ -167,7 +172,7 @@ export const listPracticeSessionsForOrigin = async (
   const results: PracticeSessionSummary[] = [];
   let cursor: string | undefined;
   do {
-    const page = await listSessions(studentId, cursor, 100);
+    const page = await listSessions(studentId, "practice", cursor, 100);
     for (const s of page.sessions) {
       if (s.sessionType === "practice" && s.origin.sessionId === originSessionId) {
         results.push({

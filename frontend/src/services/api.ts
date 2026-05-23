@@ -53,8 +53,11 @@ export const compressImage = async (file: File): Promise<string> => {
   });
 };
 
+export type HistoryModule = "homework" | "reading" | "writing";
+
 export const fetchSessionHistory = async (
   token: string,
+  module: HistoryModule,
   cursor?: string,
   signal?: AbortSignal,
 ): Promise<{ sessions: SessionSummary[]; nextCursor: string | null }> => {
@@ -62,6 +65,7 @@ export const fetchSessionHistory = async (
   if (!historyUrl) throw new Error("VITE_HISTORY_API_URL is not configured.");
 
   const url = new URL(historyUrl);
+  url.searchParams.set("type", module);
   if (cursor) url.searchParams.set("cursor", cursor);
 
   const response = await fetch(url, {

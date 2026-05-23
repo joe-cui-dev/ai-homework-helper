@@ -1,8 +1,8 @@
 // ── Writing Session storage ──────────────────────────────────────────────────
-// User-facing WritingSession at sessions/{studentId}/{sessionId}.json and the
-// Bedrock conversation sidecar at .agent.json. The bundle API is the only
-// surface the handler uses. Lazy stale-flip applied on read.
-// See ADR 0004.
+// User-facing WritingSession at sessions/{studentId}/writing/{sessionId}.json
+// and the Bedrock conversation sidecar at .agent.json (same prefix).
+// The bundle API is the only surface the handler uses. Lazy stale-flip applied
+// on read. See ADR 0005 (supersedes the key layout in ADR 0004).
 // ─────────────────────────────────────────────────────────────────────────────
 import type { BedrockMessage } from "../shared/bedrock";
 import type { WritingSession } from "../shared/session";
@@ -66,7 +66,7 @@ const sanitiseHistoryMessages = (
 export const loadWritingBundle = async (
   loc: WritingSessionLocator,
 ): Promise<WritingBundle> => {
-  const session = await loadSession(loc.studentId, loc.sessionId);
+  const session = await loadSession(loc.studentId, "writing", loc.sessionId);
   if (!session) {
     const error = new Error("Writing session not found.");
     (error as { code?: string }).code = "NOT_FOUND";
@@ -85,6 +85,7 @@ export const loadWritingBundle = async (
 
   const sidecar: AgentSidecar = (await loadAgentSidecar(
     loc.studentId,
+    "writing",
     loc.sessionId,
   )) ?? { bedrockMessages: [], usagePerTurn: [] };
 
@@ -117,6 +118,7 @@ export const saveWritingBundle = async (
   await saveSession(bundle.session);
   await saveAgentSidecar(
     bundle.session.studentId,
+    "writing",
     bundle.session.sessionId,
     bundle.sidecar,
   );

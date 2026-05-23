@@ -13,7 +13,7 @@
 // happens in readingPacket.ts only after this step approves the inputs.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
-import { buildUsage, converseWithTools, parseDataUrl } from "../shared/bedrock";
+import { buildUsage, converseWithTools, parseDataUrl, parseToolInput } from "../shared/bedrock";
 import type { BookAnalysis } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -155,7 +155,7 @@ export const analyzeBook = async (
       | { name: string; input: unknown }
       | undefined;
     if (toolUse?.name === "submit_book_analysis") {
-      const input = toolUse.input as BookAnalysis;
+      const input = parseToolInput<BookAnalysis>(toolUse.input);
       logger.info("book_analyzer_complete", {
         yearLevel: input.yearLevel,
         pagesAreSufficient: input.pagesAreSufficient,

@@ -9,7 +9,7 @@
 // can orchestrate sequential per-question solves using the existing runAgent().
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
-import { buildUsage, converseWithTools, parseDataUrl } from "../shared/bedrock";
+import { buildUsage, converseWithTools, parseDataUrl, parseToolInput } from "../shared/bedrock";
 import type { PageAnalysis, IdentifiedQuestion } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -134,10 +134,10 @@ export const analyzePages = async (
       | { name: string; input: unknown }
       | undefined;
     if (toolUse?.name === "submit_page_analysis") {
-      const input = toolUse.input as {
+      const input = parseToolInput<{
         articleContext?: string;
         questions: IdentifiedQuestion[];
-      };
+      }>(toolUse.input);
       logger.info("analyzer_complete", {
         questionCount: input.questions.length,
         hasArticle: !!input.articleContext,

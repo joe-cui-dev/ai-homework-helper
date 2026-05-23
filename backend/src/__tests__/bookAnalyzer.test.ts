@@ -11,6 +11,7 @@ jest.mock("../shared/bedrock", () => ({
     outputTokens: o,
     costUsd: 0,
   }),
+  parseToolInput: <T,>(raw: unknown): T => raw as T,
 }));
 
 jest.mock("../shared/logger", () => ({

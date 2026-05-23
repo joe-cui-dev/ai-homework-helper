@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchSessionHistory } from "../services/api";
+import type { HistoryModule } from "../services/api";
 import type { SessionSummary } from "../types";
 
 interface UseSessionHistoryReturn {
@@ -11,7 +12,10 @@ interface UseSessionHistoryReturn {
   loadMore: () => Promise<void>;
 }
 
-export function useSessionHistory(token: string): UseSessionHistoryReturn {
+export function useSessionHistory(
+  token: string,
+  module: HistoryModule,
+): UseSessionHistoryReturn {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -20,8 +24,12 @@ export function useSessionHistory(token: string): UseSessionHistoryReturn {
 
   useEffect(() => {
     const controller = new AbortController();
+    setLoading(true);
+    setSessions([]);
+    setError(null);
+    setNextCursor(null);
 
-    fetchSessionHistory(token, undefined, controller.signal)
+    fetchSessionHistory(token, module, undefined, controller.signal)
       .then(({ sessions: initial, nextCursor: cursor }) => {
         setSessions(initial);
         setNextCursor(cursor);
@@ -32,13 +40,17 @@ export function useSessionHistory(token: string): UseSessionHistoryReturn {
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [token]);
+  }, [token, module]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const { sessions: more, nextCursor: cursor } = await fetchSessionHistory(token, nextCursor);
+      const { sessions: more, nextCursor: cursor } = await fetchSessionHistory(
+        token,
+        module,
+        nextCursor,
+      );
       setSessions((prev) => [...prev, ...more]);
       setNextCursor(cursor);
     } catch (err) {
@@ -46,7 +58,7 @@ export function useSessionHistory(token: string): UseSessionHistoryReturn {
     } finally {
       setLoadingMore(false);
     }
-  }, [token, nextCursor]); // loadingMore excluded — it's a guard, not a dep
+  }, [token, module, nextCursor]); // loadingMore excluded — it's a guard, not a dep
 
   return { sessions, loading, loadingMore, error, nextCursor, loadMore };
 }

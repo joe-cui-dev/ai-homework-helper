@@ -190,6 +190,7 @@ export const handler = awslambda.streamifyResponse(
       try {
         batchImageKeys = await uploadSessionImages(
           studentId,
+          "reading",
           sessionId,
           validatedImages,
         );

@@ -16,6 +16,7 @@ import {
   type Message,
   type Tool,
 } from "@aws-sdk/client-bedrock-runtime";
+import { jsonrepair } from "jsonrepair";
 import { logger } from "./logger";
 
 const client = new BedrockRuntimeClient({});
@@ -246,6 +247,47 @@ export const converseWithTools = async (
       response.usage?.outputTokens ?? 0,
     ),
   };
+};
+
+// Normalise a Bedrock tool-use `input` payload. Models occasionally emit
+// structured arguments as JSON-encoded strings instead of the array/object
+// the tool schema declares (observed with Haiku 4.5 + nested arrays). This
+// helper accepts either form, parsing strings and, recursively, any string
+// values that look like JSON arrays/objects.
+//
+// Use this at every tool-input extraction site instead of casting raw.
+export const parseToolInput = <T,>(raw: unknown): T => {
+  const parsed = parseIfJsonString(raw);
+  if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      out[k] = parseIfJsonString(v);
+    }
+    return out as T;
+  }
+  return parsed as T;
+};
+
+const parseIfJsonString = (v: unknown): unknown => {
+  if (typeof v !== "string") return v;
+  const trimmed = v.trim();
+  if (!trimmed) return v;
+  const first = trimmed[0];
+  if (first !== "[" && first !== "{") return v;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Models occasionally emit malformed JSON inside the stringified payload
+    // (e.g. unescaped inner quotes). Fall back to jsonrepair before giving up.
+    try {
+      const repaired = jsonrepair(trimmed);
+      const parsed = JSON.parse(repaired);
+      logger.warn("tool_input_json_repaired", { originalLength: trimmed.length });
+      return parsed;
+    } catch {
+      return v;
+    }
+  }
 };
 
 export type { Tool };

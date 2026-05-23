@@ -1,8 +1,15 @@
 # ADR 0004 — Unified Session model with Bedrock sidecar
 
-**Status:** Accepted
+**Status:** Accepted (key layout superseded in part by [ADR 0005](./0005-session-key-includes-type.md))
 **Date:** 2026-05-16
 **Supersedes:** [ADR 0001](./0001-batch-session-model.md), [ADR 0002](./0002-reading-session-model.md), [ADR 0003](./0003-writing-session-model.md)
+
+> **Note (2026-05-23):** The flat key layout described below
+> (`sessions/{studentId}/{sessionId}.json`) was replaced by a type-prefixed
+> layout (`sessions/{studentId}/{sessionType}/{sessionId}.json`) in
+> [ADR 0005](./0005-session-key-includes-type.md) to enable cheap
+> per-module history listing. The discriminated-union data model and the
+> sidecar split are unchanged.
 
 ## Context
 

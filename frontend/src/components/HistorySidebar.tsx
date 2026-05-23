@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SessionSummary } from "../types";
 import { useSessionHistory } from "../hooks/useSessionHistory";
+import type { HistoryModule } from "../services/api";
 import { subjectColour } from "../utils/subjectColour";
 import { formatUsageCompact } from "../utils/formatUsage";
 import { SessionDetailModal } from "./SessionDetailModal";
 
 interface HistorySidebarProps {
   token: string;
+  module: HistoryModule;
   open: boolean;
   onClose: () => void;
 }
@@ -71,15 +73,9 @@ function SessionCard({ session, onClick, onResume }: SessionCardProps) {
       }`}
     >
       <div className="flex items-center gap-2 flex-wrap">
-        {isWriting ? (
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700">
-            ✍️ Writing
-          </span>
-        ) : isReading ? (
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700">
-            📚 Reading
-          </span>
-        ) : (
+        {/* Subject badges are still informative within Homework (math/english/science).
+            Module-level badges are dropped — the sidebar is now single-module. */}
+        {!isWriting && !isReading &&
           session.subjects.map((subject) => (
             <span
               key={subject}
@@ -87,8 +83,7 @@ function SessionCard({ session, onClick, onResume }: SessionCardProps) {
             >
               {subject}
             </span>
-          ))
-        )}
+          ))}
         {isActiveWriting && (
           <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800">
             In progress
@@ -151,9 +146,9 @@ function SkeletonCard() {
   );
 }
 
-export function HistorySidebar({ token, open, onClose }: HistorySidebarProps) {
+export function HistorySidebar({ token, module, open, onClose }: HistorySidebarProps) {
   const { sessions, loading, loadingMore, error, nextCursor, loadMore } =
-    useSessionHistory(token);
+    useSessionHistory(token, module);
   const navigate = useNavigate();
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
 
@@ -182,7 +177,7 @@ export function HistorySidebar({ token, open, onClose }: HistorySidebarProps) {
         aria-label="Session history"
       >
         <div className="flex items-center justify-between px-4 py-3 bg-white/80 backdrop-blur-sm border-b border-gray-100 shrink-0">
-          <span className="font-bold text-gray-700">History</span>
+          <span className="font-bold text-gray-700 capitalize">{module} history</span>
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"

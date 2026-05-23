@@ -26,7 +26,7 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const writing = useWritingSession();
-  const { sessions, loading } = useSessionHistory(token);
+  const { sessions, loading } = useSessionHistory(token, "writing");
 
   const hydratedRef = useRef(false);
 

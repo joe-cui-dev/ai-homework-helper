@@ -55,7 +55,7 @@ process.env.S3_BUCKET_NAME = "test-bucket";
 function makeEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayProxyEventV2 {
   return {
     headers: {},
-    queryStringParameters: {},
+    queryStringParameters: { type: "homework" },
     requestContext: {} as APIGatewayProxyEventV2["requestContext"],
     version: "2.0",
     routeKey: "$default",
@@ -238,47 +238,39 @@ describe("history handler", () => {
     await handler(
       makeEvent({
         headers: { authorization: "Bearer valid-token" },
-        queryStringParameters: { cursor, limit: "5" },
+        queryStringParameters: { type: "homework", cursor, limit: "5" },
       }),
       {} as never,
     );
 
-    expect(mockListSessions).toHaveBeenCalledWith("student-1", cursor, 5);
+    expect(mockListSessions).toHaveBeenCalledWith("student-1", "homework", cursor, 5);
   });
 
-  it("does not surface practice sessions as top-level cards", async () => {
+  it("returns 400 when the type query parameter is missing", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
-    mockListSessions.mockResolvedValueOnce({
-      sessions: [
-        baseSession(),
-        {
-          sessionType: "practice",
-          sessionId: "prac-1",
-          studentId: "student-1",
-          timestamp: "2024-01-02T00:00:00Z",
-          updatedAt: "2024-01-02T00:00:00Z",
-          usage: ZERO,
-          status: "active",
-          origin: { sessionId: "batch-abc", questionId: 1 },
-          sourceCoachingPacket: packet(),
-          problemCount: 0,
-          toolCallCount: 0,
-          problems: [],
-          toolLog: [],
-        },
-      ],
-      nextCursor: null,
-    });
 
     const response = (await handler(
-      makeEvent({ headers: { authorization: "Bearer valid-token" } }),
+      makeEvent({
+        headers: { authorization: "Bearer valid-token" },
+        queryStringParameters: {},
+      }),
       {} as never,
     )) as APIGatewayProxyStructuredResultV2;
 
-    const body = JSON.parse(response.body as string) as {
-      sessions: { sessionId: string; sessionType: string }[];
-    };
-    expect(body.sessions).toHaveLength(1);
-    expect(body.sessions[0].sessionType).toBe("homework");
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("returns 400 when the type query parameter is invalid", async () => {
+    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
+
+    const response = (await handler(
+      makeEvent({
+        headers: { authorization: "Bearer valid-token" },
+        queryStringParameters: { type: "practice" },
+      }),
+      {} as never,
+    )) as APIGatewayProxyStructuredResultV2;
+
+    expect(response.statusCode).toBe(400);
   });
 });

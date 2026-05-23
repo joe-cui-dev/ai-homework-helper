@@ -13,7 +13,7 @@
 // multiple questions' answers into a single field.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
-import { buildUsage, converseWithTools, parseDataUrl } from "../shared/bedrock";
+import { buildUsage, converseWithTools, parseDataUrl, parseToolInput } from "../shared/bedrock";
 import type { CoachingPacket, IdentifiedQuestion } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -276,7 +276,7 @@ export const generateCoachingPackets = async (
       | { name: string; input: unknown }
       | undefined;
     if (toolUse?.name === "submit_coaching_packets") {
-      const input = toolUse.input as { packets: CoachingPacket[] };
+      const input = parseToolInput<{ packets: CoachingPacket[] }>(toolUse.input);
       logger.info("packet_generate_complete", {
         packetCount: input.packets.length,
         inputTokens: response.usage.inputTokens,

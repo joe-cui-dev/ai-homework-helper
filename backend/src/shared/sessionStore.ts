@@ -1,10 +1,10 @@
 // ── Session storage ───────────────────────────────────────────────────────────
 // Persists Session records (discriminated union over sessionType) to S3.
 //
-// Key layout (see ADR 0004):
-//   sessions/{studentId}/{sessionId}.json          ← user-facing Session
-//   sessions/{studentId}/{sessionId}.agent.json    ← Bedrock sidecar (Writing/Practice)
-//   sessions/{studentId}/{sessionId}/image-*.{ext} ← uploaded images
+// Key layout (see ADR 0005, supersedes the layout in ADR 0004):
+//   sessions/{studentId}/{sessionType}/{sessionId}.json          ← user-facing Session
+//   sessions/{studentId}/{sessionType}/{sessionId}.agent.json    ← Bedrock sidecar (Writing/Practice)
+//   sessions/{studentId}/{sessionType}/{sessionId}/image-*.{ext} ← uploaded images
 //
 // 30-day S3 lifecycle ages everything out.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ import {
   GetObjectCommand,
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
-import type { Session } from "./session";
+import type { Session, SessionType } from "./session";
 import type { BedrockMessage } from "./bedrock";
 import { logger } from "./logger";
 
@@ -46,17 +46,23 @@ const bucketName = (): string => {
   return bucket;
 };
 
-const sessionKey = (studentId: string, sessionId: string): string =>
-  `sessions/${studentId}/${sessionId}.json`;
+const sessionKey = (
+  studentId: string,
+  sessionType: SessionType,
+  sessionId: string,
+): string => `sessions/${studentId}/${sessionType}/${sessionId}.json`;
 
-const sidecarKey = (studentId: string, sessionId: string): string =>
-  `sessions/${studentId}/${sessionId}.agent.json`;
+const sidecarKey = (
+  studentId: string,
+  sessionType: SessionType,
+  sessionId: string,
+): string => `sessions/${studentId}/${sessionType}/${sessionId}.agent.json`;
 
 export const saveSession = async (session: Session): Promise<void> => {
   await s3.send(
     new PutObjectCommand({
       Bucket: bucketName(),
-      Key: sessionKey(session.studentId, session.sessionId),
+      Key: sessionKey(session.studentId, session.sessionType, session.sessionId),
       Body: JSON.stringify(session),
       ContentType: "application/json",
     }),
@@ -69,13 +75,14 @@ export const saveSession = async (session: Session): Promise<void> => {
 
 export const loadSession = async (
   studentId: string,
+  sessionType: SessionType,
   sessionId: string,
 ): Promise<Session | null> => {
   try {
     const response = await s3.send(
       new GetObjectCommand({
         Bucket: bucketName(),
-        Key: sessionKey(studentId, sessionId),
+        Key: sessionKey(studentId, sessionType, sessionId),
       }),
     );
     const body = await response.Body?.transformToString("utf-8");
@@ -92,6 +99,7 @@ const isSessionKey = (key: string): boolean =>
 
 export const listSessions = async (
   studentId: string,
+  sessionType: SessionType,
   cursor?: string,
   limit = 10,
 ): Promise<SessionPage> => {
@@ -99,7 +107,7 @@ export const listSessions = async (
   const list = await s3.send(
     new ListObjectsV2Command({
       Bucket: bucket,
-      Prefix: `sessions/${studentId}/`,
+      Prefix: `sessions/${studentId}/${sessionType}/`,
     }),
   );
 
@@ -141,13 +149,14 @@ export const listSessions = async (
 
 export const saveAgentSidecar = async (
   studentId: string,
+  sessionType: SessionType,
   sessionId: string,
   sidecar: AgentSidecar,
 ): Promise<void> => {
   await s3.send(
     new PutObjectCommand({
       Bucket: bucketName(),
-      Key: sidecarKey(studentId, sessionId),
+      Key: sidecarKey(studentId, sessionType, sessionId),
       Body: JSON.stringify(sidecar),
       ContentType: "application/json",
     }),
@@ -156,6 +165,7 @@ export const saveAgentSidecar = async (
 
 export const uploadSessionImages = async (
   studentId: string,
+  sessionType: SessionType,
   sessionId: string,
   images: string[],
   // Lets multi-turn sessions (Writing) namespace images per turn role
@@ -172,7 +182,7 @@ export const uploadSessionImages = async (
       );
       if (!match) throw new Error(`Invalid image data URL at index ${i}`);
       const [, mediaType, ext, base64Data] = match;
-      const key = `sessions/${studentId}/${sessionId}/${prefix}-${i}.${ext}`;
+      const key = `sessions/${studentId}/${sessionType}/${sessionId}/${prefix}-${i}.${ext}`;
       await s3.send(
         new PutObjectCommand({
           Bucket: bucket,
@@ -188,13 +198,14 @@ export const uploadSessionImages = async (
 
 export const loadAgentSidecar = async (
   studentId: string,
+  sessionType: SessionType,
   sessionId: string,
 ): Promise<AgentSidecar | null> => {
   try {
     const response = await s3.send(
       new GetObjectCommand({
         Bucket: bucketName(),
-        Key: sidecarKey(studentId, sessionId),
+        Key: sidecarKey(studentId, sessionType, sessionId),
       }),
     );
     const body = await response.Body?.transformToString("utf-8");

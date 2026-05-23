@@ -236,6 +236,7 @@ const handleStart = async (
     try {
       promptImageKeys = await uploadSessionImages(
         studentId,
+        "writing",
         sessionId,
         promptImages,
         "prompt-image",
@@ -344,6 +345,7 @@ const handleDraft = async (
     try {
       draftImageKeys = await uploadSessionImages(
         studentId,
+        "writing",
         sessionId,
         draftImages,
         `draft-${turnIndex}-image`,

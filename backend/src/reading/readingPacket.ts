@@ -11,7 +11,7 @@
 // model's training-data knowledge of the book is forbidden (see ADR 0002).
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
-import { buildUsage, converseWithTools, parseDataUrl } from "../shared/bedrock";
+import { buildUsage, converseWithTools, parseDataUrl, parseToolInput } from "../shared/bedrock";
 import { lookupCurriculum } from "../shared/curriculum";
 import type { BookContext, ReadingPacket, YearLevel } from "../shared/types";
 import { logger } from "../shared/logger";
@@ -238,7 +238,7 @@ export const generateReadingPackets = async (
       | { name: string; input: unknown }
       | undefined;
     if (toolUse?.name === "submit_reading_packets") {
-      const input = toolUse.input as { packets: ReadingPacket[] };
+      const input = parseToolInput<{ packets: ReadingPacket[] }>(toolUse.input);
       logger.info("reading_packet_generate_complete", {
         packetCount: input.packets.length,
         inputTokens: response.usage.inputTokens,

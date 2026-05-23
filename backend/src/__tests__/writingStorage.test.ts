@@ -101,7 +101,7 @@ describe("loadWritingBundle", () => {
       usagePerTurn: [{ turnIndex: 1, inputTokens: 10, outputTokens: 5 }],
     };
     await saveSession(session);
-    await saveAgentSidecar(session.studentId, session.sessionId, sidecar);
+    await saveAgentSidecar(session.studentId, "writing", session.sessionId, sidecar);
 
     const bundle = await loadWritingBundle({
       studentId: "student-1",
@@ -148,7 +148,7 @@ describe("loadWritingBundle", () => {
     ).rejects.toMatchObject({ message: "Writing session not found." });
   });
 
-  it("rejects a non-writing session at the same key with WRONG_TYPE", async () => {
+  it("returns NOT_FOUND when no writing session exists for the id (typed prefixes prevent cross-type collision)", async () => {
     await saveSession({
       sessionType: "homework",
       sessionId: "w-1",
@@ -162,7 +162,7 @@ describe("loadWritingBundle", () => {
 
     await expect(
       loadWritingBundle({ studentId: "student-1", sessionId: "w-1" }),
-    ).rejects.toMatchObject({ code: "WRONG_TYPE" });
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
 
@@ -178,11 +178,11 @@ describe("saveWritingBundle", () => {
 
     await saveWritingBundle({ session, sidecar });
 
-    const sessionJson = s3Mock._store.get("sessions/student-1/w-1.json");
+    const sessionJson = s3Mock._store.get("sessions/student-1/writing/w-1.json");
     expect(sessionJson).toBeDefined();
     expect(sessionJson).not.toContain("long tool trace");
 
-    const sidecarJson = s3Mock._store.get("sessions/student-1/w-1.agent.json");
+    const sidecarJson = s3Mock._store.get("sessions/student-1/writing/w-1.agent.json");
     expect(sidecarJson).toBeDefined();
     expect(sidecarJson).toContain("long tool trace");
   });

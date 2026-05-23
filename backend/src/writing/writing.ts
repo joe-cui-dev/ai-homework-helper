@@ -8,6 +8,7 @@ import {
   buildUsage,
   converseWithTools,
   parseDataUrl,
+  parseToolInput,
   sumUsage,
 } from "../shared/bedrock";
 import type {
@@ -81,7 +82,7 @@ const extractToolUse = <T,>(
       | { name: string; input: unknown }
       | undefined;
     if (toolUse?.name === toolName) {
-      return toolUse.input as T;
+      return parseToolInput<T>(toolUse.input);
     }
   }
   return null;
