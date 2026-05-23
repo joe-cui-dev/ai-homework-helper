@@ -9,6 +9,8 @@ const q = (id: number, sourcePage?: number): IdentifiedQuestion => ({
   text: `Q${id}`,
   usesArticle: false,
   sourcePage,
+  subject: "math",
+  yearLevel: "year-3",
 });
 
 const img = (i: number) => `data:image/jpeg;base64,IMG${i}`;

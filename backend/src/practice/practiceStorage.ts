@@ -79,6 +79,8 @@ export const createPracticeBundle = async (
       sessionId: input.originSessionId,
       questionId: input.originQuestionId,
     },
+    subject: sourceQuestion.subject,
+    yearLevel: sourceQuestion.yearLevel,
     sourceCoachingPacket: sourceQuestion.packet,
     problemCount: 0,
     toolCallCount: 0,

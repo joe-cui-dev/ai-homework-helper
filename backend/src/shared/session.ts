@@ -4,9 +4,11 @@ import type {
   CoachingNotePacket,
   DraftFeedbackPacket,
   ReadingPacket,
+  Subject,
   TokenUsage,
   WritingEndedReason,
   WritingPlanPacket,
+  YearLevel,
 } from "./types";
 
 export type { CoachingPacket, TokenUsage };
@@ -25,6 +27,8 @@ export interface SessionBase {
 export interface HomeworkQuestion {
   questionId: number;
   input: string;
+  subject: Subject;
+  yearLevel: YearLevel;
   packet: CoachingPacket;
 }
 
@@ -96,6 +100,8 @@ export interface PracticeSession extends SessionBase {
   endedReason?: PracticeEndedReason;
   endedAt?: string;
   origin: { sessionId: string; questionId: number };
+  subject: Subject;
+  yearLevel: YearLevel;
   sourceCoachingPacket: CoachingPacket;
   problemCount: number;
   toolCallCount: number;

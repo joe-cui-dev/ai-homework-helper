@@ -159,6 +159,8 @@ export function SessionDetailModal({ session, token: _token, onClose }: SessionD
                 </div>
                 <ResultCard
                   packet={q.packet}
+                  subject={q.subject}
+                  yearLevel={q.yearLevel}
                   onPractise={() => {
                     onClose();
                     navigate(`/practice/${session.sessionId}:${q.questionId}`);

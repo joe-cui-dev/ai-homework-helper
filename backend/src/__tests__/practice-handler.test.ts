@@ -69,12 +69,8 @@ const mockSave = savePracticeBundle as jest.MockedFunction<typeof savePracticeBu
 
 const PACKET: CoachingPacket = {
   questionId: 1,
-  subject: "math",
-  yearLevel: "year-3",
   tldrAnswer: "12",
   whyItWorks: "Adding.",
-  howToCoach: "Coach.",
-  watchFor: ["x"],
   childHint: "?",
 };
 
@@ -89,6 +85,8 @@ const session = (overrides: Partial<PracticeSession> = {}): PracticeSession => (
   usage: ZERO_USAGE,
   status: "active",
   origin: { sessionId: "home-1", questionId: 1 },
+  subject: "math",
+  yearLevel: "year-3",
   sourceCoachingPacket: PACKET,
   problemCount: 0,
   toolCallCount: 0,

@@ -280,11 +280,15 @@ export const handler = awslambda.streamifyResponse(
         writeEvent({
           type: "packet_complete",
           questionId: q.id,
+          subject: q.subject,
+          yearLevel: q.yearLevel,
           packet,
         });
         allBatchPackets.push({
           questionId: q.id,
           questionText: q.text,
+          subject: q.subject,
+          yearLevel: q.yearLevel,
           packet,
         });
       }
@@ -303,6 +307,8 @@ export const handler = awslambda.streamifyResponse(
           questions: allBatchPackets.map((p) => ({
             questionId: p.questionId,
             input: p.questionText,
+            subject: p.subject,
+            yearLevel: p.yearLevel,
             packet: p.packet,
           })),
         };

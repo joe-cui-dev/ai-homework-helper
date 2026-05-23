@@ -68,12 +68,8 @@ function makeEvent(overrides: Partial<APIGatewayProxyEventV2> = {}): APIGatewayP
 
 const packet = (overrides: Partial<CoachingPacket> = {}): CoachingPacket => ({
   questionId: 1,
-  subject: "math",
-  yearLevel: "year-1",
   tldrAnswer: "4",
   whyItWorks: "Adding two pairs of items totals four.",
-  howToCoach: "Use counters to model the sum together.",
-  watchFor: ["Skipping a counter"],
   childHint: "What number comes after three?",
   ...overrides,
 });
@@ -88,7 +84,15 @@ const baseSession = (overrides: Partial<HomeworkSession> = {}): HomeworkSession 
   updatedAt: "2024-01-01T00:00:00Z",
   usage: ZERO,
   imageKeys: [],
-  questions: [{ questionId: 1, input: "What is 2+2?", packet: packet() }],
+  questions: [
+    {
+      questionId: 1,
+      input: "What is 2+2?",
+      subject: "math",
+      yearLevel: "year-1",
+      packet: packet(),
+    },
+  ],
   ...overrides,
 });
 
@@ -118,7 +122,7 @@ describe("history handler", () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it("returns sessions with pre-signed imageUrls and subjects derived from packet.subject", async () => {
+  it("returns sessions with pre-signed imageUrls and subjects derived from question.subject", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
     mockListSessions.mockResolvedValueOnce({
       sessions: [
@@ -160,11 +164,19 @@ describe("history handler", () => {
       sessions: [
         baseSession({
           questions: [
-            { questionId: 1, input: "Q1", packet: packet({ subject: "math" }) },
+            {
+              questionId: 1,
+              input: "Q1",
+              subject: "math",
+              yearLevel: "year-1",
+              packet: packet(),
+            },
             {
               questionId: 2,
               input: "Q2",
-              packet: packet({ questionId: 2, subject: "math" }),
+              subject: "math",
+              yearLevel: "year-1",
+              packet: packet({ questionId: 2 }),
             },
           ],
         }),
@@ -189,11 +201,19 @@ describe("history handler", () => {
       sessions: [
         baseSession({
           questions: [
-            { questionId: 1, input: "Q1", packet: packet({ subject: "math" }) },
+            {
+              questionId: 1,
+              input: "Q1",
+              subject: "math",
+              yearLevel: "year-1",
+              packet: packet(),
+            },
             {
               questionId: 2,
               input: "Q2",
-              packet: packet({ questionId: 2, subject: "science" }),
+              subject: "science",
+              yearLevel: "year-1",
+              packet: packet({ questionId: 2 }),
             },
           ],
         }),

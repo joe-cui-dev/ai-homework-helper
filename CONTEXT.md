@@ -41,7 +41,7 @@ The reading sub-skill a Reading Packet targets, set in `questionType`:
 A Reading Session aims for ~2 literal, ~2 inference, ~1 vocabulary, but the AI has leeway when the pages don't support a balanced mix.
 
 ### Question
-A single extracted question within a session, with its own `input`, `subject`, `difficulty`, `answer`, `steps`, `explanation`, and optional `hints`. A session always has at least one question.
+A single extracted question within a session. For Homework Sessions, the analyzer pass returns one `IdentifiedQuestion` per question with `text`, `sourcePage`, `subject`, and `yearLevel`; the coaching pass then attaches one Coaching Packet per question. `subject` and `yearLevel` live on the question (cheap analyzer output), not on the Coaching Packet (expensive prose output) — see [ADR 0006](docs/adr/0006-slim-coaching-packet.md). A session always has at least one question.
 
 ### Session History
 A browsable list of a student's past sessions, ordered newest-first. Distinct from the agent's internal `fetch_session_history` tool, which retrieves the 3 most recent sessions for personalisation context. The history browser surfaces sessions to the student via the UI.
@@ -101,11 +101,11 @@ The kind of writing an assignment calls for — `narrative` | `persuasive` | `re
 The primary reader of the app's output. The parent reads the answer privately and then teaches the child in their own words. The student is the *subject* of the homework but not the direct reader of the AI output. This shapes tone (adult-to-adult, concise), structure (must include teaching guidance, not just answers), and what success looks like (the child learns from the parent, not from the screen).
 
 ### Coaching Packet
-The per-question output delivered to the Parent-as-Coach. Replaces the old `{ answer, steps, explanation, hints }` shape. Fields:
+The per-question output delivered to the Parent-as-Coach. Fields:
 - `tldrAnswer` — the answer in one short sentence
 - `whyItWorks` — the underlying concept the question is testing (one paragraph, adult-to-adult)
-- `howToCoach` — what the parent should *do/say* with the child (instructional, not narration)
-- `watchFor` — common wrong answers and misconceptions a child of this year level might fall into (array)
 - `childHint` — a Socratic prompt the parent can read aloud verbatim if the child is stuck
 
-Year level still drives complexity calibration (a Year-1 `childHint` is concrete and short; a Year-6 one can use subject vocabulary), but the parent-facing fields stay in adult voice regardless.
+`subject` and `yearLevel` are *not* on the packet — they live on the sibling `IdentifiedQuestion` produced by the analyzer pass. Year-level calibration applies only to `childHint`; `whyItWorks` stays in adult voice regardless.
+
+Previously the packet also carried `howToCoach` (parent action prose) and `watchFor` (predicted misconceptions). Both were removed to reduce per-question latency and token cost; Practice now diagnoses misconceptions from observed errors rather than a pre-baked list. See [ADR 0006](docs/adr/0006-slim-coaching-packet.md).

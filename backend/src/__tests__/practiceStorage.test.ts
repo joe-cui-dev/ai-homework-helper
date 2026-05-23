@@ -60,12 +60,8 @@ beforeEach(() => {
 
 const PACKET: CoachingPacket = {
   questionId: 1,
-  subject: "math",
-  yearLevel: "year-3",
   tldrAnswer: "12",
   whyItWorks: "Adding two-digit numbers.",
-  howToCoach: "Use blocks.",
-  watchFor: ["regrouping errors"],
   childHint: "What's 5+7?",
 };
 
@@ -82,7 +78,15 @@ const homeworkFixture = (
   updatedAt: "2026-05-01T00:00:00Z",
   usage: ZERO,
   imageKeys: [],
-  questions: [{ questionId, input: "Q", packet: { ...PACKET, questionId } }],
+  questions: [
+    {
+      questionId,
+      input: "Q",
+      subject: "math",
+      yearLevel: "year-3",
+      packet: { ...PACKET, questionId },
+    },
+  ],
 });
 
 describe("createPracticeBundle", () => {
@@ -99,7 +103,10 @@ describe("createPracticeBundle", () => {
     expect(session.sessionId).not.toBe("home-1");
     expect(session.sessionId).not.toContain(":");
     expect(session.origin).toEqual({ sessionId: "home-1", questionId: 1 });
-    expect(session.sourceCoachingPacket.subject).toBe("math");
+    // subject and yearLevel are snapshotted from the source HomeworkQuestion
+    // onto the practice session top-level — not from the packet (ADR 0006).
+    expect(session.subject).toBe("math");
+    expect(session.yearLevel).toBe("year-3");
     expect(session.status).toBe("active");
     expect(sidecar.bedrockMessages).toEqual([]);
   });
@@ -164,6 +171,8 @@ describe("loadPracticeBundle", () => {
       usage: ZERO,
       status: "active",
       origin: { sessionId: "home-1", questionId: 1 },
+      subject: "math",
+      yearLevel: "year-3",
       sourceCoachingPacket: PACKET,
       problemCount: 0,
       toolCallCount: 0,

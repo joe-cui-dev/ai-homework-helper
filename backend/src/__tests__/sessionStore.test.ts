@@ -68,12 +68,8 @@ beforeEach(() => {
 
 const PACKET: CoachingPacket = {
   questionId: 1,
-  subject: "math",
-  yearLevel: "year-1",
   tldrAnswer: "4",
   whyItWorks: "Adding two pairs of items totals four.",
-  howToCoach: "Use counters: lay out two, then two more, count together.",
-  watchFor: ["Skipping a counter"],
   childHint: "What number comes after three?",
 };
 
@@ -90,7 +86,13 @@ describe("Session round-trip", () => {
       usage: ZERO_USAGE,
       imageKeys: ["sessions/student-1/abc-123/image-0.jpeg"],
       questions: [
-        { questionId: 1, input: "What is 2+2?", packet: PACKET },
+        {
+          questionId: 1,
+          input: "What is 2+2?",
+          subject: "math",
+          yearLevel: "year-1",
+          packet: PACKET,
+        },
       ],
     };
 
@@ -105,7 +107,7 @@ describe("Session round-trip", () => {
     if (loaded.sessionType === "homework") {
       expect(loaded.questions).toHaveLength(1);
       expect(loaded.questions[0].input).toBe("What is 2+2?");
-      expect(loaded.questions[0].packet.subject).toBe("math");
+      expect(loaded.questions[0].subject).toBe("math");
       expect(loaded.imageKeys).toEqual([
         "sessions/student-1/abc-123/image-0.jpeg",
       ]);
@@ -250,6 +252,8 @@ describe("Session round-trip", () => {
       usage: ZERO_USAGE,
       status: "active",
       origin: { sessionId: "homework-batch-9", questionId: 2 },
+      subject: "math",
+      yearLevel: "year-3",
       sourceCoachingPacket: PACKET,
       problemCount: 1,
       toolCallCount: 3,
@@ -280,7 +284,7 @@ describe("Session round-trip", () => {
       expect(loaded.origin).toEqual({ sessionId: "homework-batch-9", questionId: 2 });
       expect(loaded.problems).toHaveLength(1);
       expect(loaded.toolCallCount).toBe(3);
-      expect(loaded.sourceCoachingPacket.subject).toBe("math");
+      expect(loaded.subject).toBe("math");
     }
   });
 });
@@ -294,7 +298,15 @@ describe("listSessions", () => {
     updatedAt: ts,
     usage: ZERO_USAGE,
     imageKeys: [],
-    questions: [{ questionId: 1, input: `Q for ${sessionId}`, packet: PACKET }],
+    questions: [
+      {
+        questionId: 1,
+        input: `Q for ${sessionId}`,
+        subject: "math",
+        yearLevel: "year-1",
+        packet: PACKET,
+      },
+    ],
   });
 
   it("returns sessions sorted newest-first", async () => {
@@ -440,7 +452,15 @@ describe("Agent sidecar", () => {
       updatedAt: "2024-01-01T00:00:00Z",
       usage: ZERO_USAGE,
       imageKeys: [],
-      questions: [{ questionId: 1, input: "Q", packet: PACKET }],
+      questions: [
+        {
+          questionId: 1,
+          input: "Q",
+          subject: "math",
+          yearLevel: "year-1",
+          packet: PACKET,
+        },
+      ],
     };
 
     const { _sendMock } = s3Mock;

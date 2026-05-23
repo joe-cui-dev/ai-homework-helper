@@ -23,11 +23,9 @@ export interface GenerateCoachingPacketsResult {
 }
 
 // Per-call cap on identified questions. Each packet is bounded by the schema
-// at ~600 output tokens (tldrAnswer + whyItWorks + howToCoach + watchFor +
-// childHint + JSON framing). 7 packets ≈ 4200 tokens, comfortably under the
-// 8192-token output ceiling with margin for the model's own slack. Larger
-// batches (e.g. a 21-question worksheet) are chunked by chunkQuestionsForPacketCall
-// below into multiple parallel calls.
+// at ~250 output tokens (tldrAnswer + whyItWorks + childHint + JSON framing).
+// Larger batches are chunked by chunkQuestionsForPacketCall below into
+// multiple parallel calls. See ADR 0006 for the field-trim rationale.
 export const MAX_QUESTIONS_PER_PACKET_CALL = 7;
 
 // ── Chunking helper ──────────────────────────────────────────────────────
@@ -83,32 +81,22 @@ const SYSTEM_PROMPT = `You are an Australian-curriculum homework tutor speaking 
 
 For every question identified on the homework page(s), produce one coaching packet. Submit them all together by calling submit_coaching_packets exactly once.
 
+The subject and yearLevel for each question are supplied alongside the question text — use them to calibrate childHint and to shape whyItWorks. Do not echo them back in the packet.
+
 Tone rules — these are non-negotiable:
-- whyItWorks, howToCoach, watchFor are ADULT-TO-ADULT prose. No emojis. No "great job!". No second-person addressed to a child. The parent is the reader.
-- Only childHint is calibrated to the child's year level. The parent reads it aloud verbatim if the child needs a Socratic prompt.
+- whyItWorks is ADULT-TO-ADULT prose. No emojis. No "great job!". No second-person addressed to a child.
+- childHint is what the parent reads aloud to the child if the child is stuck. Calibrate to the supplied yearLevel.
 - tldrAnswer is one short sentence answering the question directly.
 
-Per-question routing — classify each question's subject and yearLevel from the question content, then apply the matching guidance below when constructing whyItWorks, howToCoach, watchFor, and childHint.
-
-SUBJECT GUIDANCE
-math: Show every algebraic or arithmetic step explicitly in whyItWorks. Label each step (e.g. "expand brackets", "divide both sides"). Use plain-text notation (x^2, sqrt(x)) — no LaTeX.
-science: State the underlying principle or law in whyItWorks. Walk through the calculation or reasoning. Include units in every step and call out assumptions.
-english: Identify the grammatical rule, literary device, or comprehension strategy at play in whyItWorks. Explain why it applies before giving the corrected or annotated answer. Keep terminology accessible to a non-specialist parent.
-other: Break the problem into clear logical steps in whyItWorks. Explain the reasoning behind each step.
-
-YEAR-LEVEL CALIBRATION (applies to childHint only)
-year-1 (~age 6): Very short sentences, everyday words, counting/objects/patterns as analogies.
-year-2 (~age 7): Short concrete sentences, familiar-object examples.
-year-3 (~age 8): Simple subject terms allowed but always explained in plain language. Relatable real-world examples.
-year-4 (~age 9): Clear friendly language. Correct terminology paired with plain-English explanation. Short age-appropriate analogies.
-year-5 (~age 10): Correct subject vocabulary used confidently, new terms explained once.
-year-6 (~age 11): Accurate subject terminology throughout. Multi-stage reasoning permitted.
+SUBJECT GUIDANCE (applies to whyItWorks)
+math: Show every step in plain-text notation (x^2, sqrt(x)) — no LaTeX.
+science: State the principle and include units.
+english: Name the grammatical rule or literary device and explain it.
+other: Break the problem into clear logical steps.
 
 FIELD CONTRACTS
 - tldrAnswer: ≤200 chars. One sentence. The direct answer.
 - whyItWorks: ≤600 chars. Adult prose. The underlying concept and how the answer follows.
-- howToCoach: ≤600 chars. Adult prose. Concrete instructions for what the parent should do or say with the child to teach this. Action-oriented.
-- watchFor: 2–3 items, each ≤200 chars. Adult prose. Common wrong answers / misconceptions a child of this year level typically falls into on this exact question.
 - childHint: ≤300 chars. Year-calibrated. A Socratic prompt the parent reads aloud if the child is stuck.
 
 PER-QUESTION ISOLATION
@@ -141,21 +129,6 @@ const SUBMIT_TOOL: Tool = {
                   description:
                     "Sequential question id matching the IdentifiedQuestion supplied in the user message.",
                 },
-                subject: {
-                  type: "string",
-                  enum: ["math", "science", "english", "other"],
-                },
-                yearLevel: {
-                  type: "string",
-                  enum: [
-                    "year-1",
-                    "year-2",
-                    "year-3",
-                    "year-4",
-                    "year-5",
-                    "year-6",
-                  ],
-                },
                 tldrAnswer: {
                   type: "string",
                   maxLength: 200,
@@ -168,20 +141,6 @@ const SUBMIT_TOOL: Tool = {
                   description:
                     "Adult-to-adult prose. The underlying concept and how the answer follows from it.",
                 },
-                howToCoach: {
-                  type: "string",
-                  maxLength: 600,
-                  description:
-                    "Adult-to-adult prose. Concrete actions/words the parent should use to teach the child this question.",
-                },
-                watchFor: {
-                  type: "array",
-                  description:
-                    "2–3 common wrong answers or misconceptions a child of this year level typically falls into on this question. Adult prose.",
-                  items: { type: "string", maxLength: 200 },
-                  minItems: 1,
-                  maxItems: 4,
-                },
                 childHint: {
                   type: "string",
                   maxLength: 300,
@@ -191,12 +150,8 @@ const SUBMIT_TOOL: Tool = {
               },
               required: [
                 "questionId",
-                "subject",
-                "yearLevel",
                 "tldrAnswer",
                 "whyItWorks",
-                "howToCoach",
-                "watchFor",
                 "childHint",
               ],
             },
@@ -235,7 +190,7 @@ export const generateCoachingPackets = async (
   const questionList = questions
     .map(
       (q) =>
-        `[questionId=${q.id}${q.sourcePage !== undefined ? `, sourcePage=${q.sourcePage}` : ""}] ${q.text}`,
+        `[questionId=${q.id}, subject=${q.subject}, yearLevel=${q.yearLevel}${q.sourcePage !== undefined ? `, sourcePage=${q.sourcePage}` : ""}] ${q.text}`,
     )
     .join("\n");
 

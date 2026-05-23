@@ -43,12 +43,8 @@ const { converseWithTools, callClaude } = jest.requireMock("../shared/bedrock") 
 
 const PACKET: CoachingPacket = {
   questionId: 1,
-  subject: "math",
-  yearLevel: "year-3",
   tldrAnswer: "12",
   whyItWorks: "Two-digit addition with no regrouping.",
-  howToCoach: "Use base-ten blocks.",
-  watchFor: ["Forgetting place value", "Adding tens to ones"],
   childHint: "What's 5 plus 7?",
 };
 
@@ -61,6 +57,8 @@ const blankSession = (overrides: Partial<PracticeSession> = {}): PracticeSession
   usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
   status: "active",
   origin: { sessionId: "batch-1", questionId: 1 },
+  subject: "math",
+  yearLevel: "year-3",
   sourceCoachingPacket: PACKET,
   problemCount: 0,
   toolCallCount: 0,
@@ -115,6 +113,49 @@ describe("TOOL_SCHEMA", () => {
       "lookup_prerequisite_skill",
       "worked_example",
     ]);
+  });
+});
+
+// ── System prompt — sourced from session, not packet ──────────────────────
+
+describe("runPracticeTurn — system prompt", () => {
+  it("interpolates session.subject and session.yearLevel, and does not reference watchFor or hardcode 'primary-school'", async () => {
+    callClaude.mockResolvedValueOnce(
+      claudeResult(
+        JSON.stringify({ problem: "What is 5 + 7?", expectedAnswer: "12" }),
+      ),
+    );
+    converseWithTools
+      .mockResolvedValueOnce(
+        toolUseResponse([
+          { name: "generate_problem", input: { difficulty: "easier" } },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        toolUseResponse([
+          {
+            name: "end_turn",
+            input: {
+              agentMessage: "Let's start with: What is 5 + 7?",
+              problem: "What is 5 + 7?",
+              isSessionEnded: false,
+            },
+          },
+        ]),
+      );
+
+    await runPracticeTurn(
+      blankSession({ subject: "science", yearLevel: "year-5" }),
+      blankSidecar(),
+      { onEvent: () => {} },
+    );
+
+    // converseWithTools is called with (messages, tools, systemPrompt, ...).
+    const systemPrompt = converseWithTools.mock.calls[0][2] as string;
+    expect(systemPrompt).toContain("science");
+    expect(systemPrompt).toContain("year-5");
+    expect(systemPrompt).not.toContain("watchFor");
+    expect(systemPrompt).not.toContain("primary-school");
   });
 });
 

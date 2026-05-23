@@ -26,6 +26,7 @@ Your job is to:
 2. If any page contains a reading passage or article (not a question), extract its full text as articleContext.
 3. For each question, decide whether it requires the article/passage to answer (usesArticle: true/false).
 4. Record which image page (0-based index) each question appears on as sourcePage.
+5. For each question, classify subject as one of math | science | english | other, and yearLevel as one of year-1 | year-2 | year-3 | year-4 | year-5 | year-6 based on the question content and complexity.
 
 Rules:
 - Number questions sequentially across all pages (1, 2, 3, ...).
@@ -64,8 +65,33 @@ const SUBMIT_TOOL: Tool = {
                   type: "number",
                   description: "0-based index of the image this question appears on",
                 },
+                subject: {
+                  type: "string",
+                  enum: ["math", "science", "english", "other"],
+                  description: "Subject classification for this question.",
+                },
+                yearLevel: {
+                  type: "string",
+                  enum: [
+                    "year-1",
+                    "year-2",
+                    "year-3",
+                    "year-4",
+                    "year-5",
+                    "year-6",
+                  ],
+                  description:
+                    "Australian primary year level inferred from question content and complexity.",
+                },
               },
-              required: ["id", "text", "usesArticle", "sourcePage"],
+              required: [
+                "id",
+                "text",
+                "usesArticle",
+                "sourcePage",
+                "subject",
+                "yearLevel",
+              ],
             },
           },
         },
@@ -85,7 +111,15 @@ export const analyzePages = async (
     return {
       analysis: {
         questions: questionText?.trim()
-          ? [{ id: 1, text: questionText.trim(), usesArticle: false }]
+          ? [
+            {
+              id: 1,
+              text: questionText.trim(),
+              usesArticle: false,
+              subject: "other",
+              yearLevel: "year-3",
+            },
+          ]
           : [],
       },
       usage: zeroUsage,
@@ -157,7 +191,15 @@ export const analyzePages = async (
   return {
     analysis: {
       questions: questionText?.trim()
-        ? [{ id: 1, text: questionText.trim(), usesArticle: false }]
+        ? [
+            {
+              id: 1,
+              text: questionText.trim(),
+              usesArticle: false,
+              subject: "other",
+              yearLevel: "year-3",
+            },
+          ]
         : [],
     },
     usage: response.usage,

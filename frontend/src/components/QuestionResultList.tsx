@@ -35,6 +35,8 @@ export function QuestionResultList({
           )}
           <ResultCard
             packet={bp.packet}
+            subject={bp.subject}
+            yearLevel={bp.yearLevel}
             onPractise={
               onPractise
                 ? () => onPractise(bp.questionId, bp.questionText, bp.packet)

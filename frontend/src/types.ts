@@ -17,24 +17,24 @@ export type YearLevel =
 
 export interface CoachingPacket {
   questionId: number;
-  subject: Subject;
-  yearLevel: YearLevel;
   tldrAnswer: string;
   whyItWorks: string;
-  howToCoach: string;
-  watchFor: string[];
   childHint: string;
 }
 
 export interface BatchPacket {
   questionId: number;
   questionText: string;
+  subject: Subject;
+  yearLevel: YearLevel;
   packet: CoachingPacket;
 }
 
 export interface SessionQuestion {
   questionId: number;
   input: string;
+  subject: Subject;
+  yearLevel: YearLevel;
   packet: CoachingPacket;
   practiceSession?: PracticeSessionSummary;
 }
@@ -100,7 +100,13 @@ export type StreamEvent =
       total: number;
       text: string;
     }
-  | { type: "packet_complete"; questionId: number; packet: CoachingPacket }
+  | {
+      type: "packet_complete";
+      questionId: number;
+      subject: Subject;
+      yearLevel: YearLevel;
+      packet: CoachingPacket;
+    }
   | {
       type: "complete";
       sessionId: string;

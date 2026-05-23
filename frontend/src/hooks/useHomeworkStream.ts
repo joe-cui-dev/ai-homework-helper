@@ -101,6 +101,8 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
             {
               questionId: event.questionId,
               questionText: text,
+              subject: event.subject,
+              yearLevel: event.yearLevel,
               packet: event.packet,
             },
           ]);

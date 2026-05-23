@@ -53,14 +53,13 @@ export interface TurnResult {
 // ---------------------------------------------------------------------------
 
 const buildSystemPrompt = (
-  packet: CoachingPacket,
+  session: PracticeSession,
 ): string => `You are a Practice Tutor agent. The reader of your messages is the PARENT, who will read problems aloud to their child and report what the child says.
 
 Source homework question this practice session is anchored to:
-- Subject: ${packet.subject}
-- Year level: ${packet.yearLevel}
-- Concept being practised (whyItWorks): ${packet.whyItWorks}
-- Common misconceptions to test for (watchFor): ${packet.watchFor.join("; ")}
+- Subject: ${session.subject}
+- Year level: ${session.yearLevel}
+- Concept being practised (whyItWorks): ${session.sourceCoachingPacket.whyItWorks}
 
 Your job is to run a focused practice session of 3–5 problems. Each turn:
 1. If this is the very first turn, call generate_problem(difficulty="easier") to start with a warm-up.
@@ -76,7 +75,7 @@ VERDICT-DRIVEN STRATEGY (after evaluate_attempt):
 
 PARENT-FACING TONE:
 - agentMessage is read by the parent; use adult prose, no emojis, no second-person addressed to a child.
-- Any text the parent will read aloud (problem text, hint, worked_example, altExplanation) must be calibrated to the child's year level (${packet.yearLevel}).
+- Any text the parent will read aloud (problem text, hint, worked_example, altExplanation) must be calibrated to the child's year level (${session.yearLevel}).
 
 ENDING THE SESSION:
 - Mastery: 2–3 consecutive corrects without recovery tools used → end_turn(isSessionEnded=true, endedReason="mastered").
@@ -274,7 +273,7 @@ const generateProblem = async (
     .map((p, i) => `${i + 1}. ${p.problem}`)
     .join("\n");
 
-  const prompt = `Generate ONE practice problem at difficulty "${input.difficulty}" for a ${packet.yearLevel} student practising ${packet.subject}.
+  const prompt = `Generate ONE practice problem at difficulty "${input.difficulty}" for a ${session.yearLevel} student practising ${session.subject}.
 The original homework question's concept: ${packet.whyItWorks}
 ${input.focus ? `Focus this problem on: ${input.focus}\n` : ""}${previousProblems ? `Previously generated problems (do not duplicate):\n${previousProblems}\n` : ""}
 Return ONLY valid JSON with no markdown fences:
@@ -316,10 +315,9 @@ const evaluateAttempt = async (
   const packet = session.sourceCoachingPacket;
   const prompt = `You are diagnosing a child's attempt on a practice problem.
 
-Year level: ${packet.yearLevel}
-Subject: ${packet.subject}
+Year level: ${session.yearLevel}
+Subject: ${session.subject}
 Concept being practised: ${packet.whyItWorks}
-Common misconceptions: ${packet.watchFor.join("; ")}
 
 Problem: ${cur.problem}
 Expected answer: ${cur.expectedAnswer}
@@ -353,7 +351,7 @@ const giveHint = async (
     throw new Error("No active problem; cannot generate a hint.");
   }
   const packet = session.sourceCoachingPacket;
-  const prompt = `Generate ONE short Socratic hint the parent can read aloud to a ${packet.yearLevel} child working on this problem. Do NOT give the answer.
+  const prompt = `Generate ONE short Socratic hint the parent can read aloud to a ${session.yearLevel} child working on this problem. Do NOT give the answer.
 
 Problem: ${cur.problem}
 Concept: ${packet.whyItWorks}
@@ -375,7 +373,7 @@ const workedExample = async (
     throw new Error("No active problem; cannot show a worked example.");
   }
   const packet = session.sourceCoachingPacket;
-  const prompt = `Produce a fully-worked example of the same concept as the current practice problem, calibrated to a ${packet.yearLevel} child. Use a DIFFERENT problem (not the current one). Walk through every step in plain language the parent will read aloud.
+  const prompt = `Produce a fully-worked example of the same concept as the current practice problem, calibrated to a ${session.yearLevel} child. Use a DIFFERENT problem (not the current one). Walk through every step in plain language the parent will read aloud.
 
 Current problem (do not solve this; show a similar one): ${cur.problem}
 Concept: ${packet.whyItWorks}
@@ -398,7 +396,7 @@ const changeTeachingStyle = async (
     throw new Error("No active problem; cannot change teaching style.");
   }
   const packet = session.sourceCoachingPacket;
-  const prompt = `Re-explain the concept of the current practice problem using the "${input.style}" teaching style, calibrated to a ${packet.yearLevel} child. The parent will read this aloud or use it to guide the child.
+  const prompt = `Re-explain the concept of the current practice problem using the "${input.style}" teaching style, calibrated to a ${session.yearLevel} child. The parent will read this aloud or use it to guide the child.
 
 Problem: ${cur.problem}
 Concept: ${packet.whyItWorks}
@@ -426,9 +424,9 @@ const lookupPrerequisiteSkill = async (
   accumulateUsage: AccumulateUsage,
 ): Promise<{ prerequisite: string; why: string }> => {
   const packet = session.sourceCoachingPacket;
-  const prompt = `Identify the single foundational/prerequisite skill a ${packet.yearLevel} child needs in order to master "${input.concept}". The child has shown they're missing it.
+  const prompt = `Identify the single foundational/prerequisite skill a ${session.yearLevel} child needs in order to master "${input.concept}". The child has shown they're missing it.
 
-Subject: ${packet.subject}
+Subject: ${session.subject}
 
 Return ONLY valid JSON: { "prerequisite": "<short name of the prerequisite skill>", "why": "<one short adult-tone sentence explaining why mastering this prerequisite unblocks the current concept>" }`;
   const { text: raw, usage } = await callClaude(prompt, 0.2);
@@ -548,7 +546,7 @@ export const runPracticeTurn = async (
   const turnIndex =
     session.toolLog.reduce((max, e) => Math.max(max, e.turn), -1) + 1;
 
-  const systemPrompt = buildSystemPrompt(session.sourceCoachingPacket);
+  const systemPrompt = buildSystemPrompt(session);
 
   // Accumulator for every Bedrock call inside this turn (the converseWithTools
   // calls in the loop below + every tool implementation that calls callClaude).

@@ -37,22 +37,21 @@ export type WritingGenre =
   | "other";
 
 // One coaching packet per identified question. The reader is the parent.
-// Parent-facing fields (whyItWorks, howToCoach, watchFor) are adult-to-adult
-// regardless of yearLevel. Only childHint is calibrated to the year level.
+// whyItWorks stays in adult voice; only childHint is calibrated to year level.
+// subject and yearLevel live on the sibling IdentifiedQuestion, not here — see
+// ADR 0006.
 export interface CoachingPacket {
   questionId: number;
-  subject: Subject;
-  yearLevel: YearLevel;
   tldrAnswer: string;
   whyItWorks: string;
-  howToCoach: string;
-  watchFor: string[];
   childHint: string;
 }
 
 export interface BatchPacket {
   questionId: number;
   questionText: string;
+  subject: Subject;
+  yearLevel: YearLevel;
   packet: CoachingPacket;
 }
 
@@ -61,6 +60,8 @@ export interface IdentifiedQuestion {
   text: string;
   usesArticle: boolean;
   sourcePage?: number;
+  subject: Subject;
+  yearLevel: YearLevel;
 }
 
 export interface PageAnalysis {
@@ -131,7 +132,13 @@ export type StreamEvent =
       total: number;
       text: string;
     }
-  | { type: "packet_complete"; questionId: number; packet: CoachingPacket }
+  | {
+      type: "packet_complete";
+      questionId: number;
+      subject: Subject;
+      yearLevel: YearLevel;
+      packet: CoachingPacket;
+    }
   | {
       type: "complete";
       sessionId: string;

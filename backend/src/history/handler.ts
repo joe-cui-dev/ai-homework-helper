@@ -159,7 +159,7 @@ export const handler = async (
           ? ["reading"]
           : record.sessionType === "writing"
             ? ["writing"]
-            : [...new Set(record.questions.map((q) => q.packet.subject))];
+            : [...new Set(record.questions.map((q) => q.subject))];
 
       const summary: SessionSummary = {
         sessionId: record.sessionId,

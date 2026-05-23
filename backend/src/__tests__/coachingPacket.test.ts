@@ -28,20 +28,30 @@ const { converseWithTools } = jest.requireMock("../shared/bedrock") as {
   converseWithTools: jest.Mock;
 };
 
-const PACKET = (id: number, subject = "english"): CoachingPacket => ({
+const PACKET = (id: number): CoachingPacket => ({
   questionId: id,
-  subject: subject as CoachingPacket["subject"],
-  yearLevel: "year-3",
   tldrAnswer: `Answer for question ${id}.`,
   whyItWorks: `Concept for question ${id}.`,
-  howToCoach: `Coach the child by doing X for question ${id}.`,
-  watchFor: [`Common mistake A for question ${id}`, `Common mistake B for question ${id}`],
   childHint: `Hint for question ${id}.`,
 });
 
 const QUESTIONS: IdentifiedQuestion[] = [
-  { id: 1, text: "What are Alex's symptoms?", usesArticle: true, sourcePage: 0 },
-  { id: 2, text: "What does Mum think?", usesArticle: true, sourcePage: 0 },
+  {
+    id: 1,
+    text: "What are Alex's symptoms?",
+    usesArticle: true,
+    sourcePage: 0,
+    subject: "english",
+    yearLevel: "year-3",
+  },
+  {
+    id: 2,
+    text: "What does Mum think?",
+    usesArticle: true,
+    sourcePage: 0,
+    subject: "english",
+    yearLevel: "year-3",
+  },
 ];
 
 const IMG = "data:image/jpeg;base64,/9j/abc";
@@ -146,6 +156,11 @@ describe("generateCoachingPackets", () => {
     expect(textBlocks).toContain("[questionId=1");
     expect(textBlocks).toContain("[questionId=2");
     expect(textBlocks).toContain("What are Alex's symptoms?");
+    // subject and yearLevel live on IdentifiedQuestion now; the coaching
+    // call must pass them to the model so it can calibrate childHint and
+    // shape whyItWorks without re-classifying.
+    expect(textBlocks).toContain("subject=english");
+    expect(textBlocks).toContain("yearLevel=year-3");
   });
 
   it("throws when guardrail intervenes, surfacing the message", async () => {
