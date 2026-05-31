@@ -357,3 +357,11 @@ npm run dev
 | S3                  | Storage + requests                         | < $0.01/month for demo    |
 
 **Total: under $1/month for typical portfolio demo usage.**
+
+## Todo
+
+- select AI models
+- MFA
+- writing plan: add answers to planning questions
+- Update curriculum logic
+- Expand to year 12
