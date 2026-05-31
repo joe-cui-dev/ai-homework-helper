@@ -161,7 +161,12 @@ describe("Session round-trip", () => {
       yearLevel: "year-4",
       yearLevelSource: "user",
       successCriteria: ["Clear sequence", "Strong opening"],
-      planningQuestions: ["Who is the main character?"],
+      planningQuestions: [
+        {
+          question: "Who is the main character?",
+          suggestedAnswers: ["A child searching for their dog", "The dog trying to get home"],
+        },
+      ],
       modelAnswers: {
         atYearLevel: "Once upon a time...",
         aboveYearLevel: "The rain hammered the corrugated roof...",

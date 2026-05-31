@@ -7,7 +7,20 @@ const VALID_PLAN: WritingPlanPacket = {
   yearLevel: "year-3",
   yearLevelSource: "user",
   successCriteria: ["Has a clear beginning", "Uses descriptive language", "Ends with resolution"],
-  planningQuestions: ["Who is the main character?", "What goes wrong?", "How is it resolved?"],
+  planningQuestions: [
+    {
+      question: "Who is the main character?",
+      suggestedAnswers: ["A child looking for their dog", "The lost dog itself"],
+    },
+    {
+      question: "What goes wrong?",
+      suggestedAnswers: ["The dog runs through an open gate", "A storm makes searching harder"],
+    },
+    {
+      question: "How is it resolved?",
+      suggestedAnswers: ["The dog is found at the park", "A neighbour helps bring the dog home"],
+    },
+  ],
   modelAnswers: {
     atYearLevel: "My dog Rex ran away. I looked everywhere. I found him at the park. I was so happy.",
     aboveYearLevel:
@@ -57,5 +70,20 @@ describe("normalisePlan", () => {
     expect(result.modelAnswers.aboveYearLevel).toBe(VALID_PLAN.modelAnswers.aboveYearLevel);
     expect(result.modelAnswers.aboveYearLevelLabel).toBe("Year 4");
     expect(result.modelAnswers.whyAboveIsBetter).toBe(VALID_PLAN.modelAnswers.whyAboveIsBetter);
+  });
+
+  it("coerces legacy string planningQuestions to question objects", () => {
+    const legacy = {
+      ...VALID_PLAN,
+      planningQuestions: [
+        "Who is the main character?",
+        "What goes wrong?",
+      ],
+    } as unknown as WritingPlanPacket;
+    const result = normalisePlan(legacy);
+    expect(result.planningQuestions).toEqual([
+      { question: "Who is the main character?", suggestedAnswers: [] },
+      { question: "What goes wrong?", suggestedAnswers: [] },
+    ]);
   });
 });

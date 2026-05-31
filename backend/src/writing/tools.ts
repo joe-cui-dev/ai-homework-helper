@@ -54,8 +54,27 @@ export const SUBMIT_WRITING_PLAN_TOOL: Tool = {
           planningQuestions: {
             type: "array",
             description:
-              "3–4 Socratic questions the parent reads aloud to the child BEFORE writing. The child does the planning.",
-            items: { type: "string", maxLength: 180 },
+              "3–4 Socratic questions the parent reads aloud to the child BEFORE writing. Each question includes 2–3 short suggested answer directions the parent can listen for or offer as prompts without giving copyable sentences.",
+            items: {
+              type: "object",
+              properties: {
+                question: {
+                  type: "string",
+                  maxLength: 180,
+                  description:
+                    "A Socratic question the parent reads aloud. It should elicit the child's plan, not dictate it.",
+                },
+                suggestedAnswers: {
+                  type: "array",
+                  description:
+                    "2–3 brief answer directions or examples the child might give. Keep them phrase-level and assignment-specific, not polished draft sentences.",
+                  items: { type: "string", maxLength: 140 },
+                  minItems: 2,
+                  maxItems: 3,
+                },
+              },
+              required: ["question", "suggestedAnswers"],
+            },
             minItems: 3,
             maxItems: 4,
           },

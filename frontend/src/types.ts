@@ -208,13 +208,18 @@ export interface ModelAnswerPair {
   whyAboveIsBetter: string;
 }
 
+export interface PlanningQuestion {
+  question: string;
+  suggestedAnswers: string[];
+}
+
 export interface WritingPlanPacket {
   assignmentSummary: string;
   genre: WritingGenre;
   yearLevel: YearLevel;
   yearLevelSource?: "user" | "inferred";
   successCriteria: string[];
-  planningQuestions: string[];
+  planningQuestions: PlanningQuestion[];
   modelAnswers: ModelAnswerPair;
   vocabularyToOffer: string[];
   watchFor: string[];

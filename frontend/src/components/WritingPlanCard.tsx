@@ -69,10 +69,23 @@ export function WritingPlanCard({ plan: rawPlan }: WritingPlanCardProps) {
           {plan.planningQuestions.map((q, i) => (
             <li
               key={i}
-              className="text-sm text-gray-800 leading-relaxed pl-5 relative italic"
+              className="text-sm text-gray-800 leading-relaxed pl-5 relative"
             >
               <span className="absolute left-0 text-gray-400">{i + 1}.</span>
-              {q}
+              <p className="italic">{q.question}</p>
+              {q.suggestedAnswers.length > 0 && (
+                <ul className="mt-1 space-y-0.5">
+                  {q.suggestedAnswers.map((answer, answerIndex) => (
+                    <li
+                      key={answerIndex}
+                      className="text-xs text-gray-600 leading-relaxed pl-3 relative"
+                    >
+                      <span className="absolute left-0 text-violet-300">•</span>
+                      {answer}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>

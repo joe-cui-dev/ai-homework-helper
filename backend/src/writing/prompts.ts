@@ -21,7 +21,7 @@ const TONE_RULES = `Audience and tone — non-negotiable:
 
 Output format — non-negotiable:
 - Use ONLY the tool's JSON input schema. Do NOT use any XML, including <item>, <parameter>, <invoke>, or <answer> tags.
-- Array-typed fields (successCriteria, planningQuestions, vocabularyToOffer, watchFor, mechanicsNotes, twoStars, rubric.dimensions) MUST be JSON arrays. Example: ["first item", "second item"] — not "<item>first</item><item>second</item>" and not a single string with newlines between items.
+- Array-typed fields (successCriteria, planningQuestions, planningQuestions[].suggestedAnswers, vocabularyToOffer, watchFor, mechanicsNotes, twoStars, rubric.dimensions) MUST be JSON arrays. Use the schema's object shape for object arrays — not "<item>first</item><item>second</item>" and not a single string with newlines between items.
 - Every required field in the schema MUST be present and non-empty. If you cannot fill a field meaningfully, give it a short honest placeholder rather than omitting it.`;
 
 export const buildPlanSystemPrompt = (
@@ -43,7 +43,9 @@ ${yearLevelRule}
 Field contracts:
 - assignmentSummary: one sentence restating the prompt. Lets the parent verify your understanding.
 - successCriteria: 3–5 prompt-specific bullets. NOT generic ("good ideas") — anchored to THIS prompt at THIS year level. Use AU writing-outcome language calibrated to year level.
-- planningQuestions: 3–4 Socratic questions the parent reads aloud BEFORE the child writes. The child does the planning; these elicit, they don't dictate.
+- planningQuestions: 3–4 Socratic questions the parent reads aloud BEFORE the child writes. Each item has:
+  - question: the aloud question. The child does the planning; these elicit, they don't dictate.
+  - suggestedAnswers: 2–3 brief answer directions the parent can listen for or offer if the child is stuck. Keep these phrase-level, not polished sentences the child could copy into the draft.
 - modelAnswers: TWO student-voice exemplars plus per-criterion justifications.
   - modelAnswers.atYearLevel: complete student-voice response at the locked yearLevel. Year-1/2: short sentences, everyday words, 3–6 sentences total. Year-3/4: paragraph-length, simple subject vocabulary explained in plain language. Year-5/6: multi-paragraph where appropriate, accurate genre conventions.
   - modelAnswers.aboveYearLevel: same prompt, written ONE YEAR ABOVE yearLevel (use the next row of the calibration table). CAPPED AT year-6: at year-6, write at the upper end of Year 6 — DO NOT cross into Year 7 / secondary curriculum. The stretch sample shows higher proficiency through richer vocabulary, more sentence variety, and sharper genre conventions, but is still a CHILD'S voice.

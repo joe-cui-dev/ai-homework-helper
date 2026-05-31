@@ -10,6 +10,7 @@ import type {
   DraftRubric,
   FeedbackHighlight,
   ModelAnswerPair,
+  PlanningQuestion,
   RubricDimension,
   WritingPlanPacket,
 } from "../shared/types";
@@ -154,11 +155,32 @@ const asModelAnswerPair = (v: unknown): ModelAnswerPair => {
   };
 };
 
+const asPlanningQuestion = (item: unknown): PlanningQuestion | null => {
+  if (typeof item === "string") {
+    const question = stripXmlGarbage(item).trim();
+    return question ? { question, suggestedAnswers: [] } : null;
+  }
+  const obj = asObject(item);
+  if (!obj) return null;
+  const question = asString(obj.question).trim();
+  if (!question) return null;
+  return {
+    question,
+    suggestedAnswers: stringArray(obj.suggestedAnswers),
+  };
+};
+
+const planningQuestionArray = (v: unknown): PlanningQuestion[] => {
+  const questions = objectArray(v, asPlanningQuestion);
+  if (questions.length > 0) return questions;
+  return stringArray(v).map((question) => ({ question, suggestedAnswers: [] }));
+};
+
 export const normalisePlan = (plan: WritingPlanPacket): WritingPlanPacket => ({
   ...plan,
   assignmentSummary: asString(plan.assignmentSummary),
   successCriteria: stringArray(plan.successCriteria),
-  planningQuestions: stringArray(plan.planningQuestions),
+  planningQuestions: planningQuestionArray(plan.planningQuestions),
   vocabularyToOffer: stringArray(plan.vocabularyToOffer),
   watchFor: stringArray(plan.watchFor),
   modelAnswers: asModelAnswerPair(plan.modelAnswers),

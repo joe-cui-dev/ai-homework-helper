@@ -5,6 +5,7 @@ import {
   submitWritingDraft,
   submitWritingQuestion,
 } from "../services/writingApi";
+import { normalisePlan } from "../utils/normalizeWriting";
 import type {
   TokenUsage,
   WritingEndedReason,
@@ -98,7 +99,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
 
   const hydrate = useCallback<UseWritingSessionReturn["hydrate"]>((input) => {
     setBatchId(input.sessionId);
-    setPlan(input.plan);
+    setPlan(normalisePlan(input.plan));
     setTurns(input.turns);
     setDraftCount(input.draftCount);
     setQuestionCount(input.questionCount);
@@ -116,7 +117,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
     ) => {
       if (event.type === "plan_complete") {
         setBatchId(event.sessionId);
-        setPlan(event.plan);
+        setPlan(normalisePlan(event.plan));
         setUsage(event.usage);
         setStatus("ready");
       } else if (event.type === "transcribing") {

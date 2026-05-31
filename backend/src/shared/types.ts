@@ -230,6 +230,11 @@ export interface ModelAnswerPair {
   whyAboveIsBetter: string;
 }
 
+export interface PlanningQuestion {
+  question: string;
+  suggestedAnswers: string[];
+}
+
 // Turn-1 output: the parent's coaching plan for this assignment. modelAnswers
 // are student-voice, year-level-calibrated; the frontend gates them behind a
 // UI disclosure so parents must opt in to see them.
@@ -243,7 +248,7 @@ export interface WritingPlanPacket {
   // "inferred".
   yearLevelSource?: "user" | "inferred";
   successCriteria: string[];
-  planningQuestions: string[];
+  planningQuestions: PlanningQuestion[];
   modelAnswers: ModelAnswerPair;
   vocabularyToOffer: string[];
   watchFor: string[];
