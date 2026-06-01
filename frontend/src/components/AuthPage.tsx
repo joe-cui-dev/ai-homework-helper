@@ -1,19 +1,42 @@
 import { useState, type FormEvent } from "react";
+import type { CognitoUser } from "amazon-cognito-identity-js";
+import type { AuthChallengeResult } from "../services/auth";
 
-type AuthMode = "signin" | "signup" | "confirm";
+type AuthMode = "signin" | "new_password" | "sms_mfa";
 
-interface AuthPageProps {
-  onLogin: (email: string, password: string) => Promise<void>;
-  onRegister: (email: string, password: string) => Promise<void>;
-  onConfirm: (email: string, code: string) => Promise<void>;
+interface PendingChallenge {
+  email: string;
+  user: CognitoUser;
+  destination: string | null;
 }
 
-export function AuthPage({ onLogin, onRegister, onConfirm }: AuthPageProps) {
+interface AuthPageProps {
+  onLogin: (email: string, password: string) => Promise<AuthChallengeResult>;
+  onCompletePassword: (
+    email: string,
+    user: CognitoUser,
+    newPassword: string,
+  ) => Promise<AuthChallengeResult>;
+  onConfirmMfa: (
+    email: string,
+    user: CognitoUser,
+    code: string,
+  ) => Promise<void>;
+}
+
+export function AuthPage({
+  onLogin,
+  onCompletePassword,
+  onConfirmMfa,
+}: AuthPageProps) {
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
-  const [pendingEmail, setPendingEmail] = useState("");
+  const [pendingChallenge, setPendingChallenge] =
+    useState<PendingChallenge | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -23,12 +46,39 @@ export function AuthPage({ onLogin, onRegister, onConfirm }: AuthPageProps) {
     setSuccessMsg(null);
   };
 
+  const applyChallengeResult = (result: AuthChallengeResult) => {
+    if (result.type === "new_password_required") {
+      setPendingChallenge({
+        email: result.email,
+        user: result.user,
+        destination: null,
+      });
+      setNewPassword("");
+      setConfirmPassword("");
+      setMode("new_password");
+      setSuccessMsg("Set a permanent password to finish your invitation.");
+      return;
+    }
+
+    if (result.type === "sms_mfa_required") {
+      setPendingChallenge({
+        email: result.email,
+        user: result.user,
+        destination: result.destination,
+      });
+      setCode("");
+      setMode("sms_mfa");
+      setSuccessMsg(null);
+    }
+  };
+
   const handleSignIn = async (e: FormEvent) => {
     e.preventDefault();
     clearMessages();
     setLoading(true);
     try {
-      await onLogin(email, password);
+      const result = await onLogin(email, password);
+      applyChallengeResult(result);
     } catch (err) {
       setError(normaliseError(err));
     } finally {
@@ -36,80 +86,75 @@ export function AuthPage({ onLogin, onRegister, onConfirm }: AuthPageProps) {
     }
   };
 
-  const handleSignUp = async (e: FormEvent) => {
+  const handleNewPassword = async (e: FormEvent) => {
     e.preventDefault();
     clearMessages();
-    setLoading(true);
-    try {
-      await onRegister(email, password);
-      setPendingEmail(email);
-      setMode("confirm");
-      setSuccessMsg(`We sent a verification code to ${email}.`);
-    } catch (err) {
-      setError(normaliseError(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConfirm = async (e: FormEvent) => {
-    e.preventDefault();
-    clearMessages();
-    setLoading(true);
-    try {
-      await onConfirm(pendingEmail, code);
-      setSuccessMsg("Account confirmed! Please sign in.");
+    if (!pendingChallenge) {
+      setError("Please sign in again to continue.");
       setMode("signin");
-      setEmail(pendingEmail);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await onCompletePassword(
+        pendingChallenge.email,
+        pendingChallenge.user,
+        newPassword,
+      );
       setPassword("");
-      setCode("");
+      setNewPassword("");
+      setConfirmPassword("");
+      applyChallengeResult(result);
     } catch (err) {
       setError(normaliseError(err));
     } finally {
       setLoading(false);
     }
   };
+
+  const handleSmsMfa = async (e: FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+    if (!pendingChallenge) {
+      setError("Please sign in again to continue.");
+      setMode("signin");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await onConfirmMfa(pendingChallenge.email, pendingChallenge.user, code);
+      setCode("");
+      setPendingChallenge(null);
+    } catch (err) {
+      setError(normaliseError(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const mfaDestination = pendingChallenge?.destination ?? "your phone";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-200 via-indigo-100 to-purple-200 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Card */}
         <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
-          {/* Hero header */}
           <div className="bg-gradient-to-r from-brand-500 to-indigo-500 px-5 py-6 sm:px-8 sm:py-8 text-center">
             <div className="text-5xl mb-2">🎒</div>
             <h1 className="text-2xl font-extrabold text-white tracking-tight">
               AI Homework Helper
             </h1>
             <p className="text-blue-100 text-sm mt-1">
-              Your personal study buddy for school ✨
+              Parent coaching for schoolwork
             </p>
           </div>
 
-          {/* Tab switcher (only for signin/signup) */}
-          {mode !== "confirm" && (
-            <div className="flex border-b border-gray-100">
-              {(["signin", "signup"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => {
-                    setMode(m);
-                    clearMessages();
-                  }}
-                  className={`flex-1 py-3 text-sm font-bold transition-colors ${
-                    mode === m
-                      ? "text-brand-600 border-b-2 border-brand-500"
-                      : "text-gray-400 hover:text-gray-600"
-                  }`}
-                >
-                  {m === "signin" ? "Sign In" : "Sign Up"}
-                </button>
-              ))}
-            </div>
-          )}
-
           <div className="px-5 py-5 sm:px-8 sm:py-6 space-y-4">
-            {/* Feedback messages */}
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm">
                 {error}
@@ -121,7 +166,6 @@ export function AuthPage({ onLogin, onRegister, onConfirm }: AuthPageProps) {
               </div>
             )}
 
-            {/* Sign In form */}
             {mode === "signin" && (
               <form onSubmit={handleSignIn} className="space-y-4">
                 <Input
@@ -140,78 +184,49 @@ export function AuthPage({ onLogin, onRegister, onConfirm }: AuthPageProps) {
                   placeholder="Your password"
                   autoComplete="current-password"
                 />
-                <SubmitButton loading={loading}>Let's go! 🚀</SubmitButton>
-                <p className="text-center text-sm text-gray-400">
-                  No account?{" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode("signup");
-                      clearMessages();
-                    }}
-                    className="text-brand-500 font-semibold hover:underline"
-                  >
-                    Sign up free
-                  </button>
-                </p>
+                <SubmitButton loading={loading}>Sign in</SubmitButton>
               </form>
             )}
 
-            {/* Sign Up form */}
-            {mode === "signup" && (
-              <form onSubmit={handleSignUp} className="space-y-4">
+            {mode === "new_password" && (
+              <form onSubmit={handleNewPassword} className="space-y-4">
+                <p className="text-gray-500 text-sm text-center">
+                  Create a permanent password for {pendingChallenge?.email}.
+                </p>
                 <Input
-                  label="Email"
-                  type="email"
-                  value={email}
-                  onChange={setEmail}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                />
-                <Input
-                  label="Password"
+                  label="New password"
                   type="password"
-                  value={password}
-                  onChange={setPassword}
+                  value={newPassword}
+                  onChange={setNewPassword}
                   placeholder="At least 8 characters"
                   autoComplete="new-password"
                 />
-                <SubmitButton loading={loading}>
-                  Create my account 🎉
-                </SubmitButton>
-                <p className="text-center text-sm text-gray-400">
-                  Already have one?{" "}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode("signin");
-                      clearMessages();
-                    }}
-                    className="text-brand-500 font-semibold hover:underline"
-                  >
-                    Sign in
-                  </button>
-                </p>
+                <Input
+                  label="Confirm password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={setConfirmPassword}
+                  placeholder="Repeat your new password"
+                  autoComplete="new-password"
+                />
+                <SubmitButton loading={loading}>Continue</SubmitButton>
               </form>
             )}
 
-            {/* Confirm form */}
-            {mode === "confirm" && (
-              <form onSubmit={handleConfirm} className="space-y-4">
+            {mode === "sms_mfa" && (
+              <form onSubmit={handleSmsMfa} className="space-y-4">
                 <p className="text-gray-500 text-sm text-center">
-                  Check your email for a 6-digit code and enter it below.
+                  Enter the 6-digit code sent to {mfaDestination}.
                 </p>
                 <Input
-                  label="Verification code"
+                  label="SMS code"
                   type="text"
                   value={code}
                   onChange={setCode}
                   placeholder="123456"
                   autoComplete="one-time-code"
                 />
-                <SubmitButton loading={loading}>
-                  Verify & continue ✅
-                </SubmitButton>
+                <SubmitButton loading={loading}>Verify</SubmitButton>
               </form>
             )}
           </div>
@@ -224,8 +239,6 @@ export function AuthPage({ onLogin, onRegister, onConfirm }: AuthPageProps) {
     </div>
   );
 }
-
-// ─── Small helpers ─────────────────────────────────────────────────────────────
 
 interface InputProps {
   label: string;
@@ -304,23 +317,29 @@ function SubmitButton({ loading, children }: SubmitButtonProps) {
 
 function normaliseError(err: unknown): string {
   if (err instanceof Error) {
-    // Make Cognito error messages friendlier.
     const msg = err.message;
     if (
       msg.includes("UserNotFoundException") ||
-      msg.includes("Incorrect username")
-    )
+      msg.includes("Incorrect username") ||
+      msg.includes("NotAuthorizedException")
+    ) {
       return "Email or password is incorrect.";
-    if (msg.includes("NotAuthorizedException"))
-      return "Email or password is incorrect.";
-    if (msg.includes("UsernameExistsException"))
-      return "That email is already registered. Try signing in.";
-    if (msg.includes("InvalidPasswordException"))
-      return "Password must be at least 8 characters and include a number and symbol.";
-    if (msg.includes("CodeMismatchException"))
+    }
+    if (msg.includes("PasswordResetRequiredException")) {
+      return "This account needs a password reset before signing in.";
+    }
+    if (msg.includes("InvalidPasswordException")) {
+      return "Password must be at least 8 characters and include uppercase, lowercase, and a number.";
+    }
+    if (msg.includes("CodeMismatchException")) {
       return "That code doesn't match. Please check and try again.";
-    if (msg.includes("ExpiredCodeException"))
-      return "That code has expired. Please sign up again.";
+    }
+    if (msg.includes("ExpiredCodeException")) {
+      return "That code has expired. Please sign in again.";
+    }
+    if (msg.includes("LimitExceededException")) {
+      return "Too many attempts. Please wait a moment and try again.";
+    }
     return msg;
   }
   return "Something went wrong. Please try again.";

@@ -32,6 +32,7 @@ const HAIKU_45_BASE_MODEL_ID = "anthropic.claude-haiku-4-5-20251001-v1:0";
 // compute the dollar cost of each request server-side and surface it to the UI.
 const HAIKU_45_INPUT_PRICE_PER_MTOK = "1.00";
 const HAIKU_45_OUTPUT_PRICE_PER_MTOK = "5.00";
+const COGNITO_SMS_EXTERNAL_ID = "ai-homework-helper-cognito-sms";
 
 interface AiHomeworkHelperStackProps extends cdk.StackProps {
   // Wildcard *.joe-cui.com ACM cert in us-east-1 — required region for CloudFront.
@@ -146,23 +147,57 @@ export class AiHomeworkHelperStack extends cdk.Stack {
     guardrailVersion.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
 
     // ── Cognito User Pool ──────────────────────────────────────────────────
-    // Provides authentication for the kids' app. The Lambda validates the
+    // Provides authentication for Parent Accounts. The Lambda validates the
     // Cognito-issued JWT on every request — unauthenticated calls never
     // reach Bedrock.
+    const cognitoSmsRole = new iam.Role(this, "CognitoSmsRole", {
+      assumedBy: new iam.ServicePrincipal("cognito-idp.amazonaws.com", {
+        conditions: {
+          StringEquals: { "sts:ExternalId": COGNITO_SMS_EXTERNAL_ID },
+        },
+      }),
+      description: "Allows Cognito to publish SMS MFA messages via SNS.",
+    });
+    const cognitoSmsPublishPolicy = new iam.Policy(
+      this,
+      "CognitoSmsPublishPolicy",
+      {
+        statements: [
+          new iam.PolicyStatement({
+            actions: ["sns:Publish"],
+            resources: ["*"],
+          }),
+        ],
+        roles: [cognitoSmsRole],
+      },
+    );
+
     const userPool = new cognito.UserPool(this, "HomeworkUserPool", {
       selfSignUpEnabled: false,
       signInAliases: { email: true },
       autoVerify: { email: true },
+      mfa: cognito.Mfa.REQUIRED,
+      mfaSecondFactor: {
+        sms: true,
+        otp: false,
+        email: false,
+      },
+      mfaMessage: "Your AI Homework Helper sign-in code is {####}.",
+      smsRole: cognitoSmsRole,
+      smsRoleExternalId: COGNITO_SMS_EXTERNAL_ID,
       passwordPolicy: {
         minLength: 8,
         requireLowercase: true,
         requireUppercase: true,
         requireDigits: true,
         requireSymbols: false,
+        tempPasswordValidity: cdk.Duration.days(7),
       },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+      deletionProtection: false,
     });
+    userPool.node.addDependency(cognitoSmsPublishPolicy);
 
     // SPA client — no client secret (public client, runs in browser)
     const userPoolClient = new cognito.UserPoolClient(
@@ -175,6 +210,9 @@ export class AiHomeworkHelperStack extends cdk.Stack {
           userSrp: true,
         },
         generateSecret: false,
+        accessTokenValidity: cdk.Duration.minutes(120),
+        idTokenValidity: cdk.Duration.minutes(120),
+        refreshTokenValidity: cdk.Duration.days(30),
       },
     );
 

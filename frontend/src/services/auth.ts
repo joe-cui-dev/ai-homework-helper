@@ -1,9 +1,9 @@
 import {
   CognitoUser,
   CognitoUserPool,
-  CognitoUserAttribute,
   AuthenticationDetails,
   CognitoUserSession,
+  type IAuthenticationCallback,
 } from "amazon-cognito-identity-js";
 
 const userPool = new CognitoUserPool({
@@ -11,44 +11,121 @@ const userPool = new CognitoUserPool({
   ClientId: import.meta.env.VITE_COGNITO_APP_CLIENT_ID,
 });
 
-export const signUp = (
+export interface SignedInResult {
+  type: "signed_in";
+  email: string;
+  token: string;
+}
+
+export interface NewPasswordRequiredResult {
+  type: "new_password_required";
+  email: string;
+  user: CognitoUser;
+}
+
+export interface SmsMfaRequiredResult {
+  type: "sms_mfa_required";
+  email: string;
+  user: CognitoUser;
+  destination: string | null;
+}
+
+export type AuthChallengeResult =
+  | SignedInResult
+  | NewPasswordRequiredResult
+  | SmsMfaRequiredResult;
+
+const toSignedInResult = (
+  email: string,
+  session: CognitoUserSession,
+): SignedInResult => {
+  return {
+    type: "signed_in",
+    email,
+    token: session.getAccessToken().getJwtToken(),
+  };
+};
+
+const getMfaDestination = (challengeParameters: unknown): string | null => {
+  if (!challengeParameters || typeof challengeParameters !== "object") {
+    return null;
+  }
+  const destination = (challengeParameters as Record<string, unknown>)[
+    "CODE_DELIVERY_DESTINATION"
+  ];
+  return typeof destination === "string" ? destination : null;
+};
+
+const createChallengeCallbacks = (
+  email: string,
+  user: CognitoUser,
+  resolve: (result: AuthChallengeResult) => void,
+  reject: (err: unknown) => void,
+): IAuthenticationCallback => ({
+  onSuccess: (session: CognitoUserSession) => {
+    resolve(toSignedInResult(email, session));
+  },
+  onFailure: reject,
+  newPasswordRequired: () => {
+    resolve({ type: "new_password_required", email, user });
+  },
+  mfaRequired: (_challengeName, challengeParameters) => {
+    resolve({
+      type: "sms_mfa_required",
+      email,
+      user,
+      destination: getMfaDestination(challengeParameters),
+    });
+  },
+});
+
+export const signIn = (
   email: string,
   password: string,
-): Promise<CognitoUser> => {
-  const attributes = [
-    new CognitoUserAttribute({ Name: "email", Value: email }),
-  ];
-  return new Promise((resolve, reject) => {
-    userPool.signUp(email, password, attributes, [], (err, result) => {
-      if (err || !result) return reject(err ?? new Error("Sign-up failed"));
-      resolve(result.user);
-    });
-  });
-};
-
-export const confirmSignUp = (email: string, code: string): Promise<void> => {
-  const user = new CognitoUser({ Username: email, Pool: userPool });
-  return new Promise((resolve, reject) => {
-    user.confirmRegistration(code, true, (err) => {
-      if (err) return reject(err);
-      resolve();
-    });
-  });
-};
-
-export const signIn = (email: string, password: string): Promise<string> => {
+): Promise<AuthChallengeResult> => {
   const user = new CognitoUser({ Username: email, Pool: userPool });
   const authDetails = new AuthenticationDetails({
     Username: email,
     Password: password,
   });
   return new Promise((resolve, reject) => {
-    user.authenticateUser(authDetails, {
-      onSuccess: (session: CognitoUserSession) => {
-        resolve(session.getAccessToken().getJwtToken());
+    user.authenticateUser(
+      authDetails,
+      createChallengeCallbacks(email, user, resolve, reject),
+    );
+  });
+};
+
+export const completeNewPassword = (
+  email: string,
+  user: CognitoUser,
+  newPassword: string,
+): Promise<AuthChallengeResult> => {
+  return new Promise((resolve, reject) => {
+    user.completeNewPasswordChallenge(
+      newPassword,
+      {},
+      createChallengeCallbacks(email, user, resolve, reject),
+    );
+  });
+};
+
+export const confirmSmsMfa = (
+  email: string,
+  user: CognitoUser,
+  code: string,
+): Promise<SignedInResult> => {
+  return new Promise((resolve, reject) => {
+    user.sendMFACode(
+      code,
+      {
+        onSuccess: (session: CognitoUserSession) => {
+          resolve(toSignedInResult(email, session));
+        },
+        onFailure: reject,
       },
-      onFailure: reject,
-    });
+      "SMS_MFA",
+    );
   });
 };
 

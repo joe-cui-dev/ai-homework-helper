@@ -155,7 +155,8 @@ function AppShell({
 }
 
 export default function App() {
-  const { user, loading, login, register, confirm, logout } = useAuth();
+  const { user, loading, login, completePassword, confirmMfa, logout } =
+    useAuth();
 
   if (loading) {
     return (
@@ -170,7 +171,11 @@ export default function App() {
 
   if (!user) {
     return (
-      <AuthPage onLogin={login} onRegister={register} onConfirm={confirm} />
+      <AuthPage
+        onLogin={login}
+        onCompletePassword={completePassword}
+        onConfirmMfa={confirmMfa}
+      />
     );
   }
 

@@ -362,6 +362,5 @@ npm run dev
 
 - select AI models
 - MFA
-- writing plan: add answers to planning questions
 - Update curriculum logic
 - Expand to year 12
