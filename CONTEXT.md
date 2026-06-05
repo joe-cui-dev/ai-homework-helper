@@ -13,6 +13,9 @@ A Session is a discriminated union on `sessionType` with four peer kinds:
 
 For Writing and Practice, raw Bedrock conversation state (`messages[]`, per-turn raw usage) lives in a **sidecar** S3 object at `sessions/{studentId}/{sessionType}/{sessionId}.agent.json`. The user-facing Session JSON contains no Bedrock implementation detail.
 
+### Model Choice
+The parent-selected AI quality/cost profile used for all AI calls in one Session: **Fast** for quicker, cheaper coaching, or **Advanced** for deeper coaching. A Model Choice is locked when the Session starts; Writing keeps the same choice across all later turns, and Practice inherits the choice from its origin Homework Session.
+
 ### Reading Session
 A session where the parent uploads a book (cover + a few pages of content) and the AI generates 5 grounded comprehension questions instead of solving an existing homework problem. The reader of the output is still the Parent-as-Coach. Reading-question generation is *always* grounded in the uploaded pages — generating from cover-only training-data knowledge is forbidden (see ADR 0002). If the AI judges the uploaded pages too thin to write 5 quality questions, it streams a `needs_more_pages` event with a specific request to the parent and saves no session.
 

@@ -1,0 +1,3 @@
+# ADR 0008 — Session-locked Model Choice
+
+Parents can choose a product-level Model Choice before starting a Session: `Fast` or `Advanced`. The choice is locked to the Session, persisted as `modelChoice`, and applies to all AI calls in that Session; Writing reuses it for later turns, and Practice copies it from the origin Homework Session when Practice starts. The browser sends only the stable product key (`fast` or `advanced`), while the backend owns the allowlist that maps those keys to Bedrock model IDs, prices, and IAM permissions. This preserves a simple parent-facing promise, prevents arbitrary client-selected model IDs, and avoids silent model changes inside a multi-turn Session.

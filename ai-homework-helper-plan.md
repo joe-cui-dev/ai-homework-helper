@@ -361,5 +361,6 @@ npm run dev
 ## Todo
 
 - select AI models
+- frontend unit tests
 - Update curriculum logic
 - Expand to year 12
