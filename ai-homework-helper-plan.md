@@ -361,6 +361,5 @@ npm run dev
 ## Todo
 
 - select AI models
-- MFA
 - Update curriculum logic
 - Expand to year 12
