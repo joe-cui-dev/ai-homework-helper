@@ -3,6 +3,8 @@
 // define its own event types in a separate handler.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { ModelChoice } from "./modelChoice";
+
 // ── Token usage / cost ───────────────────────────────────────────────────────
 // Returned by every Bedrock call wrapper. Aggregated server-side and surfaced
 // to the frontend in stream events and persisted in S3 alongside session JSON.
@@ -144,6 +146,7 @@ export type StreamEvent =
       sessionId: string;
       packets: BatchPacket[];
       usage: TokenUsage;
+      modelChoice: ModelChoice;
     }
   // ── Reading-task events ───────────────────────────────────────────────
   | { type: "book_analyzing" }
@@ -166,6 +169,7 @@ export type StreamEvent =
       bookContext: BookContext;
       packets: ReadingBatchPacket[];
       usage: TokenUsage;
+      modelChoice: ModelChoice;
     }
   | { type: "error"; message: string };
 
@@ -357,7 +361,13 @@ export type WritingEndedReason =
 
 // Wire format for the Writing Lambda's four NDJSON streaming endpoints.
 export type WritingStreamEvent =
-  | { type: "plan_complete"; sessionId: string; plan: WritingPlanPacket; usage: TokenUsage }
+  | {
+      type: "plan_complete";
+      sessionId: string;
+      plan: WritingPlanPacket;
+      usage: TokenUsage;
+      modelChoice: ModelChoice;
+    }
   | { type: "transcribing" }
   | {
       type: "feedback_complete";

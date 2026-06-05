@@ -6,6 +6,8 @@ export interface TokenUsage {
   costUsd: number;
 }
 
+export type ModelChoice = "fast" | "advanced";
+
 export type Subject = "math" | "science" | "english" | "other";
 export type YearLevel =
   | "year-1"
@@ -73,6 +75,7 @@ export interface SessionSummary {
   timestamp: string;
   // Discriminator. History API normalises legacy rows to "homework".
   sessionType: TaskType;
+  modelChoice?: ModelChoice;
   subjects: string[];
   imageUrls: string[];
   questions: SessionQuestion[];
@@ -112,6 +115,7 @@ export type StreamEvent =
       sessionId: string;
       packets: BatchPacket[];
       usage: TokenUsage;
+      modelChoice: ModelChoice;
     }
   // ── Reading-task events ───────────────────────────────────────────────
   | { type: "book_analyzing" }
@@ -138,6 +142,7 @@ export type StreamEvent =
       bookContext: BookContext;
       packets: ReadingBatchPacket[];
       usage: TokenUsage;
+      modelChoice: ModelChoice;
     }
   | { type: "error"; message: string };
 
@@ -304,6 +309,7 @@ export type WritingStreamEvent =
       sessionId: string;
       plan: WritingPlanPacket;
       usage: TokenUsage;
+      modelChoice: ModelChoice;
     }
   | { type: "transcribing" }
   | {

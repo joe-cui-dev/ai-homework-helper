@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { streamHomework } from "../services/homeworkApi";
-import type { BatchPacket, StreamEvent, TokenUsage } from "../types";
+import type { BatchPacket, ModelChoice, StreamEvent, TokenUsage } from "../types";
 
 type Status = "idle" | "analyzing" | "generating" | "done" | "stopped" | "error";
 
@@ -17,8 +17,14 @@ interface UseHomeworkStreamReturn {
   pending: PendingPacket[];
   totalQuestions: number;
   usage: TokenUsage | null;
+  modelChoice: ModelChoice;
   error: string | null;
-  submit: (question: string, token: string, images?: string[]) => Promise<void>;
+  submit: (
+    question: string,
+    token: string,
+    images?: string[],
+    modelChoice?: ModelChoice,
+  ) => Promise<void>;
   stop: () => void;
   reset: () => void;
 }
@@ -30,6 +36,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
   const [pending, setPending] = useState<PendingPacket[]>([]);
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [usage, setUsage] = useState<TokenUsage | null>(null);
+  const [modelChoice, setModelChoice] = useState<ModelChoice>("fast");
   const [error, setError] = useState<string | null>(null);
 
   // abortRef gates stale event processing; abortControllerRef cancels the fetch.
@@ -54,12 +61,18 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     setPending([]);
     setTotalQuestions(0);
     setUsage(null);
+    setModelChoice("fast");
     setError(null);
     pendingTextRef.current.clear();
   }, []);
 
   const submit = useCallback(
-    async (question: string, token: string, images?: string[]) => {
+    async (
+      question: string,
+      token: string,
+      images?: string[],
+      selectedModelChoice: ModelChoice = "fast",
+    ) => {
       const controller = new AbortController();
       abortControllerRef.current = controller;
       abortRef.current = false;
@@ -70,6 +83,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
       setPending([]);
       setTotalQuestions(0);
       setUsage(null);
+      setModelChoice(selectedModelChoice);
       setError(null);
 
       const handleEvent = (event: StreamEvent) => {
@@ -113,6 +127,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
           setBatchId(event.sessionId);
           setPackets(event.packets);
           setUsage(event.usage);
+          setModelChoice(event.modelChoice);
           setPending([]);
           setStatus("done");
         } else if (event.type === "error") {
@@ -122,7 +137,14 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
       };
 
       try {
-        await streamHomework(question, token, handleEvent, images, controller.signal);
+        await streamHomework(
+          question,
+          token,
+          handleEvent,
+          images,
+          controller.signal,
+          selectedModelChoice,
+        );
         setStatus((prev) =>
           prev === "analyzing" || prev === "generating" ? "done" : prev,
         );
@@ -149,6 +171,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     pending,
     totalQuestions,
     usage,
+    modelChoice,
     error,
     submit,
     stop,

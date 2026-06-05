@@ -74,6 +74,7 @@ const homeworkFixture = (
   sessionType: "homework",
   sessionId,
   studentId: "student-1",
+  modelChoice: "advanced",
   timestamp: "2026-05-01T00:00:00Z",
   updatedAt: "2026-05-01T00:00:00Z",
   usage: ZERO,
@@ -108,7 +109,20 @@ describe("createPracticeBundle", () => {
     expect(session.subject).toBe("math");
     expect(session.yearLevel).toBe("year-3");
     expect(session.status).toBe("active");
+    expect(session.modelChoice).toBe("advanced");
     expect(sidecar.bedrockMessages).toEqual([]);
+  });
+
+  it("copies modelChoice from the origin Homework session", async () => {
+    await saveSession(homeworkFixture("home-advanced", 1));
+
+    const { session } = await createPracticeBundle({
+      studentId: "student-1",
+      originSessionId: "home-advanced",
+      originQuestionId: 1,
+    });
+
+    expect(session.modelChoice).toBe("advanced");
   });
 
   it("persists the new Practice session under the practice/ prefix (not nested under origin)", async () => {
@@ -166,6 +180,7 @@ describe("loadPracticeBundle", () => {
       sessionType: "practice",
       sessionId: "stale-1",
       studentId: "student-1",
+      modelChoice: "advanced",
       timestamp: ancient,
       updatedAt: ancient,
       usage: ZERO,

@@ -1,4 +1,4 @@
-import type { WritingStreamEvent, YearLevel } from "../types";
+import type { ModelChoice, WritingStreamEvent, YearLevel } from "../types";
 
 const writingUrl = (): string => {
   const base = import.meta.env.VITE_WRITING_API_URL as string | undefined;
@@ -67,10 +67,11 @@ export const startWriting = (
   onEvent: (event: WritingStreamEvent) => void,
   signal?: AbortSignal,
   yearLevel?: YearLevel,
+  modelChoice: ModelChoice = "fast",
 ): Promise<void> =>
   streamRoute(
     "start",
-    yearLevel ? { prompt, yearLevel } : { prompt },
+    { prompt, ...(yearLevel ? { yearLevel } : {}), modelChoice },
     token,
     onEvent,
     signal,

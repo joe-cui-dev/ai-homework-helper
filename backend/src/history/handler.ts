@@ -10,6 +10,7 @@ import { listSessions } from "../shared/sessionStore";
 import type { HomeworkQuestion, Session } from "../shared/session";
 import { listPracticeSessionsForOrigin } from "../practice/practiceStorage";
 import type { PracticeSessionSummary } from "../practice/practiceStorage";
+import type { ModelChoice } from "../shared/modelChoice";
 import type {
   BookContext,
   ReadingPacket,
@@ -42,6 +43,7 @@ interface SessionSummary {
   sessionId: string;
   timestamp: string;
   sessionType: HistoryModule;
+  modelChoice: ModelChoice;
   subjects: string[];
   imageUrls: string[];
   questions: QuestionWithPractice[];
@@ -165,6 +167,7 @@ export const handler = async (
         sessionId: record.sessionId,
         timestamp: record.timestamp,
         sessionType: record.sessionType,
+        modelChoice: record.modelChoice,
         subjects,
         imageUrls,
         questions,

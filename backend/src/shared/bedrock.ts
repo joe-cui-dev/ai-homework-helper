@@ -18,33 +18,20 @@ import {
 } from "@aws-sdk/client-bedrock-runtime";
 import { jsonrepair } from "jsonrepair";
 import { logger } from "./logger";
+import type { ModelChoice } from "./modelChoice";
+import { computeCostUsdForModelChoice, resolveBedrockModel } from "./modelChoice";
 
 const client = new BedrockRuntimeClient({});
 
 const GUARDRAIL_ID = process.env.BEDROCK_GUARDRAIL_ID;
 const GUARDRAIL_VERSION = process.env.BEDROCK_GUARDRAIL_VERSION;
 
-// ── Pricing ──────────────────────────────────────────────────────────────────
-// Colocated with the model id in CDK (infra/lib/stack.ts) and passed in via
-// env vars so future model swaps update price + id together. Defaults ensure
-// the backend doesn't crash if env vars are missing in local dev — it just
-// reports cost as 0.
-const INPUT_PRICE_PER_MTOK = parseFloat(
-  process.env.BEDROCK_INPUT_PRICE_PER_MTOK ?? "0",
-);
-const OUTPUT_PRICE_PER_MTOK = parseFloat(
-  process.env.BEDROCK_OUTPUT_PRICE_PER_MTOK ?? "0",
-);
-
 export const computeCostUsd = (
   inputTokens: number,
   outputTokens: number,
+  modelChoice: ModelChoice = "fast",
 ): number => {
-  const cost =
-    (inputTokens / 1_000_000) * INPUT_PRICE_PER_MTOK +
-    (outputTokens / 1_000_000) * OUTPUT_PRICE_PER_MTOK;
-  // Round to 4 decimals — sub-cent precision is enough for display.
-  return Math.round(cost * 10_000) / 10_000;
+  return computeCostUsdForModelChoice(inputTokens, outputTokens, modelChoice);
 };
 
 // Helper: build a TokenUsage from raw counts using current price constants.
@@ -57,10 +44,11 @@ export interface RawTokenUsage {
 export const buildUsage = (
   inputTokens: number,
   outputTokens: number,
+  modelChoice: ModelChoice = "fast",
 ): RawTokenUsage => ({
   inputTokens,
   outputTokens,
-  costUsd: computeCostUsd(inputTokens, outputTokens),
+  costUsd: computeCostUsd(inputTokens, outputTokens, modelChoice),
 });
 
 export const sumUsage = (
@@ -72,7 +60,10 @@ export const sumUsage = (
     i += u.inputTokens;
     o += u.outputTokens;
   }
-  return buildUsage(i, o);
+  const costUsd =
+    Math.round(usages.reduce((sum, u) => sum + u.costUsd, 0) * 10_000) /
+    10_000;
+  return { inputTokens: i, outputTokens: o, costUsd };
 };
 
 const SYSTEM_PROMPT =
@@ -101,39 +92,48 @@ export interface CallClaudeResult {
   usage: RawTokenUsage;
 }
 
+export interface CallClaudeOptions {
+  prompt: string;
+  temperature?: number;
+  image?: string;
+  modelChoice?: ModelChoice;
+}
+
 export const callClaude = async (
-  prompt: string,
+  input: string | CallClaudeOptions,
   temperature: number = 0,
   image?: string,
+  modelChoice: ModelChoice = "fast",
 ): Promise<CallClaudeResult> => {
-  const modelId = process.env.BEDROCK_MODEL_ID;
-  if (!modelId) {
-    throw new Error("BEDROCK_MODEL_ID environment variable is not set");
-  }
+  const options: CallClaudeOptions =
+    typeof input === "string"
+      ? { prompt: input, temperature, image, modelChoice }
+      : input;
+  const model = resolveBedrockModel(options.modelChoice ?? "fast");
 
-  const userContent = image
+  const userContent = options.image
     ? (() => {
-        const { mediaType, base64Data } = parseDataUrl(image);
+        const { mediaType, base64Data } = parseDataUrl(options.image);
         return [
           {
             type: "image",
             source: { type: "base64", media_type: mediaType, data: base64Data },
           },
-          { type: "text", text: prompt },
+          { type: "text", text: options.prompt },
         ];
       })()
-    : prompt;
+    : options.prompt;
 
   const requestBody = {
     anthropic_version: "bedrock-2023-05-31",
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userContent }],
-    temperature,
+    temperature: options.temperature ?? 0,
   };
 
   const command = new InvokeModelCommand({
-    modelId,
+    modelId: model.modelId,
     contentType: "application/json",
     accept: "application/json",
     body: JSON.stringify(requestBody),
@@ -146,15 +146,17 @@ export const callClaude = async (
   });
 
   logger.debug("bedrock_invoke_start", {
-    modelId,
-    temperature,
+    modelId: model.modelId,
+    modelChoice: model.choice,
+    temperature: options.temperature ?? 0,
     guardrailEnabled: !!(GUARDRAIL_ID && GUARDRAIL_VERSION),
   });
   const invokeStart = Date.now();
 
   const response = await client.send(command);
   logger.debug("bedrock_invoke_complete", {
-    modelId,
+    modelId: model.modelId,
+    modelChoice: model.choice,
     durationMs: Date.now() - invokeStart,
   });
 
@@ -172,6 +174,7 @@ export const callClaude = async (
     usage: buildUsage(
       parsed.usage?.input_tokens ?? 0,
       parsed.usage?.output_tokens ?? 0,
+      model.choice,
     ),
   };
 };
@@ -193,29 +196,49 @@ export interface ConverseResponse {
   usage: RawTokenUsage;
 }
 
+export interface ConverseWithToolsOptions {
+  messages: BedrockMessage[];
+  tools: Tool[];
+  system: string;
+  toolChoice?: Record<string, unknown>;
+  maxTokens?: number;
+  enableGuardrail?: boolean;
+  modelChoice?: ModelChoice;
+}
+
 export const converseWithTools = async (
-  messages: BedrockMessage[],
-  tools: Tool[],
-  system: string,
+  input: BedrockMessage[] | ConverseWithToolsOptions,
+  tools?: Tool[],
+  system?: string,
   toolChoice: Record<string, unknown> = { any: {} },
   maxTokens = 4096,
   enableGuardrail = true,
+  modelChoice: ModelChoice = "fast",
 ): Promise<ConverseResponse> => {
-  const modelId = process.env.BEDROCK_MODEL_ID;
-  if (!modelId) {
-    throw new Error("BEDROCK_MODEL_ID environment variable is not set");
-  }
-
+  const options: ConverseWithToolsOptions = Array.isArray(input)
+    ? {
+        messages: input,
+        tools: tools ?? [],
+        system: system ?? "",
+        toolChoice,
+        maxTokens,
+        enableGuardrail,
+        modelChoice,
+      }
+    : input;
+  const model = resolveBedrockModel(options.modelChoice ?? "fast");
   const command = new ConverseCommand({
-    modelId,
-    messages: messages as unknown as Message[],
-    system: [{ text: system }],
-    inferenceConfig: { maxTokens },
+    modelId: model.modelId,
+    messages: options.messages as unknown as Message[],
+    system: [{ text: options.system }],
+    inferenceConfig: { maxTokens: options.maxTokens ?? 4096 },
     toolConfig: {
-      tools,
-      toolChoice: toolChoice as unknown as { any: Record<string, never> },
+      tools: options.tools,
+      toolChoice: (options.toolChoice ?? { any: {} }) as unknown as {
+        any: Record<string, never>;
+      },
     },
-    ...(enableGuardrail && GUARDRAIL_ID && GUARDRAIL_VERSION
+    ...((options.enableGuardrail ?? true) && GUARDRAIL_ID && GUARDRAIL_VERSION
       ? {
           guardrailConfig: {
             guardrailIdentifier: GUARDRAIL_ID,
@@ -227,15 +250,17 @@ export const converseWithTools = async (
   });
 
   logger.debug("bedrock_converse_start", {
-    modelId,
-    messageCount: messages.length,
+    modelId: model.modelId,
+    modelChoice: model.choice,
+    messageCount: options.messages.length,
     guardrailEnabled: !!(GUARDRAIL_ID && GUARDRAIL_VERSION),
   });
   const converseStart = Date.now();
 
   const response = await client.send(command);
   logger.debug("bedrock_converse_complete", {
-    modelId,
+    modelId: model.modelId,
+    modelChoice: model.choice,
     durationMs: Date.now() - converseStart,
     stopReason: response.stopReason,
   });
@@ -245,6 +270,7 @@ export const converseWithTools = async (
     usage: buildUsage(
       response.usage?.inputTokens ?? 0,
       response.usage?.outputTokens ?? 0,
+      model.choice,
     ),
   };
 };

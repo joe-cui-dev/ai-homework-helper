@@ -8,6 +8,7 @@ import {
 import { normalisePlan } from "../utils/normalizeWriting";
 import type {
   TokenUsage,
+  ModelChoice,
   WritingEndedReason,
   WritingPlanPacket,
   WritingStreamEvent,
@@ -37,6 +38,7 @@ interface UseWritingSessionReturn {
   draftCount: number;
   questionCount: number;
   usage: TokenUsage | null;
+  modelChoice: ModelChoice;
   endedReason: WritingEndedReason | null;
   error: string | null;
   imageUrls: string[];
@@ -45,6 +47,7 @@ interface UseWritingSessionReturn {
     prompt: { text: string; images?: string[] },
     token: string,
     yearLevel?: YearLevel,
+    modelChoice?: ModelChoice,
   ) => Promise<void>;
   submitDraft: (
     draft: { text?: string; images?: string[] },
@@ -60,6 +63,7 @@ interface UseWritingSessionReturn {
     draftCount: number;
     questionCount: number;
     usage?: TokenUsage;
+    modelChoice?: ModelChoice;
     status: "active" | "ended";
     endedReason?: WritingEndedReason;
     imageUrls?: string[];
@@ -75,6 +79,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
   const [draftCount, setDraftCount] = useState(0);
   const [questionCount, setQuestionCount] = useState(0);
   const [usage, setUsage] = useState<TokenUsage | null>(null);
+  const [modelChoice, setModelChoice] = useState<ModelChoice>("fast");
   const [endedReason, setEndedReason] = useState<WritingEndedReason | null>(
     null,
   );
@@ -92,6 +97,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
     setDraftCount(0);
     setQuestionCount(0);
     setUsage(null);
+    setModelChoice("fast");
     setEndedReason(null);
     setError(null);
     setImageUrls([]);
@@ -104,6 +110,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
     setDraftCount(input.draftCount);
     setQuestionCount(input.questionCount);
     setUsage(input.usage ?? null);
+    setModelChoice(input.modelChoice ?? "fast");
     setEndedReason(input.endedReason ?? null);
     setStatus(input.status === "ended" ? "ended" : "ready");
     setError(null);
@@ -119,6 +126,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
         setBatchId(event.sessionId);
         setPlan(normalisePlan(event.plan));
         setUsage(event.usage);
+        setModelChoice(event.modelChoice);
         setStatus("ready");
       } else if (event.type === "transcribing") {
         setStatus("transcribing");
@@ -182,7 +190,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
   );
 
   const start = useCallback<UseWritingSessionReturn["start"]>(
-    async (prompt, token, yearLevel) => {
+    async (prompt, token, yearLevel, selectedModelChoice = "fast") => {
       reset();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -194,6 +202,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
           (e) => handleEvent(e, "start"),
           controller.signal,
           yearLevel,
+          selectedModelChoice,
         );
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
@@ -289,6 +298,7 @@ export const useWritingSession = (): UseWritingSessionReturn => {
     draftCount,
     questionCount,
     usage,
+    modelChoice,
     endedReason,
     error,
     start,

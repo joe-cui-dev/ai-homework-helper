@@ -279,7 +279,7 @@ ${input.focus ? `Focus this problem on: ${input.focus}\n` : ""}${previousProblem
 Return ONLY valid JSON with no markdown fences:
 { "problem": "<problem text the parent will read to the child>", "expectedAnswer": "<the correct answer in concise form>" }`;
 
-  const { text: raw, usage } = await callClaude(prompt, 0.4);
+  const { text: raw, usage } = await callClaude(prompt, 0.4, undefined, session.modelChoice);
   accumulateUsage(usage);
   const parsed = safeJsonParse(raw, { problem: "", expectedAnswer: "" });
   if (!parsed.problem || !parsed.expectedAnswer) {
@@ -333,7 +333,7 @@ Classify the attempt as ONE of:
 Return ONLY valid JSON with no markdown fences:
 { "verdict": "<one of the above>", "explanation": "<one short adult-tone sentence explaining the diagnosis>", "suggestedNext": "<optional one-line non-binding suggestion>" }`;
 
-  const { text: raw, usage } = await callClaude(prompt, 0.2);
+  const { text: raw, usage } = await callClaude(prompt, 0.2, undefined, session.modelChoice);
   accumulateUsage(usage);
   const parsed = safeJsonParse(raw, {
     verdict: "stuck" as Verdict,
@@ -357,7 +357,7 @@ Problem: ${cur.problem}
 Concept: ${packet.whyItWorks}
 
 Return ONLY valid JSON: { "hint": "<one short year-level-appropriate Socratic prompt>" }`;
-  const { text: raw, usage } = await callClaude(prompt, 0.4);
+  const { text: raw, usage } = await callClaude(prompt, 0.4, undefined, session.modelChoice);
   accumulateUsage(usage);
   const parsed = safeJsonParse(raw, { hint: "" });
   if (!parsed.hint) throw new Error("Failed to generate a hint.");
@@ -379,7 +379,7 @@ Current problem (do not solve this; show a similar one): ${cur.problem}
 Concept: ${packet.whyItWorks}
 
 Return ONLY valid JSON: { "example": "<the worked example, multi-line plain text>" }`;
-  const { text: raw, usage } = await callClaude(prompt, 0.3);
+  const { text: raw, usage } = await callClaude(prompt, 0.3, undefined, session.modelChoice);
   accumulateUsage(usage);
   const parsed = safeJsonParse(raw, { example: "" });
   if (!parsed.example) throw new Error("Failed to produce a worked example.");
@@ -409,7 +409,7 @@ Style guidance:
 - real_world: use a concrete real-world scenario the child can relate to.
 
 Return ONLY valid JSON: { "altExplanation": "<the alternative explanation, plain text>" }`;
-  const { text: raw, usage } = await callClaude(prompt, 0.4);
+  const { text: raw, usage } = await callClaude(prompt, 0.4, undefined, session.modelChoice);
   accumulateUsage(usage);
   const parsed = safeJsonParse(raw, { altExplanation: "" });
   if (!parsed.altExplanation) {
@@ -429,7 +429,7 @@ const lookupPrerequisiteSkill = async (
 Subject: ${session.subject}
 
 Return ONLY valid JSON: { "prerequisite": "<short name of the prerequisite skill>", "why": "<one short adult-tone sentence explaining why mastering this prerequisite unblocks the current concept>" }`;
-  const { text: raw, usage } = await callClaude(prompt, 0.2);
+  const { text: raw, usage } = await callClaude(prompt, 0.2, undefined, session.modelChoice);
   accumulateUsage(usage);
   const parsed = safeJsonParse(raw, { prerequisite: "", why: "" });
   if (!parsed.prerequisite) {
@@ -580,6 +580,7 @@ export const runPracticeTurn = async (
       toolChoice,
       4096,
       false,
+      session.modelChoice,
     );
     accumulateUsage(response.usage);
 
@@ -678,7 +679,7 @@ export const runPracticeTurn = async (
         session.endedReason = endTurnInput.endedReason;
         session.finalSummary = endTurnInput.finalSummary;
       }
-      const turnUsage = buildUsage(turnInput, turnOutput);
+      const turnUsage = buildUsage(turnInput, turnOutput, session.modelChoice);
       session.usage = sumUsage(session.usage, turnUsage);
       return {
         session,

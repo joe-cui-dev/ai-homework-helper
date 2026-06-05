@@ -71,6 +71,7 @@ export const createPracticeBundle = async (
     sessionType: "practice",
     sessionId: randomUUID(),
     studentId: input.studentId,
+    modelChoice: origin.modelChoice,
     timestamp: now,
     updatedAt: now,
     usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },

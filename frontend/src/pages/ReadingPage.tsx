@@ -1,8 +1,12 @@
+import { useState } from "react";
 import { ReadingInput } from "../components/ReadingInput";
 import { ReadingPacketCard } from "../components/ReadingPacketCard";
 import { ModuleHistoryButton } from "../components/ModuleHistoryButton";
+import { ModelChoiceControl } from "../components/ModelChoiceControl";
+import { ModelChoiceBadge } from "../components/ModelChoiceBadge";
 import { useReadingStream } from "../hooks/useReadingStream";
 import { formatUsage } from "../utils/formatUsage";
+import type { ModelChoice } from "../types";
 
 interface ReadingPageProps {
   token: string;
@@ -10,6 +14,7 @@ interface ReadingPageProps {
 
 export const ReadingPage = ({ token }: ReadingPageProps) => {
   const reading = useReadingStream();
+  const [modelChoice, setModelChoice] = useState<ModelChoice>("fast");
 
   const analyzing = reading.status === "analyzing";
   const generating = reading.status === "generating";
@@ -20,7 +25,7 @@ export const ReadingPage = ({ token }: ReadingPageProps) => {
   const error = reading.status === "error";
 
   const handleSubmit = (images: string[]) => {
-    reading.submit(token, images);
+    reading.submit(token, images, modelChoice);
   };
 
   return (
@@ -40,6 +45,13 @@ export const ReadingPage = ({ token }: ReadingPageProps) => {
       )}
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+        <div className="mb-4">
+          <ModelChoiceControl
+            value={modelChoice}
+            onChange={setModelChoice}
+            disabled={working}
+          />
+        </div>
         <ReadingInput onSubmit={handleSubmit} disabled={working} />
       </div>
 
@@ -94,9 +106,10 @@ export const ReadingPage = ({ token }: ReadingPageProps) => {
       )}
 
       {(done || stopped) && reading.usage && (
-        <p className="text-xs text-gray-500 text-center px-1">
-          Batch usage: {formatUsage(reading.usage)}
-        </p>
+        <div className="flex items-center justify-center gap-2 flex-wrap text-xs text-gray-500 px-1">
+          <ModelChoiceBadge choice={reading.modelChoice} />
+          <span>Batch usage: {formatUsage(reading.usage)}</span>
+        </div>
       )}
 
       {needsMore && (

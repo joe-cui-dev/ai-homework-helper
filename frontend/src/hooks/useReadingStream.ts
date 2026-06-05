@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { streamReading } from "../services/readingApi";
 import type {
   BookContext,
+  ModelChoice,
   ReadingBatchPacket,
   StreamEvent,
   TokenUsage,
@@ -30,9 +31,14 @@ interface UseReadingStreamReturn {
   yearLevel: YearLevel | null;
   packets: ReadingBatchPacket[];
   usage: TokenUsage | null;
+  modelChoice: ModelChoice;
   needsMorePagesMessage: string | null;
   error: string | null;
-  submit: (token: string, images: string[]) => Promise<void>;
+  submit: (
+    token: string,
+    images: string[],
+    modelChoice?: ModelChoice,
+  ) => Promise<void>;
   stop: () => void;
   reset: () => void;
 }
@@ -44,6 +50,7 @@ export const useReadingStream = (): UseReadingStreamReturn => {
   const [yearLevel, setYearLevel] = useState<YearLevel | null>(null);
   const [packets, setPackets] = useState<ReadingBatchPacket[]>([]);
   const [usage, setUsage] = useState<TokenUsage | null>(null);
+  const [modelChoice, setModelChoice] = useState<ModelChoice>("fast");
   const [needsMorePagesMessage, setNeedsMorePagesMessage] = useState<
     string | null
   >(null);
@@ -67,11 +74,16 @@ export const useReadingStream = (): UseReadingStreamReturn => {
     setYearLevel(null);
     setPackets([]);
     setUsage(null);
+    setModelChoice("fast");
     setNeedsMorePagesMessage(null);
     setError(null);
   }, []);
 
-  const submit = useCallback(async (token: string, images: string[]) => {
+  const submit = useCallback(async (
+    token: string,
+    images: string[],
+    selectedModelChoice: ModelChoice = "fast",
+  ) => {
     const controller = new AbortController();
     abortControllerRef.current = controller;
     abortRef.current = false;
@@ -81,6 +93,7 @@ export const useReadingStream = (): UseReadingStreamReturn => {
     setYearLevel(null);
     setPackets([]);
     setUsage(null);
+    setModelChoice(selectedModelChoice);
     setNeedsMorePagesMessage(null);
     setError(null);
 
@@ -106,6 +119,7 @@ export const useReadingStream = (): UseReadingStreamReturn => {
         setBookContext(event.bookContext);
         setPackets(event.packets);
         setUsage(event.usage);
+        setModelChoice(event.modelChoice);
         setStatus("done");
       } else if (event.type === "error") {
         setError(event.message);
@@ -114,7 +128,13 @@ export const useReadingStream = (): UseReadingStreamReturn => {
     };
 
     try {
-      await streamReading(token, images, handleEvent, controller.signal);
+      await streamReading(
+        token,
+        images,
+        handleEvent,
+        controller.signal,
+        selectedModelChoice,
+      );
       setStatus((prev) =>
         prev === "analyzing" || prev === "generating" ? "done" : prev,
       );
@@ -139,6 +159,7 @@ export const useReadingStream = (): UseReadingStreamReturn => {
     yearLevel,
     packets,
     usage,
+    modelChoice,
     needsMorePagesMessage,
     error,
     submit,

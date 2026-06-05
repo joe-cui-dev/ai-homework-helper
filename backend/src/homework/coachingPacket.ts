@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
 import { buildUsage, converseWithTools, parseDataUrl, parseToolInput } from "../shared/bedrock";
+import type { ModelChoice } from "../shared/modelChoice";
 import type { CoachingPacket, IdentifiedQuestion } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -167,9 +168,10 @@ export const generateCoachingPackets = async (
   images: string[],
   questions: IdentifiedQuestion[],
   articleContext?: string,
+  modelChoice: ModelChoice = "fast",
 ): Promise<GenerateCoachingPacketsResult> => {
   if (questions.length === 0) {
-    return { packets: [], usage: buildUsage(0, 0) };
+    return { packets: [], usage: buildUsage(0, 0, modelChoice) };
   }
 
   // Build the user message: images first, then optional article, then the
@@ -213,6 +215,8 @@ export const generateCoachingPackets = async (
     SYSTEM_PROMPT,
     { tool: { name: "submit_coaching_packets" } },
     8192,
+    true,
+    modelChoice,
   );
 
   if (response.stopReason === "guardrail_intervened") {

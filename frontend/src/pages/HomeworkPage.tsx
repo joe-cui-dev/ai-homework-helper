@@ -1,11 +1,14 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { QuestionInput } from "../components/QuestionInput";
 import { QuestionResultList } from "../components/QuestionResultList";
 import { ProgressFeed } from "../components/ProgressFeed";
 import { ModuleHistoryButton } from "../components/ModuleHistoryButton";
+import { ModelChoiceControl } from "../components/ModelChoiceControl";
+import { ModelChoiceBadge } from "../components/ModelChoiceBadge";
 import { useHomeworkStream } from "../hooks/useHomeworkStream";
 import { formatUsage } from "../utils/formatUsage";
-import type { CoachingPacket } from "../types";
+import type { CoachingPacket, ModelChoice } from "../types";
 
 interface HomeworkPageProps {
   token: string;
@@ -14,6 +17,7 @@ interface HomeworkPageProps {
 export const HomeworkPage = ({ token }: HomeworkPageProps) => {
   const navigate = useNavigate();
   const homework = useHomeworkStream();
+  const [modelChoice, setModelChoice] = useState<ModelChoice>("fast");
 
   const analyzing = homework.status === "analyzing";
   const generating = homework.status === "generating";
@@ -23,7 +27,12 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
   const error = homework.status === "error";
 
   const handleSubmit = (question: string, images: string[]) => {
-    homework.submit(question, token, images.length > 0 ? images : undefined);
+    homework.submit(
+      question,
+      token,
+      images.length > 0 ? images : undefined,
+      modelChoice,
+    );
   };
 
   const openPractice = (
@@ -52,6 +61,13 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
       )}
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
+        <div className="mb-4">
+          <ModelChoiceControl
+            value={modelChoice}
+            onChange={setModelChoice}
+            disabled={working}
+          />
+        </div>
         <QuestionInput onSubmit={handleSubmit} disabled={working} />
       </div>
 
@@ -88,9 +104,10 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
         )}
 
       {(done || stopped) && homework.usage && (
-        <p className="text-xs text-gray-500 text-center px-1">
-          Batch usage: {formatUsage(homework.usage)}
-        </p>
+        <div className="flex items-center justify-center gap-2 flex-wrap text-xs text-gray-500 px-1">
+          <ModelChoiceBadge choice={homework.modelChoice} />
+          <span>Batch usage: {formatUsage(homework.usage)}</span>
+        </div>
       )}
 
       {error && (

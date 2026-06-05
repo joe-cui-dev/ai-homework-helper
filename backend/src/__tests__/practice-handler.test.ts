@@ -80,6 +80,7 @@ const session = (overrides: Partial<PracticeSession> = {}): PracticeSession => (
   sessionType: "practice",
   sessionId: "prac-uuid",
   studentId: "student-1",
+  modelChoice: "fast",
   timestamp: "2026-05-01T00:00:00Z",
   updatedAt: "2026-05-01T00:00:00Z",
   usage: ZERO_USAGE,

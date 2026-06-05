@@ -81,6 +81,7 @@ describe("Session round-trip", () => {
       sessionType: "homework",
       sessionId: "abc-123",
       studentId: "student-1",
+      modelChoice: "advanced",
       timestamp: "2026-05-16T10:00:00Z",
       updatedAt: "2026-05-16T10:00:00Z",
       usage: ZERO_USAGE,
@@ -114,6 +115,27 @@ describe("Session round-trip", () => {
     }
     expect(loaded.sessionId).toBe("abc-123");
     expect(loaded.studentId).toBe("student-1");
+    expect(loaded.modelChoice).toBe("advanced");
+  });
+
+  it("loads a legacy session without modelChoice as fast", async () => {
+    s3Mock._store.set(
+      "sessions/student-1/homework/legacy.json",
+      JSON.stringify({
+        sessionType: "homework",
+        sessionId: "legacy",
+        studentId: "student-1",
+        timestamp: "2026-05-16T10:00:00Z",
+        updatedAt: "2026-05-16T10:00:00Z",
+        usage: ZERO_USAGE,
+        imageKeys: [],
+        questions: [],
+      }),
+    );
+
+    const loaded = await loadSession("student-1", "homework", "legacy");
+
+    expect(loaded?.modelChoice).toBe("fast");
   });
 
   it("saves and loads a Reading session preserving bookContext and readingPackets", async () => {
@@ -132,6 +154,7 @@ describe("Session round-trip", () => {
       sessionType: "reading",
       sessionId: "read-1",
       studentId: "student-1",
+      modelChoice: "fast",
       timestamp: "2026-05-16T10:00:00Z",
       updatedAt: "2026-05-16T10:00:00Z",
       usage: ZERO_USAGE,
@@ -206,6 +229,7 @@ describe("Session round-trip", () => {
       sessionType: "writing",
       sessionId: "write-1",
       studentId: "student-1",
+      modelChoice: "fast",
       timestamp: "2026-05-16T10:00:00Z",
       updatedAt: "2026-05-16T11:00:00Z",
       usage: ZERO_USAGE,
@@ -252,6 +276,7 @@ describe("Session round-trip", () => {
       sessionType: "practice",
       sessionId: "prac-uuid-1",
       studentId: "student-1",
+      modelChoice: "advanced",
       timestamp: "2026-05-16T12:00:00Z",
       updatedAt: "2026-05-16T12:05:00Z",
       usage: ZERO_USAGE,
@@ -290,6 +315,7 @@ describe("Session round-trip", () => {
       expect(loaded.problems).toHaveLength(1);
       expect(loaded.toolCallCount).toBe(3);
       expect(loaded.subject).toBe("math");
+      expect(loaded.modelChoice).toBe("advanced");
     }
   });
 });
@@ -299,6 +325,7 @@ describe("listSessions", () => {
     sessionType: "homework",
     sessionId,
     studentId: "student-1",
+    modelChoice: "fast",
     timestamp: ts,
     updatedAt: ts,
     usage: ZERO_USAGE,
@@ -453,6 +480,7 @@ describe("Agent sidecar", () => {
       sessionType: "homework",
       sessionId: "hw-1",
       studentId: "student-1",
+      modelChoice: "fast",
       timestamp: "2024-01-01T00:00:00Z",
       updatedAt: "2024-01-01T00:00:00Z",
       usage: ZERO_USAGE,

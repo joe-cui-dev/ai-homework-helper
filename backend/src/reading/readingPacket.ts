@@ -12,6 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
 import { buildUsage, converseWithTools, parseDataUrl, parseToolInput } from "../shared/bedrock";
+import type { ModelChoice } from "../shared/modelChoice";
 import { lookupCurriculum } from "../shared/curriculum";
 import type { BookContext, ReadingPacket, YearLevel } from "../shared/types";
 import { logger } from "../shared/logger";
@@ -180,9 +181,10 @@ export const generateReadingPackets = async (
   images: string[],
   bookContext: BookContext,
   yearLevel: YearLevel,
+  modelChoice: ModelChoice = "fast",
 ): Promise<GenerateReadingPacketsResult> => {
   if (images.length === 0) {
-    return { packets: [], usage: buildUsage(0, 0) };
+    return { packets: [], usage: buildUsage(0, 0, modelChoice) };
   }
 
   const content: Record<string, unknown>[] = images.map((img, i) => {
@@ -218,6 +220,8 @@ export const generateReadingPackets = async (
     SYSTEM_PROMPT,
     { tool: { name: "submit_reading_packets" } },
     8192,
+    true,
+    modelChoice,
   );
 
   if (response.stopReason === "guardrail_intervened") {

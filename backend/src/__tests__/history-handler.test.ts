@@ -80,6 +80,7 @@ const baseSession = (overrides: Partial<HomeworkSession> = {}): HomeworkSession 
   sessionType: "homework",
   sessionId: "batch-abc",
   studentId: "student-1",
+  modelChoice: "fast",
   timestamp: "2024-01-01T00:00:00Z",
   updatedAt: "2024-01-01T00:00:00Z",
   usage: ZERO,

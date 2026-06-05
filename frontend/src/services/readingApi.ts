@@ -1,10 +1,11 @@
-import type { StreamEvent } from "../types";
+import type { ModelChoice, StreamEvent } from "../types";
 
 export const streamReading = async (
   token: string,
   images: string[],
   onEvent: (event: StreamEvent) => void,
   signal?: AbortSignal,
+  modelChoice: ModelChoice = "fast",
 ): Promise<void> => {
   const apiUrl = import.meta.env.VITE_READING_API_URL;
   if (!apiUrl) throw new Error("VITE_READING_API_URL is not configured.");
@@ -15,7 +16,7 @@ export const streamReading = async (
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ images }),
+    body: JSON.stringify({ images, modelChoice }),
     signal,
   });
 

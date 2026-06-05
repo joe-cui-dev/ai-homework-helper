@@ -16,6 +16,7 @@ import {
 } from "@aws-sdk/client-s3";
 import type { Session, SessionType } from "./session";
 import type { BedrockMessage } from "./bedrock";
+import { normaliseModelChoice } from "./modelChoice";
 import { logger } from "./logger";
 
 export interface SessionPage {
@@ -58,6 +59,16 @@ const sidecarKey = (
   sessionId: string,
 ): string => `sessions/${studentId}/${sessionType}/${sessionId}.agent.json`;
 
+const normaliseSession = (raw: unknown): Session => {
+  const session = raw as Session;
+  return {
+    ...session,
+    modelChoice: normaliseModelChoice(
+      (session as Session & { modelChoice?: unknown }).modelChoice,
+    ),
+  };
+};
+
 export const saveSession = async (session: Session): Promise<void> => {
   await s3.send(
     new PutObjectCommand({
@@ -87,7 +98,7 @@ export const loadSession = async (
     );
     const body = await response.Body?.transformToString("utf-8");
     if (!body) return null;
-    return JSON.parse(body) as Session;
+    return normaliseSession(JSON.parse(body));
   } catch (err) {
     if ((err as { name?: string }).name === "NoSuchKey") return null;
     throw err;
@@ -138,7 +149,7 @@ export const listSessions = async (
       );
       const body = await response.Body?.transformToString("utf-8");
       if (!body) return null;
-      return JSON.parse(body) as Session;
+      return normaliseSession(JSON.parse(body));
     }),
   );
 

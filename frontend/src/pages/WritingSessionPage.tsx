@@ -12,6 +12,7 @@ import { useSessionHistory } from "../hooks/useSessionHistory";
 import { WritingPlanCard } from "../components/WritingPlanCard";
 import { DraftFeedbackCard } from "../components/DraftFeedbackCard";
 import { CoachingNoteCard } from "../components/CoachingNoteCard";
+import { ModelChoiceBadge } from "../components/ModelChoiceBadge";
 import { formatUsageCompact } from "../utils/formatUsage";
 
 const MAX_DRAFT_CHARS = 4000;
@@ -49,6 +50,7 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
       draftCount: session.draftCount ?? 0,
       questionCount: session.questionCount ?? 0,
       usage: session.usage,
+      modelChoice: session.modelChoice,
       status: session.status ?? "active",
       endedReason: session.endedReason,
       imageUrls: session.imageUrls,
@@ -107,9 +109,12 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
           ←  Back
         </button>
         <div className="text-right">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-            Writing
-          </p>
+          <div className="flex items-center justify-end gap-2">
+            <ModelChoiceBadge choice={writing.modelChoice} />
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+              Writing
+            </p>
+          </div>
           <p className="text-[11px] text-gray-400">
             {writing.draftCount}/{MAX_DRAFTS} drafts ·{" "}
             {writing.questionCount}/{MAX_QUESTIONS} questions

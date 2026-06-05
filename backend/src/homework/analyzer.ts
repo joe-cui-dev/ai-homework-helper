@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
 import { buildUsage, converseWithTools, parseDataUrl, parseToolInput } from "../shared/bedrock";
+import type { ModelChoice } from "../shared/modelChoice";
 import type { PageAnalysis, IdentifiedQuestion } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -104,8 +105,9 @@ const SUBMIT_TOOL: Tool = {
 export const analyzePages = async (
   images: string[],
   questionText?: string,
+  modelChoice: ModelChoice = "fast",
 ): Promise<AnalyzePagesResult> => {
-  const zeroUsage = buildUsage(0, 0);
+  const zeroUsage = buildUsage(0, 0, modelChoice);
   // Fast path: no images, just a text question — skip the Claude call entirely.
   if (images.length === 0) {
     return {
@@ -149,6 +151,8 @@ export const analyzePages = async (
     ANALYZER_SYSTEM_PROMPT,
     { tool: { name: "submit_page_analysis" } },
     8192,
+    true,
+    modelChoice,
   );
 
   if (response.stopReason === "guardrail_intervened") {

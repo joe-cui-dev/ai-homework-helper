@@ -1,4 +1,4 @@
-import type { StreamEvent } from "../types";
+import type { ModelChoice, StreamEvent } from "../types";
 
 export const streamHomework = async (
   question: string,
@@ -6,6 +6,7 @@ export const streamHomework = async (
   onEvent: (event: StreamEvent) => void,
   images?: string[],
   signal?: AbortSignal,
+  modelChoice: ModelChoice = "fast",
 ): Promise<void> => {
   const apiUrl = import.meta.env.VITE_HOMEWORK_API_URL;
   if (!apiUrl) throw new Error("VITE_HOMEWORK_API_URL is not configured.");
@@ -19,6 +20,7 @@ export const streamHomework = async (
     body: JSON.stringify({
       question,
       images: images?.length ? images : null,
+      modelChoice,
     }),
     signal,
   });

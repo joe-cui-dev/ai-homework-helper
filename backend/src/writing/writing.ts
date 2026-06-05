@@ -17,6 +17,7 @@ import type {
   WritingPlanPacket,
   YearLevel,
 } from "../shared/types";
+import type { ModelChoice } from "../shared/modelChoice";
 import type { WritingSession } from "../shared/session";
 import type { AgentSidecar } from "../shared/sessionStore";
 import {
@@ -98,6 +99,7 @@ const guardrailMessageOf = (message: BedrockMessage): string =>
 export interface PlanTurnInput {
   promptText: string;
   promptImages: string[];
+  modelChoice: ModelChoice;
   // When the parent picked a year level on the landing page, it overrides
   // Claude's inference. Server defensively rewrites plan.yearLevel after the
   // call so a misbehaving model can't break downstream calibration.
@@ -146,6 +148,8 @@ export const runPlanTurn = async (
     buildPlanSystemPrompt(input.userYearLevel),
     { tool: { name: "submit_writing_plan" } },
     8192,
+    true,
+    input.modelChoice,
   );
 
   if (response.stopReason === "guardrail_intervened") {
@@ -264,6 +268,8 @@ export const runDraftTurn = async (
     buildDraftFeedbackSystemPrompt(session.plan),
     { tool: { name: "submit_draft_feedback" } },
     8192,
+    true,
+    session.modelChoice,
   );
 
   if (response.stopReason === "guardrail_intervened") {
@@ -348,6 +354,8 @@ export const runQuestionTurn = async (
     buildCoachingNoteSystemPrompt(session.plan),
     { tool: { name: "submit_coaching_note" } },
     2048,
+    true,
+    session.modelChoice,
   );
 
   if (response.stopReason === "guardrail_intervened") {

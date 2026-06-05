@@ -8,6 +8,7 @@ import { CoachingNoteCard } from "./CoachingNoteCard";
 import { subjectColour } from "../utils/subjectColour";
 import { formatUsageCompact } from "../utils/formatUsage";
 import { useNavigate } from "react-router-dom";
+import { ModelChoiceBadge } from "./ModelChoiceBadge";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-AU", {
@@ -52,6 +53,7 @@ export function SessionDetailModal({ session, token: _token, onClose }: SessionD
                 {subject}
               </span>
             ))}
+            <ModelChoiceBadge choice={session.modelChoice} />
             <span className="text-xs text-gray-400">{formatDate(session.timestamp)}</span>
             {session.usage && (
               <span className="text-xs text-gray-400">

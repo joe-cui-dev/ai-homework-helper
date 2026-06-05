@@ -34,6 +34,7 @@ import type {
 } from "../shared/types";
 import type { WritingSession, WritingTurn } from "../shared/session";
 import type { AgentSidecar } from "../shared/sessionStore";
+import { parseOptionalModelChoice } from "../shared/modelChoice";
 import { logger } from "../shared/logger";
 
 const verifier = CognitoJwtVerifier.create({
@@ -214,6 +215,7 @@ const handleStart = async (
   const promptText = validateText(promptObj.text, "prompt.text");
   const promptImages = validateImages(promptObj.images, MAX_IMAGES_PROMPT);
   const userYearLevel = validateYearLevel(body.yearLevel);
+  const modelChoice = parseOptionalModelChoice(body.modelChoice);
 
   if (!promptText && promptImages.length === 0) {
     writeEvent({
@@ -228,6 +230,7 @@ const handleStart = async (
   logger.info("writing_start_request", {
     imageCount: promptImages.length,
     hasText: !!promptText,
+    modelChoice,
   });
 
   // Upload prompt images first so the SessionRecord references stable S3 keys.
@@ -249,13 +252,19 @@ const handleStart = async (
     }
   }
 
-  const result = await runPlanTurn({ promptText, promptImages, userYearLevel });
+  const result = await runPlanTurn({
+    promptText,
+    promptImages,
+    userYearLevel,
+    modelChoice,
+  });
 
   const now = new Date().toISOString();
   const session: WritingSession = {
     sessionId,
     studentId,
     sessionType: "writing",
+    modelChoice,
     timestamp: now,
     updatedAt: now,
     status: "active",
@@ -285,6 +294,7 @@ const handleStart = async (
     sessionId,
     plan: result.plan,
     usage: session.usage,
+    modelChoice,
   });
 };
 

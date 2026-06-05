@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
 import { buildUsage, converseWithTools, parseDataUrl, parseToolInput } from "../shared/bedrock";
+import type { ModelChoice } from "../shared/modelChoice";
 import type { BookAnalysis } from "../shared/types";
 import { logger } from "../shared/logger";
 
@@ -97,6 +98,7 @@ const SUBMIT_TOOL: Tool = {
 
 export const analyzeBook = async (
   images: string[],
+  modelChoice: ModelChoice = "fast",
 ): Promise<AnalyzeBookResult> => {
   if (images.length === 0) {
     // No images at all — short-circuit to insufficient. Saves a Bedrock call.
@@ -108,7 +110,7 @@ export const analyzeBook = async (
         insufficientReason:
           "Please upload the book cover and a few pages of content from inside the book.",
       },
-      usage: buildUsage(0, 0),
+      usage: buildUsage(0, 0, modelChoice),
     };
   }
 
@@ -135,6 +137,8 @@ export const analyzeBook = async (
     SYSTEM_PROMPT,
     { tool: { name: "submit_book_analysis" } },
     1024,
+    true,
+    modelChoice,
   );
 
   if (response.stopReason === "guardrail_intervened") {

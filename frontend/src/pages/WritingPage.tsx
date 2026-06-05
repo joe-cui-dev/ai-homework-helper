@@ -4,7 +4,9 @@ import { compressImage } from "../services/api";
 import { useWritingSession } from "../hooks/useWritingSession";
 import { useSessionHistory } from "../hooks/useSessionHistory";
 import { ModuleHistoryButton } from "../components/ModuleHistoryButton";
-import type { SessionSummary, YearLevel } from "../types";
+import { ModelChoiceControl } from "../components/ModelChoiceControl";
+import { ModelChoiceBadge } from "../components/ModelChoiceBadge";
+import type { ModelChoice, SessionSummary, YearLevel } from "../types";
 
 const MAX_CHARS = 4000;
 const MAX_IMAGES = 5;
@@ -20,6 +22,7 @@ export const WritingPage = ({ token }: WritingPageProps) => {
 
   const [promptText, setPromptText] = useState("");
   const [yearLevel, setYearLevel] = useState<YearLevel | "">("");
+  const [modelChoice, setModelChoice] = useState<ModelChoice>("fast");
   const [images, setImages] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -74,6 +77,7 @@ export const WritingPage = ({ token }: WritingPageProps) => {
       { text: trimmed, images: images.length ? images : undefined },
       token,
       yearLevel || undefined,
+      modelChoice,
     );
   };
 
@@ -188,6 +192,12 @@ export const WritingPage = ({ token }: WritingPageProps) => {
           </select>
         </div>
 
+        <ModelChoiceControl
+          value={modelChoice}
+          onChange={setModelChoice}
+          disabled={isWorking}
+        />
+
         <button
           type="submit"
           disabled={
@@ -231,6 +241,7 @@ export const WritingPage = ({ token }: WritingPageProps) => {
                       {s.plan.yearLevel.replace("year-", "Year ")}
                     </span>
                   )}
+                  <ModelChoiceBadge choice={s.modelChoice} />
                 </div>
                 <p className="text-sm text-gray-700 line-clamp-2">
                   {s.plan?.assignmentSummary ?? s.prompt?.input ?? ""}

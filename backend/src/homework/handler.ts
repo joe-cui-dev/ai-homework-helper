@@ -23,6 +23,7 @@ import {
 import { saveSession, uploadSessionImages } from "../shared/sessionStore";
 import type { HomeworkSession } from "../shared/session";
 import type { BatchPacket, StreamEvent } from "../shared/types";
+import { parseOptionalModelChoice } from "../shared/modelChoice";
 import { logger } from "../shared/logger";
 
 const verifier = CognitoJwtVerifier.create({
@@ -100,12 +101,14 @@ export const handler = awslambda.streamifyResponse(
         question?: unknown;
         image?: unknown;
         images?: unknown;
+        modelChoice?: unknown;
       };
       try {
         body = JSON.parse(event.body ?? "{}") as {
           question?: unknown;
           image?: unknown;
           images?: unknown;
+          modelChoice?: unknown;
         };
       } catch {
         logger.warn("validation_invalid_json");
@@ -114,6 +117,16 @@ export const handler = awslambda.streamifyResponse(
       }
 
       const { question, image, images } = body;
+      let modelChoice;
+      try {
+        modelChoice = parseOptionalModelChoice(body.modelChoice);
+      } catch (err) {
+        logger.warn("validation_invalid_model_choice", {
+          message: (err as Error).message,
+        });
+        writeEvent({ type: "error", message: (err as Error).message });
+        return;
+      }
 
       const rawImages: unknown[] = Array.isArray(images)
         ? images
@@ -185,6 +198,7 @@ export const handler = awslambda.streamifyResponse(
       logger.info("request_received", {
         imageCount: validatedImages.length,
         hasText: !!trimmedQuestion,
+        modelChoice,
       });
 
       // ── Page analysis ───────────────────────────────────────────────────
@@ -192,6 +206,7 @@ export const handler = awslambda.streamifyResponse(
       const { analysis, usage: analyzeUsage } = await analyzePages(
         validatedImages,
         trimmedQuestion,
+        modelChoice,
       );
 
       if (analysis.questions.length === 0) {
@@ -253,6 +268,7 @@ export const handler = awslambda.streamifyResponse(
             chunk.images,
             chunk.questions,
             analysis.articleContext,
+            modelChoice,
           ),
         ),
       );
@@ -300,6 +316,7 @@ export const handler = awslambda.streamifyResponse(
           sessionType: "homework",
           sessionId,
           studentId,
+          modelChoice,
           timestamp: now,
           updatedAt: now,
           usage: batchUsage,
@@ -325,6 +342,7 @@ export const handler = awslambda.streamifyResponse(
         sessionId,
         packets: allBatchPackets,
         usage: batchUsage,
+        modelChoice,
       });
       logger.info("request_complete", { packetCount: allBatchPackets.length });
     } catch (err) {

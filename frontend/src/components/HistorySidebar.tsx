@@ -6,6 +6,7 @@ import type { HistoryModule } from "../services/api";
 import { subjectColour } from "../utils/subjectColour";
 import { formatUsageCompact } from "../utils/formatUsage";
 import { SessionDetailModal } from "./SessionDetailModal";
+import { ModelChoiceBadge } from "./ModelChoiceBadge";
 
 interface HistorySidebarProps {
   token: string;
@@ -96,6 +97,7 @@ function SessionCard({ session, onClick, onResume }: SessionCardProps) {
             {writingEndedChip.text}
           </span>
         )}
+        <ModelChoiceBadge choice={session.modelChoice} />
         <span className="text-xs text-gray-400">{formatDate(session.timestamp)}</span>
       </div>
 

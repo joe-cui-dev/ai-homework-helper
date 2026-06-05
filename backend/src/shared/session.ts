@@ -10,6 +10,7 @@ import type {
   WritingPlanPacket,
   YearLevel,
 } from "./types";
+import type { ModelChoice } from "./modelChoice";
 
 export type { CoachingPacket, TokenUsage };
 
@@ -19,6 +20,7 @@ export type { CoachingPacket, TokenUsage };
 export interface SessionBase {
   sessionId: string;
   studentId: string;
+  modelChoice: ModelChoice;
   timestamp: string;
   updatedAt: string;
   usage: TokenUsage;

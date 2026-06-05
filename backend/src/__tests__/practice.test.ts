@@ -11,7 +11,7 @@ import type { AgentSidecar } from "../shared/sessionStore";
 jest.mock("../shared/bedrock", () => ({
   converseWithTools: jest.fn(),
   callClaude: jest.fn(),
-  buildUsage: (i: number, o: number) => ({
+  buildUsage: (i: number, o: number, _modelChoice = "fast") => ({
     inputTokens: i,
     outputTokens: o,
     costUsd: 0,
@@ -52,6 +52,7 @@ const blankSession = (overrides: Partial<PracticeSession> = {}): PracticeSession
   sessionType: "practice",
   sessionId: "p-1",
   studentId: "student-1",
+  modelChoice: "fast",
   timestamp: "2026-05-01T00:00:00Z",
   updatedAt: "2026-05-01T00:00:00Z",
   usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },

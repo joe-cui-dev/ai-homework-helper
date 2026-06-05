@@ -19,6 +19,7 @@ import { generateReadingPackets } from "./readingPacket";
 import { saveSession, uploadSessionImages } from "../shared/sessionStore";
 import type { ReadingSession } from "../shared/session";
 import type { ReadingBatchPacket, StreamEvent } from "../shared/types";
+import { parseOptionalModelChoice } from "../shared/modelChoice";
 import { logger } from "../shared/logger";
 
 const verifier = CognitoJwtVerifier.create({
@@ -94,11 +95,12 @@ export const handler = awslambda.streamifyResponse(
       logger.appendKeys({ studentId: tokenSub });
 
       // ── Request parsing ─────────────────────────────────────────────────
-      let body: { image?: unknown; images?: unknown };
+      let body: { image?: unknown; images?: unknown; modelChoice?: unknown };
       try {
         body = JSON.parse(event.body ?? "{}") as {
           image?: unknown;
           images?: unknown;
+          modelChoice?: unknown;
         };
       } catch {
         logger.warn("validation_invalid_json");
@@ -107,6 +109,16 @@ export const handler = awslambda.streamifyResponse(
       }
 
       const { image, images } = body;
+      let modelChoice;
+      try {
+        modelChoice = parseOptionalModelChoice(body.modelChoice);
+      } catch (err) {
+        logger.warn("validation_invalid_model_choice", {
+          message: (err as Error).message,
+        });
+        writeEvent({ type: "error", message: (err as Error).message });
+        return;
+      }
 
       const rawImages: unknown[] = Array.isArray(images)
         ? images
@@ -162,12 +174,16 @@ export const handler = awslambda.streamifyResponse(
       const sessionId = uuidv4();
 
       logger.appendKeys({ sessionId });
-      logger.info("request_received", { imageCount: validatedImages.length });
+      logger.info("request_received", {
+        imageCount: validatedImages.length,
+        modelChoice,
+      });
 
       // ── Book analysis ───────────────────────────────────────────────────
       writeEvent({ type: "book_analyzing" });
       const { analysis, usage: analyzeUsage } = await analyzeBook(
         validatedImages,
+        modelChoice,
       );
 
       if (!analysis.pagesAreSufficient) {
@@ -205,6 +221,7 @@ export const handler = awslambda.streamifyResponse(
         validatedImages,
         analysis.bookContext,
         analysis.yearLevel,
+        modelChoice,
       );
 
       if (packets.length === 0) {
@@ -235,6 +252,7 @@ export const handler = awslambda.streamifyResponse(
           sessionType: "reading",
           sessionId,
           studentId,
+          modelChoice,
           timestamp: now,
           updatedAt: now,
           usage: batchUsage,
@@ -256,6 +274,7 @@ export const handler = awslambda.streamifyResponse(
         bookContext: analysis.bookContext,
         packets: readingBatchPackets,
         usage: batchUsage,
+        modelChoice,
       });
       logger.info("reading_request_complete", {
         packetCount: packets.length,
