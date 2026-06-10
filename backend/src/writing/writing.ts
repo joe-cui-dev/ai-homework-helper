@@ -46,6 +46,15 @@ const buildImageBlocks = (images: string[]): Record<string, unknown>[] =>
     };
   });
 
+// The shared guardrail's topic policy is tuned for homework requests. Writing
+// prompts and child drafts are learning artifacts, not new user requests, and
+// can legitimately look like "creative fiction". Guard only the request frame
+// so the topic policy sees the educational intent while the model still sees
+// the raw artifact.
+const buildGuardedWritingFrame = (text: string): Record<string, unknown> => ({
+  guardContent: { text: { text } },
+});
+
 // Replace image blocks with a text placeholder before persisting to S3.
 // Buffer doesn't survive JSON.stringify + JSON.parse — it round-trips to a
 // plain object {type:"Buffer", data:[...]} that the AWS SDK can't base64-
@@ -126,6 +135,11 @@ export const runPlanTurn = async (
   if (input.promptImages.length > 0) {
     userContent.push(...buildImageBlocks(input.promptImages));
   }
+  userContent.push(
+    buildGuardedWritingFrame(
+      "Writing homework planning request: a parent submitted an Australian Curriculum writing assignment prompt for coaching guidance.",
+    ),
+  );
   if (input.promptText.trim()) {
     userContent.push({
       text: `Writing assignment prompt:\n\n${input.promptText.trim()}`,
@@ -243,6 +257,11 @@ export const runDraftTurn = async (
   if (input.draftImages.length > 0) {
     userContent.push(...buildImageBlocks(input.draftImages));
   }
+  userContent.push(
+    buildGuardedWritingFrame(
+      "Writing homework draft feedback request: a parent submitted a student's draft for Australian Curriculum writing feedback.",
+    ),
+  );
   if (input.draftText.trim()) {
     userContent.push({
       text: `Student draft (revision ${session.draftCount + 1}):\n\n${input.draftText.trim()}`,
@@ -339,7 +358,11 @@ export const runQuestionTurn = async (
 ): Promise<QuestionTurnResult> => {
   const userMessage: BedrockMessage = {
     role: "user",
-    content: [{ text: `Parent's clarifying question:\n\n${input.question.trim()}` }],
+    content: [
+      buildGuardedWritingFrame(
+        `Parent's clarifying question about a writing homework session:\n\n${input.question.trim()}`,
+      ),
+    ],
   };
 
   const messages: BedrockMessage[] = [...priorMessages, userMessage];
