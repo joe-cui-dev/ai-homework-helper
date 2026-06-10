@@ -53,7 +53,7 @@ Trade-off considered and rejected: per-turn subdirectories (`turn-2/image-0.jpeg
 
 - Maximum 5 draft turns per session. Reaching the cap auto-flips the session to `status: "ended", endedReason: "max_drafts"`.
 - Maximum 3 question turns per session. Reaching the cap rejects further question turns with a `limit_reached` event but does not end the session — drafts are the main workflow.
-- 24-hour stale auto-abandon (`WRITING_SESSION_MAX_AGE_HOURS`). Lazy on read: when a session is loaded, if `status === "active"` and `updatedAt > 24 h` ago, the loader flips to `ended`/`abandoned` and persists before returning.
+- 7-day stale auto-abandon (`WRITING_SESSION_MAX_AGE_HOURS`). Lazy on read: when a session is loaded, if `status === "active"` and `updatedAt > 7 days` ago, the loader flips to `ended`/`abandoned` and persists before returning.
 
 The UI mirrors these caps for affordance disabling but is not the source of truth. The handler always validates against the server-side counters.
 
@@ -102,5 +102,5 @@ End-to-end checks live in [/Users/xiaozhoucui/.claude/plans/in-this-agentic-vali
 2. Submit a handwritten draft as an image — confirm `transcription` field renders verbatim with misspellings preserved.
 3. Submit 5 drafts; confirm the 6th is rejected server-side with `limit_reached`.
 4. Resume an active session by closing the tab and clicking the pinned active card in the sidebar.
-5. Force a stale session by editing `updatedAt` in S3 to >24 h ago; confirm the next read flips it to `abandoned` without a Bedrock call.
+5. Force a stale session by editing `updatedAt` in S3 to >7 days ago; confirm the next read flips it to `abandoned` without a Bedrock call.
 6. Ask the coach for a "stronger opening sentence" via a question turn — confirm the answer redirects to Socratic guidance and points at the gated `modelAnswer`, with no copyable content emitted.

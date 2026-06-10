@@ -116,7 +116,7 @@ describe("loadWritingBundle", () => {
   });
 
   it("flips an active session older than the stale threshold to ended/abandoned", async () => {
-    const ancient = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+    const ancient = new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString();
     const session = baseSession({ updatedAt: ancient, status: "active" });
     await saveSession(session);
 

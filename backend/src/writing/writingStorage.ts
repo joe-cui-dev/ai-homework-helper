@@ -15,7 +15,7 @@ import {
 import type { AgentSidecar } from "../shared/sessionStore";
 import { logger } from "../shared/logger";
 
-export const WRITING_SESSION_MAX_AGE_HOURS = 24;
+export const WRITING_SESSION_MAX_AGE_HOURS = 7 * 24;
 export const MAX_DRAFT_TURNS = 5;
 export const MAX_QUESTION_TURNS = 3;
 
