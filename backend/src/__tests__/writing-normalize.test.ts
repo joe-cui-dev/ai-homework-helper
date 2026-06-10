@@ -65,3 +65,39 @@ describe("normaliseDraftFeedback - oneWish", () => {
     });
   });
 });
+
+describe("normaliseDraftFeedback - rubric scores", () => {
+  it("keeps rubric scores when Bedrock wraps scalar values in tool XML", () => {
+    const packet = basePacket({
+      evidenceQuote: "quote",
+      comment: "comment",
+      revisionSuggestion: "suggestion",
+    });
+    packet.rubric.dimensions = [
+      {
+        name: "Ideas & Content",
+        score: "<answer>1</answer>" as never,
+        rationale: "r",
+      },
+      {
+        name: "Structure & Organisation",
+        score: "<parameter>2</parameter>" as never,
+        rationale: "r",
+      },
+      {
+        name: "Language & Vocabulary",
+        score: "<item>4</item>" as never,
+        rationale: "r",
+      },
+      {
+        name: "Mechanics",
+        score: "1" as never,
+        rationale: "r",
+      },
+    ];
+
+    const out = normaliseDraftFeedback(packet);
+
+    expect(out.rubric.dimensions.map((d) => d.score)).toEqual([1, 2, 4, 1]);
+  });
+});

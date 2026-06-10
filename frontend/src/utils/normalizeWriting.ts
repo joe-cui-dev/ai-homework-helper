@@ -21,7 +21,10 @@ import type {
 const ITEM_TAG_RE = /<item[^>]*>([\s\S]*?)<\/item>/gi;
 
 const stripXmlGarbage = (s: string): string =>
-  s.replace(/<\/?(?:invoke|parameter|answer|tool_use|tool_result)[^>]*>/gi, "");
+  s.replace(
+    /<\/?(?:invoke|parameter|answer|item|tool_use|tool_result)[^>]*>/gi,
+    "",
+  );
 
 const stringArray = (v: unknown): string[] => {
   if (Array.isArray(v)) {
@@ -109,14 +112,6 @@ const asRubricDimension = (
 ): RubricDimension | null => {
   if (typeof item !== "object" || item === null) return null;
   const obj = item as Record<string, unknown>;
-  const rawScore = obj.score;
-  let score: 1 | 2 | 3 | 4 = 3;
-  if (rawScore === 1 || rawScore === 2 || rawScore === 3 || rawScore === 4) {
-    score = rawScore;
-  } else if (typeof rawScore === "string") {
-    const parsed = parseInt(rawScore, 10);
-    if (parsed >= 1 && parsed <= 4) score = parsed as 1 | 2 | 3 | 4;
-  }
   const name =
     typeof obj.name === "string" &&
     (RUBRIC_NAMES as string[]).includes(obj.name)
@@ -124,9 +119,20 @@ const asRubricDimension = (
       : RUBRIC_NAMES[fallbackIndex] ?? RUBRIC_NAMES[0];
   return {
     name,
-    score,
+    score: asRubricScore(obj.score),
     rationale: asString(obj.rationale),
   };
+};
+
+const asRubricScore = (rawScore: unknown): 1 | 2 | 3 | 4 => {
+  if (rawScore === 1 || rawScore === 2 || rawScore === 3 || rawScore === 4) {
+    return rawScore;
+  }
+  if (typeof rawScore === "string") {
+    const parsed = parseInt(stripXmlGarbage(rawScore).trim(), 10);
+    if (parsed >= 1 && parsed <= 4) return parsed as 1 | 2 | 3 | 4;
+  }
+  return 3;
 };
 
 const asModelAnswerPair = (v: unknown): ModelAnswerPair => {
