@@ -1,111 +1,90 @@
 # AI Homework Helper
 
-A serverless AI tutor for Australian primary school students (Years 1–6). Students submit a homework question and receive a step-by-step explanation tailored to their year level.
+A serverless, parent-led AI coaching app for Australian primary-school students (Years 1–6). Parents sign in with an invite-only Cognito account, submit learning material, and receive guidance they can use to coach their child.
 
-> **MVP status:** Backend and infrastructure are complete. Frontend is not yet built.
+## What it provides
 
-## How it works
+- **Homework** — upload a worksheet or enter questions; the app extracts questions and creates one `CoachingPacket` for each.
+- **Reading** — upload a book cover and pages; the app creates five comprehension `ReadingPacket`s grounded only in those pages.
+- **Writing** — start from an assignment prompt, receive a parent coaching plan, then return with drafts or clarifying questions in the same Writing Session.
+- **Practice** — launch an adaptive, multi-turn tutor from a Homework question.
 
-The backend runs an agentic loop powered by **Amazon Bedrock (Claude Haiku 4.5)**. For each question the agent:
-
-1. Classifies the subject and year level
-2. Optionally looks up relevant Australian Curriculum outcomes
-3. Optionally fetches the student's recent session history for personalisation
-4. Solves the question step by step
-5. Rewrites the solution in age-appropriate language
-6. Optionally generates Socratic hints
-
-Responses stream back to the client as NDJSON events over a Lambda Function URL.
+Parents choose **Fast** (Claude Haiku 4.5) or **Advanced** (Claude Sonnet 4.6) when starting Homework, Reading, or Writing. The choice is retained for that Session; Practice inherits it from its source Homework Session.
 
 ## Architecture
 
-```
-Client → Lambda Function URL (streaming)
-              │
-              ├── Amazon Bedrock (Claude Haiku 4.5)
-              ├── Amazon Cognito  (JWT auth)
-              ├── S3              (session history)
-              └── Bedrock Guardrails (content safety)
+```text
+React SPA (CloudFront + S3)
+        |
+        +-- Cognito: invite-only Parent Accounts with required SMS MFA
+        |
+        +-- Lambda Function URLs: Homework, Reading, Writing, Practice, History
+                |
+                +-- Amazon Bedrock: Fast / Advanced models and Guardrails
+                +-- S3: session records, agent sidecars, uploaded images
 ```
 
-| Layer          | Technology                                        |
-| -------------- | ------------------------------------------------- |
-| Backend        | AWS Lambda, Node.js 24, TypeScript                |
-| AI             | Amazon Bedrock — Claude Haiku 4.5                 |
-| Auth           | Amazon Cognito (access token, verified in Lambda) |
-| Storage        | S3 — session history as JSON, 30-day expiry       |
-| Infrastructure | AWS CDK v2 (TypeScript)                           |
-| Logging        | `@aws-lambda-powertools/logger` → CloudWatch Logs |
+All POST coaching endpoints stream NDJSON responses. Homework and Reading are one-shot pipelines; Writing keeps session-level state across requests; Practice may call its tutoring tools repeatedly within a turn. Session data expires after 30 days.
 
 ## Prerequisites
 
 - Node.js 22+
-- AWS CLI configured with credentials for your target account
-- Bedrock model access enabled for `anthropic.claude-haiku-4-5-20251001-v1:0` in your region
+- AWS CLI credentials for the target account
+- Bedrock access to the configured Claude Haiku 4.5 and Claude Sonnet 4.6 inference profiles
+- An ACM certificate for the configured site domain in `us-east-1`; see `infra/bin/app.ts` for the required infrastructure configuration
 
 ## Getting started
 
 ```bash
-# Install all workspace dependencies
 npm install
 
-# Deploy to AWS
+# Copy the frontend template and add the deployed CDK output values.
+cp frontend/.env.local.example frontend/.env.local
+
+# Start the SPA locally at http://localhost:5173.
+npm run dev
+```
+
+After deployment, copy these CDK outputs into `frontend/.env.local`: `HomeworkApiUrl`, `ReadingApiUrl`, `WritingApiUrl`, `PracticeApiUrl`, `HistoryApiUrl`, `UserPoolId`, and `UserPoolClientId`. See [frontend/.env.local.example](frontend/.env.local.example) for the exact variable names.
+
+To build and deploy the SPA and infrastructure together:
+
+```bash
 npm run deploy
 ```
 
-CDK outputs the Lambda Function URL and Cognito IDs after a successful deploy.
+## Repository layout
 
-## Configuration
-
-All environment variables are set by CDK — you don't need a `.env` file.
-
-| Variable                | Set by                      | Description                       |
-| ----------------------- | --------------------------- | --------------------------------- |
-| `BEDROCK_MODEL_ID`      | CDK                         | Bedrock model identifier          |
-| `S3_BUCKET_NAME`        | CDK                         | Session history bucket            |
-| `BEDROCK_GUARDRAIL_ID`  | CDK                         | Guardrail for content safety      |
-| `COGNITO_USER_POOL_ID`  | CDK                         | Cognito User Pool                 |
-| `COGNITO_APP_CLIENT_ID` | CDK                         | Cognito App Client                |
-| `ALLOWED_ORIGIN`        | CDK context `allowedOrigin` | CORS allowed origin (default `*`) |
-| `SERVICE_NAME`          | CDK                         | Powertools service name           |
-| `LOG_LEVEL`             | CDK context `logLevel`      | Log verbosity (default `INFO`)    |
-
-To override context values at deploy time:
-
-```bash
-cdk deploy --context logLevel=DEBUG --context allowedOrigin=https://example.com
-```
-
-## Repo structure
-
-```
+```text
 ai-homework-helper/
-├── package.json          # npm workspaces root
-├── backend/
-│   └── src/
-│       ├── handler.ts    # Lambda entry point (streaming)
-│       ├── agent.ts      # Bedrock agentic loop
-│       ├── pipeline.ts   # Solve / explain / hint skills
-│       ├── bedrock.ts    # Bedrock SDK wrappers
-│       ├── storage.ts    # S3 session read/write
-│       ├── curriculum.ts # Australian Curriculum data (local)
-│       ├── logger.ts     # Powertools logger singleton
-│       └── types.ts      # Shared types
-├── frontend/             # Not yet built
-└── infra/
-    ├── bin/app.ts        # CDK app entry point
-    └── lib/stack.ts      # Full stack definition
+├── backend/src/
+│   ├── homework/        # Worksheet analysis and coaching packets
+│   ├── reading/         # Grounded book comprehension packets
+│   ├── writing/         # Multi-turn writing coaching
+│   ├── practice/        # Adaptive tutor loop
+│   ├── history/         # Per-module session history
+│   └── shared/          # Bedrock, sessions, storage, curriculum, logging
+├── frontend/            # React + Vite SPA
+├── infra/               # AWS CDK stack and frontend deployment
+├── CONTEXT.md           # Domain glossary
+└── docs/adr/            # Architecture decision records
 ```
 
-## Running tests
+## Commands
 
 ```bash
+npm run dev              # Run the frontend development server
+npm run build            # Build the frontend
+npm test                 # Run workspace tests
+npm run deploy           # Build the frontend and deploy the CDK stack
+
+cd backend && npm run build
 cd backend && npm test
+cd infra && npm run synth
 ```
 
-## Safety
+## Safety and privacy
 
-Content safety is enforced at two layers:
+Every backend endpoint verifies a Cognito access token and derives the account-scoped `studentId` from the token's `sub` claim; clients cannot choose it. Bedrock Guardrails apply content, PII, prompt-attack, and off-topic protections to model calls. The authenticated identity is a Parent Account, while the child is the subject of the coaching.
 
-- **Bedrock Guardrails** — blocks harmful content, profanity, PII, and off-topic requests before they reach the model
-- **Cognito JWT validation** — every request requires a valid access token; the student ID is always taken from the verified token, never from the request body
+See [CONTEXT.md](CONTEXT.md) for canonical domain language and [docs/adr](docs/adr) for the durable design decisions.

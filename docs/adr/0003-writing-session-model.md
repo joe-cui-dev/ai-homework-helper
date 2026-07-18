@@ -90,13 +90,17 @@ The single `modelAnswer: string` on the WritingPlan was replaced with a structur
 
 ## Amendments
 
+### 2026-07-18 — Verification reference retired
+
+The external local-plan link formerly used by the Verification section no longer exists in this repository. The checks below remain useful acceptance checks; the automated regression coverage now lives under `backend/src/__tests__/` and `frontend/src/` test files.
+
 ### 2026-05-10 — Year level may be sourced from parent input
 
 The "lock both for the rest of this writing session" decision (§Decisions) is preserved, but the *source* of `yearLevel` is no longer inference-only. The writing landing page exposes an optional year-level picker; when set, the value is passed to `/writing/start` and treated as authoritative for the entire session (server defensively overwrites `plan.yearLevel` after the Bedrock call). The plan packet gains `yearLevelSource: "user" | "inferred"` so readers and telemetry can tell the two paths apart. The previous "when in doubt, choose the lower year" instruction in `buildPlanSystemPrompt` is removed — it was a workaround for the fact that wrong inference couldn't be corrected, and the override now provides the correction path. Genre remains inference-only and locked.
 
 ## Verification
 
-End-to-end checks live in [/Users/xiaozhoucui/.claude/plans/in-this-agentic-validated-cook.md](../../.claude/plans/in-this-agentic-validated-cook.md) (the implementation plan). The most important to run on first deploy:
+The most important acceptance checks to run on first deploy:
 
 1. Submit a typed prompt → receive a plan → submit a typed draft → receive feedback. Confirm the rubric strip renders, two stars + one wish are present, and `nextStep` chip is visible.
 2. Submit a handwritten draft as an image — confirm `transcription` field renders verbatim with misspellings preserved.

@@ -1,14 +1,16 @@
-# Handoff: Session-Locked Model Choice Implementation
+# Historical Handoff: Session-Locked Model Choice Implementation
+
+> **Status: completed.** The described implementation landed in commit `eb6e84e` on 2026-06-05. This file is retained as design and implementation history only; use [CONTEXT.md](../CONTEXT.md), [ADR 0008](./adr/0008-session-locked-model-choice.md), and the current code as the source of truth.
 
 Date: 2026-06-05
 
 Workspace: `/Users/xiaozhoucui/repos/ai-homework-helper`
 
-Next session focus: implement parent-selectable Bedrock model choice across Homework, Reading, Writing, and inherited Practice sessions.
+Original next-session focus: implement parent-selectable Bedrock model choice across Homework, Reading, Writing, and inherited Practice sessions.
 
 ## Current State
 
-The grilling/design session is complete. No implementation has been done yet beyond documentation artifacts.
+This section records the state before implementation; it is no longer current.
 
 Changed workspace files:
 
