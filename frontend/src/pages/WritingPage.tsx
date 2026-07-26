@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { compressImage } from "../services/api";
 import { useWritingSession } from "../hooks/useWritingSession";
 import { useSessionHistory } from "../hooks/useSessionHistory";
 import { ModuleHistoryButton } from "../components/ModuleHistoryButton";
 import { ModelChoiceControl } from "../components/ModelChoiceControl";
 import { ModelChoiceBadge } from "../components/ModelChoiceBadge";
+import {
+  ImageAttachmentField,
+  guardFormDrop,
+  type ImageAttachmentValue,
+} from "../components/ImageAttachmentField";
 import type { ModelChoice, SessionSummary, YearLevel } from "../types";
 
 const MAX_CHARS = 4000;
@@ -23,10 +27,8 @@ export const WritingPage = ({ token }: WritingPageProps) => {
   const [promptText, setPromptText] = useState("");
   const [yearLevel, setYearLevel] = useState<YearLevel | "">("");
   const [modelChoice, setModelChoice] = useState<ModelChoice>("fast");
-  const [images, setImages] = useState<string[]>([]);
-  const [imageError, setImageError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<ImageAttachmentValue[]>([]);
   const [isCompressing, setIsCompressing] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const activeSessions: SessionSummary[] = sessions.filter(
     (s) => s.sessionType === "writing" && s.status === "active",
@@ -39,40 +41,12 @@ export const WritingPage = ({ token }: WritingPageProps) => {
     }
   }, [status, sessionId, navigate]);
 
-  const handleImageChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    setImageError(null);
-    const remaining = MAX_IMAGES - images.length;
-    const slice = files.slice(0, remaining);
-    if (files.length > remaining) {
-      setImageError(`You can attach at most ${MAX_IMAGES} images.`);
-    }
-    setIsCompressing(true);
-    const results = await Promise.allSettled(slice.map(compressImage));
-    setIsCompressing(false);
-    const successful: string[] = [];
-    for (const r of results) {
-      if (r.status === "fulfilled") successful.push(r.value);
-      else
-        setImageError(
-          r.reason instanceof Error ? r.reason.message : "Invalid image.",
-        );
-    }
-    if (successful.length > 0) setImages((prev) => [...prev, ...successful]);
-    e.target.value = "";
-  };
-
-  const removeImage = (index: number) => {
-    setImages((prev) => prev.filter((_, i) => i !== index));
-    setImageError(null);
-  };
-
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const trimmed = promptText.trim();
-    if (!trimmed && images.length === 0) return;
+    if (!trimmed && attachments.length === 0) return;
     if (status === "starting") return;
+    const images = attachments.map((a) => a.dataUrl);
     void start(
       { text: trimmed, images: images.length ? images : undefined },
       token,
@@ -101,7 +75,12 @@ export const WritingPage = ({ token }: WritingPageProps) => {
         </p>
       </header>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
+      <form
+        onSubmit={handleSubmit}
+        onDragOver={guardFormDrop}
+        onDrop={guardFormDrop}
+        className="space-y-3"
+      >
         <div className="relative">
           <textarea
             value={promptText}
@@ -122,51 +101,17 @@ export const WritingPage = ({ token }: WritingPageProps) => {
           </span>
         </div>
 
-        <div className="flex items-start gap-3 flex-wrap">
-          {images.length < MAX_IMAGES && !isCompressing && (
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={isWorking}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border-2 border-dashed border-gray-300 text-gray-500 hover:border-violet-400 hover:text-violet-600 transition-colors text-sm font-semibold disabled:opacity-40 shrink-0"
-            >
-              📎 {images.length === 0 ? "Add a photo" : "Add another"}
-            </button>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={handleImageChange}
-          />
-          {images.map((src, i) => (
-            <div key={i} className="relative inline-block">
-              <img
-                src={src}
-                alt={`Prompt page ${i + 1}`}
-                className="w-16 h-16 rounded-xl object-cover border-2 border-violet-200"
-              />
-              <button
-                type="button"
-                onClick={() => removeImage(i)}
-                className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-400 text-white text-xs flex items-center justify-center hover:bg-red-500"
-                aria-label={`Remove image ${i + 1}`}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          {isCompressing && (
-            <p className="text-gray-400 text-sm self-center animate-pulse">
-              Compressing…
-            </p>
-          )}
-          {imageError && (
-            <p className="text-red-500 text-sm self-center">{imageError}</p>
-          )}
-        </div>
+        <ImageAttachmentField
+          attachments={attachments}
+          onChange={setAttachments}
+          maxAttachments={MAX_IMAGES}
+          disabled={isWorking}
+          accent="violet"
+          prompt="Drag and drop a photo of the assignment"
+          hint={`or click to choose files (up to ${MAX_IMAGES})`}
+          getPreviewLabel={(index, total) => (total > 1 ? `p${index + 1}` : undefined)}
+          onProcessingChange={setIsCompressing}
+        />
 
         <div className="flex items-center gap-3">
           <label
@@ -203,7 +148,7 @@ export const WritingPage = ({ token }: WritingPageProps) => {
           disabled={
             isWorking ||
             isCompressing ||
-            (!promptText.trim() && images.length === 0)
+            (!promptText.trim() && attachments.length === 0)
           }
           className="w-full py-3 rounded-2xl bg-gradient-to-r from-violet-500 to-indigo-500 text-white font-bold text-lg shadow-md hover:shadow-lg hover:from-violet-600 hover:to-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >

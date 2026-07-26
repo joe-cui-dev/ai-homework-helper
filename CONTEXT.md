@@ -61,6 +61,11 @@ The complete parent-facing review of one Session, read at the time the parent se
 ### Practice Summary
 A parent-facing review summary of one Practice Session as it appears inside its origin Homework Session Detail. It includes the Practice Session's recent activity time, status and ended reason, problem count, final summary, Model Choice, usage, and the appropriate resume or start-again action. It excludes raw Bedrock messages, tool payloads, the internal tool log, prompts, and other agent implementation detail.
 
+### Image Attachment
+A parent-supplied image staged as part of a new Session or a Writing draft turn. It becomes durable only when the submission succeeds, at which point it is represented internally by an Image Key.
+
+_Avoid_: Uploaded file, file attachment
+
 ### Image Key
 The S3 object key for an uploaded image associated with a session. Format: `sessions/{studentId}/{sessionType}/{sessionId}/image-{i}.{ext}` (Homework, Reading) or `sessions/{studentId}/writing/{sessionId}/{role}-{turnIndex?}-image-{i}.{ext}` (Writing — `prompt-image-0.jpeg`, `draft-2-image-0.jpeg`). Stored once per session — all questions within the session share the same image keys. Distinct from the base64 data URL used during request processing — the key is a stable S3 reference; the data URL is transient.
 

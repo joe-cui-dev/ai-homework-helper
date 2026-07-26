@@ -1,18 +1,16 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type FormEvent,
-} from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { compressImage } from "../services/api";
 import { MAX_DRAFTS, MAX_QUESTIONS, useWritingSession } from "../hooks/useWritingSession";
 import { useSessionHistory } from "../hooks/useSessionHistory";
 import { WritingPlanCard } from "../components/WritingPlanCard";
 import { DraftFeedbackCard } from "../components/DraftFeedbackCard";
 import { CoachingNoteCard } from "../components/CoachingNoteCard";
 import { ModelChoiceBadge } from "../components/ModelChoiceBadge";
+import {
+  ImageAttachmentField,
+  guardFormDrop,
+  type ImageAttachmentValue,
+} from "../components/ImageAttachmentField";
 import { formatUsageCompact } from "../utils/formatUsage";
 
 const MAX_DRAFT_CHARS = 4000;
@@ -317,47 +315,33 @@ function DraftSubmitForm({
   token: string;
 }) {
   const [text, setText] = useState("");
-  const [images, setImages] = useState<string[]>([]);
-  const [imageError, setImageError] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<ImageAttachmentValue[]>([]);
   const [isCompressing, setIsCompressing] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   const isWorking =
     writing.status === "submitting_draft" || writing.status === "transcribing";
 
-  const onFiles = async (e: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    setImageError(null);
-    const remaining = MAX_DRAFT_IMAGES - images.length;
-    const slice = files.slice(0, remaining);
-    setIsCompressing(true);
-    const results = await Promise.allSettled(slice.map(compressImage));
-    setIsCompressing(false);
-    const ok: string[] = [];
-    for (const r of results) {
-      if (r.status === "fulfilled") ok.push(r.value);
-      else setImageError(r.reason instanceof Error ? r.reason.message : "Invalid image.");
-    }
-    if (ok.length) setImages((prev) => [...prev, ...ok]);
-    e.target.value = "";
-  };
-
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const trimmed = text.trim();
-    if (!trimmed && images.length === 0) return;
+    if (!trimmed && attachments.length === 0) return;
     if (isWorking) return;
+    const images = attachments.map((a) => a.dataUrl);
     await writing.submitDraft(
       { text: trimmed || undefined, images: images.length ? images : undefined },
       token,
     );
     setText("");
-    setImages([]);
+    setAttachments([]);
   };
 
   return (
-    <form onSubmit={submit} className="space-y-3">
+    <form
+      onSubmit={submit}
+      onDragOver={guardFormDrop}
+      onDrop={guardFormDrop}
+      className="space-y-3"
+    >
       <div className="relative">
         <textarea
           value={text}
@@ -371,57 +355,25 @@ function DraftSubmitForm({
           {MAX_DRAFT_CHARS - text.length}
         </span>
       </div>
-      <div className="flex items-start gap-2 flex-wrap">
-        {images.length < MAX_DRAFT_IMAGES && !isCompressing && (
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={isWorking}
-            className="px-3 py-1.5 rounded-xl border-2 border-dashed border-gray-300 text-gray-500 hover:border-violet-400 hover:text-violet-600 text-xs font-semibold disabled:opacity-40"
-          >
-            📎 Photo of handwriting
-          </button>
-        )}
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={onFiles}
-        />
-        {images.map((src, i) => (
-          <div key={i} className="relative inline-block">
-            <img
-              src={src}
-              alt={`Draft page ${i + 1}`}
-              className="w-12 h-12 rounded-lg object-cover border-2 border-violet-200"
-            />
-            <button
-              type="button"
-              onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
-              className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-400 text-white text-[10px] flex items-center justify-center"
-              aria-label={`Remove image ${i + 1}`}
-            >
-              ×
-            </button>
-          </div>
-        ))}
-        {isCompressing && (
-          <p className="text-gray-400 text-xs self-center animate-pulse">
-            Compressing…
-          </p>
-        )}
-        {imageError && (
-          <p className="text-red-500 text-xs self-center">{imageError}</p>
-        )}
-      </div>
+
+      <ImageAttachmentField
+        attachments={attachments}
+        onChange={setAttachments}
+        maxAttachments={MAX_DRAFT_IMAGES}
+        disabled={isWorking}
+        accent="violet"
+        prompt="Drag and drop a photo of the handwriting"
+        hint="or click to choose files"
+        compact
+        onProcessingChange={setIsCompressing}
+      />
+
       <button
         type="submit"
         disabled={
           isWorking ||
           isCompressing ||
-          (!text.trim() && images.length === 0)
+          (!text.trim() && attachments.length === 0)
         }
         className="w-full py-2.5 rounded-xl bg-violet-600 text-white font-bold text-sm hover:bg-violet-700 disabled:opacity-50"
       >

@@ -10,7 +10,9 @@ vi.mock("../services/api", () => ({
 
 describe("ReadingInput", () => {
   beforeEach(() => {
-    vi.mocked(compressImage).mockResolvedValue("data:image/png;base64,cover");
+    vi.mocked(compressImage).mockImplementation((file: File) =>
+      Promise.resolve(`data:image/png;base64,${file.name}`),
+    );
   });
 
   it("requires an uploaded cover before submitting", async () => {
@@ -24,9 +26,31 @@ describe("ReadingInput", () => {
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     await user.upload(input, new File(["cover"], "cover.png", { type: "image/png" }));
 
-    await waitFor(() => expect(screen.getByAltText("Book cover")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByAltText("cover preview")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: /Generate questions/ }));
 
-    expect(onSubmit).toHaveBeenCalledWith(["data:image/png;base64,cover"]);
+    expect(onSubmit).toHaveBeenCalledWith(["data:image/png;base64,cover.png"]);
+  });
+
+  it("labels the first attachment as the cover and later ones as pages", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(<ReadingInput onSubmit={onSubmit} disabled={false} />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(input, [
+      new File(["cover"], "cover.png", { type: "image/png" }),
+      new File(["page"], "page.png", { type: "image/png" }),
+    ]);
+
+    await waitFor(() => expect(screen.getByText("cover")).toBeInTheDocument());
+    expect(screen.getByText("p1")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Generate questions/ }));
+    expect(onSubmit).toHaveBeenCalledWith([
+      "data:image/png;base64,cover.png",
+      "data:image/png;base64,page.png",
+    ]);
   });
 });
