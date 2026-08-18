@@ -68,6 +68,7 @@ export interface IdentifiedQuestion {
 
 export interface PageAnalysis {
   articleContext?: string;
+  pageContexts?: string[];
   questions: IdentifiedQuestion[];
 }
 
@@ -147,6 +148,9 @@ export type StreamEvent =
       packets: BatchPacket[];
       usage: TokenUsage;
       modelChoice: ModelChoice;
+      pageCount?: number;
+      updatedQuestionIds?: number[];
+      possiblyRepeatedQuestionIds?: number[];
     }
   // ── Reading-task events ───────────────────────────────────────────────
   | { type: "book_analyzing" }
@@ -171,7 +175,7 @@ export type StreamEvent =
       usage: TokenUsage;
       modelChoice: ModelChoice;
     }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; code?: "validation" | "not_found" | "page_limit" | "question_limit" | "conflict" | "in_progress" };
 
 // ── Phase 2: Practice Tutor Loop ─────────────────────────────────────────────
 

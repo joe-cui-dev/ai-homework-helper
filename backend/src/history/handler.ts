@@ -7,7 +7,7 @@ import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { listSessions } from "../shared/sessionStore";
-import type { HomeworkQuestion, Session } from "../shared/session";
+import { homeworkImageKeys, type HomeworkQuestion, type Session } from "../shared/session";
 import { listPracticeSessionsForOrigin } from "../practice/practiceStorage";
 import type { PracticeSessionSummary } from "../practice/practiceStorage";
 import type { ModelChoice } from "../shared/modelChoice";
@@ -122,12 +122,14 @@ export const handler = async (
   const topLevel = sessions as Exclude<Session, { sessionType: "practice" }>[];
 
   const summaries: SessionSummary[] = await Promise.all(
-    topLevel.map(async (record) => {
+    topLevel.filter((record) => record.sessionType !== "homework" || record.questions.length > 0).map(async (record) => {
       // For writing, surface only prompt images. Otherwise the session's imageKeys.
       const presignKeys =
         record.sessionType === "writing"
           ? record.prompt.imageKeys
-          : record.imageKeys;
+          : record.sessionType === "homework"
+            ? homeworkImageKeys(record)
+            : record.imageKeys;
       const [imageUrls, practiceSummaries] = await Promise.all([
         presignKeys.length
           ? Promise.all(

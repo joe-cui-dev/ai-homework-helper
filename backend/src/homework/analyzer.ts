@@ -23,6 +23,7 @@ export interface AnalyzePagesResult {
 
 const ANALYZER_SYSTEM_PROMPT = `You are analyzing photos of Australian primary school homework pages.
 Your job is to:
+0. Produce durable Page Context for every image. It must preserve verbatim text, LaTex-style maths, Markdown tables, labels, layout relationships, and descriptions of diagrams/graphs.
 1. Extract ALL questions visible across all provided images, numbering them sequentially from 1.
 2. If any page contains a reading passage or article (not a question), extract its full text as articleContext.
 3. For each question, decide whether it requires the article/passage to answer (usesArticle: true/false).
@@ -45,6 +46,11 @@ const SUBMIT_TOOL: Tool = {
       json: {
         type: "object",
         properties: {
+          pageContexts: {
+            type: "array",
+            description: "One durable semantic context string for each input image, in image order.",
+            items: { type: "string" },
+          },
           articleContext: {
             type: "string",
             description:
@@ -96,7 +102,7 @@ const SUBMIT_TOOL: Tool = {
             },
           },
         },
-        required: ["questions"],
+        required: ["pageContexts", "questions"],
       },
     },
   },
@@ -173,6 +179,7 @@ export const analyzePages = async (
       | undefined;
     if (toolUse?.name === "submit_page_analysis") {
       const input = parseToolInput<{
+        pageContexts?: string[];
         articleContext?: string;
         questions: IdentifiedQuestion[];
       }>(toolUse.input);
@@ -183,6 +190,7 @@ export const analyzePages = async (
       return {
         analysis: {
           articleContext: input.articleContext,
+          pageContexts: input.pageContexts,
           questions: input.questions,
         },
         usage: response.usage,

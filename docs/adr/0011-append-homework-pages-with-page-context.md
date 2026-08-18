@@ -1,6 +1,6 @@
 # ADR 0011 — Append Homework pages with persisted Page Context
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-08-18
 **Supersedes in part:** [ADR 0004](./0004-unified-session-model.md), for the claim that Homework Sessions are always complete
 

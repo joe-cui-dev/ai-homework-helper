@@ -24,6 +24,11 @@ export interface SessionPage {
   nextCursor: string | null;
 }
 
+export interface SessionWithVersion {
+  session: Session;
+  eTag: string | undefined;
+}
+
 // Per-turn raw Bedrock usage. Lives only in the sidecar.
 export interface AgentTurnUsage {
   turnIndex: number;
@@ -101,6 +106,46 @@ export const loadSession = async (
     return normaliseSession(JSON.parse(body));
   } catch (err) {
     if ((err as { name?: string }).name === "NoSuchKey") return null;
+    throw err;
+  }
+};
+
+/** Loads a session together with the S3 version used for an atomic mutation. */
+export const loadSessionWithVersion = async (
+  studentId: string,
+  sessionType: SessionType,
+  sessionId: string,
+): Promise<SessionWithVersion | null> => {
+  try {
+    const response = await s3.send(new GetObjectCommand({
+      Bucket: bucketName(), Key: sessionKey(studentId, sessionType, sessionId),
+    }));
+    const body = await response.Body?.transformToString("utf-8");
+    return body ? { session: normaliseSession(JSON.parse(body)), eTag: response.ETag } : null;
+  } catch (err) {
+    if ((err as { name?: string }).name === "NoSuchKey") return null;
+    throw err;
+  }
+};
+
+/** Writes only if the object still has the version observed by the caller. */
+export const saveSessionIfVersion = async (
+  session: Session,
+  eTag: string | undefined,
+): Promise<void> => {
+  try {
+    await s3.send(new PutObjectCommand({
+      Bucket: bucketName(),
+      Key: sessionKey(session.studentId, session.sessionType, session.sessionId),
+      Body: JSON.stringify(session),
+      ContentType: "application/json",
+      ...(eTag ? { IfMatch: eTag } : { IfNoneMatch: "*" }),
+    }));
+  } catch (err) {
+    const name = (err as { name?: string }).name;
+    if (name === "PreconditionFailed" || name === "ConditionalRequestConflict") {
+      throw Object.assign(new Error("Session was updated concurrently"), { code: "conflict" });
+    }
     throw err;
   }
 };
@@ -206,6 +251,14 @@ export const uploadSessionImages = async (
     }),
   );
 };
+
+/** Page-submission image keys never collide with earlier submissions. */
+export const uploadHomeworkSubmissionImages = async (
+  studentId: string,
+  sessionId: string,
+  submissionId: string,
+  images: string[],
+): Promise<string[]> => uploadSessionImages(studentId, "homework", sessionId, images, `submission-${submissionId}-image`);
 
 export const loadAgentSidecar = async (
   studentId: string,

@@ -8,6 +8,8 @@ interface QuestionResultListProps {
   pending: PendingPacket[];
   total: number;
   onPractise?: (questionId: number, questionText: string, packet: BatchPacket["packet"]) => void;
+  updatedQuestionIds?: number[];
+  possiblyRepeatedQuestionIds?: number[];
 }
 
 export function QuestionResultList({
@@ -15,6 +17,8 @@ export function QuestionResultList({
   pending,
   total,
   onPractise,
+  updatedQuestionIds = [],
+  possiblyRepeatedQuestionIds = [],
 }: QuestionResultListProps) {
   const showHeader = total > 1;
 
@@ -32,6 +36,12 @@ export function QuestionResultList({
             <p className="text-sm text-gray-500 italic px-1 line-clamp-2">
               {bp.questionText}
             </p>
+          )}
+          {(updatedQuestionIds.includes(bp.questionId) || possiblyRepeatedQuestionIds.includes(bp.questionId)) && (
+            <div className="flex gap-2 px-1 text-xs font-semibold">
+              {updatedQuestionIds.includes(bp.questionId) && <span className="text-brand-600">Updated</span>}
+              {possiblyRepeatedQuestionIds.includes(bp.questionId) && <span className="text-amber-700">Possibly repeated</span>}
+            </div>
           )}
           <ResultCard
             packet={bp.packet}

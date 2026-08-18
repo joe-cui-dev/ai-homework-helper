@@ -32,13 +32,44 @@ export interface HomeworkQuestion {
   subject: Subject;
   yearLevel: YearLevel;
   packet: CoachingPacket;
+  /** Stable IDs of pages that provide this question's context. */
+  sourcePageIds?: string[];
+  revision?: number;
+  possiblyRepeatedOfQuestionId?: number;
+}
+
+export interface PageContext {
+  content: string;
+}
+
+export interface HomeworkPage {
+  pageId: string;
+  imageKey: string;
+  context: PageContext;
+}
+
+export interface HomeworkPageSubmissionRecord {
+  submissionId: string;
+  payloadHash: string;
+  timestamp: string;
+  pageIds: string[];
+  addedQuestionIds: number[];
+  updatedQuestionIds: number[];
+  possiblyRepeatedQuestionIds: number[];
+  usage: TokenUsage;
 }
 
 export interface HomeworkSession extends SessionBase {
   sessionType: "homework";
   questions: HomeworkQuestion[];
-  imageKeys: string[];
+  /** Canonical source for newly-created sessions. `imageKeys` is legacy read compatibility. */
+  pages?: HomeworkPage[];
+  imageKeys?: string[];
+  submissions?: HomeworkPageSubmissionRecord[];
 }
+
+export const homeworkImageKeys = (session: HomeworkSession): string[] =>
+  session.pages?.map((page) => page.imageKey) ?? session.imageKeys ?? [];
 
 export interface ReadingSession extends SessionBase {
   sessionType: "reading";

@@ -250,3 +250,24 @@ export const generateCoachingPackets = async (
     "The tutor could not produce a coaching packet for this submission. Please try again.",
   );
 };
+
+/** Generates packets from durable Page Context, avoiding old image re-reads. */
+export const generateCoachingPacketsFromContext = async (
+  questions: IdentifiedQuestion[],
+  pageContexts: string[],
+  modelChoice: ModelChoice = "fast",
+): Promise<GenerateCoachingPacketsResult> => {
+  if (questions.length === 0) return { packets: [], usage: buildUsage(0, 0, modelChoice) };
+  const questionList = questions.map((q) => `[questionId=${q.id}, subject=${q.subject}, yearLevel=${q.yearLevel}] ${q.text}`).join("\n");
+  const response = await converseWithTools(
+    [{ role: "user", content: [{ text: `Relevant Page Context:\n\n${pageContexts.join("\n\n---\n\n")}\n\nIdentified questions:\n${questionList}` }] }],
+    [SUBMIT_TOOL,], SYSTEM_PROMPT, { tool: { name: "submit_coaching_packets" } }, 8192, true, modelChoice,
+  );
+  for (const block of response.message.content ?? []) {
+    const toolUse = block.toolUse as { name: string; input: unknown } | undefined;
+    if (toolUse?.name === "submit_coaching_packets") {
+      return { packets: parseToolInput<{ packets: CoachingPacket[] }>(toolUse.input).packets, usage: response.usage };
+    }
+  }
+  throw new Error("The tutor could not produce a coaching packet for this submission. Please try again.");
+};

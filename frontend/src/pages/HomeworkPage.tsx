@@ -6,6 +6,7 @@ import { ProgressFeed } from "../components/ProgressFeed";
 import { ModuleHistoryButton } from "../components/ModuleHistoryButton";
 import { ModelChoiceControl } from "../components/ModelChoiceControl";
 import { ModelChoiceBadge } from "../components/ModelChoiceBadge";
+import { AddHomeworkPages } from "../components/AddHomeworkPages";
 import { useHomeworkStream } from "../hooks/useHomeworkStream";
 import { formatUsage } from "../utils/formatUsage";
 import type { CoachingPacket, ModelChoice } from "../types";
@@ -22,6 +23,7 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
   const analyzing = homework.status === "analyzing";
   const generating = homework.status === "generating";
   const working = analyzing || generating;
+  const appending = homework.appendStatus === "analyzing" || homework.appendStatus === "saving";
   const done = homework.status === "done";
   const stopped = homework.status === "stopped";
   const error = homework.status === "error";
@@ -65,10 +67,10 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
           <ModelChoiceControl
             value={modelChoice}
             onChange={setModelChoice}
-            disabled={working}
+            disabled={working || appending}
           />
         </div>
-        <QuestionInput onSubmit={handleSubmit} disabled={working} />
+        <QuestionInput onSubmit={handleSubmit} disabled={working || appending} />
       </div>
 
       {working && (
@@ -99,14 +101,16 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
             packets={homework.packets}
             pending={homework.pending}
             total={homework.totalQuestions}
-            onPractise={openPractice}
+            onPractise={appending ? undefined : openPractice}
+            updatedQuestionIds={homework.updatedQuestionIds}
+            possiblyRepeatedQuestionIds={homework.possiblyRepeatedQuestionIds}
           />
         )}
 
       {(done || stopped) && homework.usage && (
         <div className="flex items-center justify-center gap-2 flex-wrap text-xs text-gray-500 px-1">
           <ModelChoiceBadge choice={homework.modelChoice} />
-          <span>Batch usage: {formatUsage(homework.usage)}</span>
+          <span>Session usage: {formatUsage(homework.usage)}</span>
         </div>
       )}
 
@@ -135,6 +139,17 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
       )}
 
       {(done || stopped) && (
+        <>
+          {done && homework.sessionId && (
+            <AddHomeworkPages
+              disabled={appending}
+              remainingPages={10 - homework.pageCount}
+              error={homework.appendError}
+              completedPageCount={homework.pageCount}
+              onSubmit={(images, submissionId) => { void homework.append(token, images, submissionId); }}
+            />
+          )}
+          {appending && <p className="text-center text-sm text-gray-500">Adding pages while your current results remain available…</p>}
         <div className="text-center">
           <button
             onClick={homework.reset}
@@ -143,6 +158,7 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
             Coach another question
           </button>
         </div>
+        </>
       )}
     </main>
   );

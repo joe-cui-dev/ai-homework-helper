@@ -116,6 +116,9 @@ export type StreamEvent =
       packets: BatchPacket[];
       usage: TokenUsage;
       modelChoice: ModelChoice;
+      pageCount?: number;
+      updatedQuestionIds?: number[];
+      possiblyRepeatedQuestionIds?: number[];
     }
   // ── Reading-task events ───────────────────────────────────────────────
   | { type: "book_analyzing" }
@@ -144,7 +147,7 @@ export type StreamEvent =
       usage: TokenUsage;
       modelChoice: ModelChoice;
     }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; code?: string };
 
 // ── Phase 2: Practice Tutor Loop ─────────────────────────────────────────────
 

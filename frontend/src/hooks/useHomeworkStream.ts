@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { streamHomework } from "../services/homeworkApi";
+import { appendHomeworkPages, streamHomework } from "../services/homeworkApi";
 import type { BatchPacket, ModelChoice, StreamEvent, TokenUsage } from "../types";
 
 type Status = "idle" | "analyzing" | "generating" | "done" | "stopped" | "error";
@@ -19,6 +19,11 @@ interface UseHomeworkStreamReturn {
   usage: TokenUsage | null;
   modelChoice: ModelChoice;
   error: string | null;
+  appendStatus: "idle" | "analyzing" | "saving" | "error";
+  appendError: string | null;
+  updatedQuestionIds: number[];
+  possiblyRepeatedQuestionIds: number[];
+  pageCount: number;
   submit: (
     question: string,
     token: string,
@@ -26,6 +31,7 @@ interface UseHomeworkStreamReturn {
     modelChoice?: ModelChoice,
   ) => Promise<void>;
   stop: () => void;
+  append: (token: string, images: string[], submissionId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -38,6 +44,11 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
   const [usage, setUsage] = useState<TokenUsage | null>(null);
   const [modelChoice, setModelChoice] = useState<ModelChoice>("fast");
   const [error, setError] = useState<string | null>(null);
+  const [appendStatus, setAppendStatus] = useState<"idle" | "analyzing" | "saving" | "error">("idle");
+  const [appendError, setAppendError] = useState<string | null>(null);
+  const [updatedQuestionIds, setUpdatedQuestionIds] = useState<number[]>([]);
+  const [possiblyRepeatedQuestionIds, setPossiblyRepeatedQuestionIds] = useState<number[]>([]);
+  const [pageCount, setPageCount] = useState(0);
 
   // abortRef gates stale event processing; abortControllerRef cancels the fetch.
   const abortRef = useRef(false);
@@ -63,6 +74,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     setUsage(null);
     setModelChoice("fast");
     setError(null);
+    setAppendStatus("idle"); setAppendError(null); setUpdatedQuestionIds([]); setPossiblyRepeatedQuestionIds([]); setPageCount(0);
     pendingTextRef.current.clear();
   }, []);
 
@@ -128,6 +140,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
           setPackets(event.packets);
           setUsage(event.usage);
           setModelChoice(event.modelChoice);
+          setPageCount(event.pageCount ?? 0);
           setPending([]);
           setStatus("done");
         } else if (event.type === "error") {
@@ -164,6 +177,23 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     [],
   );
 
+  const append = useCallback(async (token: string, images: string[], submissionId: string) => {
+    if (!sessionId || !images.length) return;
+    setAppendStatus("analyzing"); setAppendError(null);
+    try {
+      await appendHomeworkPages(sessionId, submissionId, images, token, (event) => {
+        if (event.type === "analyzing") setAppendStatus("analyzing");
+        if (event.type === "complete") {
+          // Append results are authoritative; replace only once the server committed.
+          setPackets(event.packets); setUsage(event.usage); setModelChoice(event.modelChoice);
+          setTotalQuestions(event.packets.length); setPageCount(event.pageCount ?? pageCount); setUpdatedQuestionIds(event.updatedQuestionIds ?? []);
+          setPossiblyRepeatedQuestionIds(event.possiblyRepeatedQuestionIds ?? []); setAppendStatus("idle");
+        }
+        if (event.type === "error") { setAppendError(event.message); setAppendStatus("error"); }
+      });
+    } catch (err) { setAppendError(err instanceof Error ? err.message : "Could not add pages."); setAppendStatus("error"); }
+  }, [sessionId, pageCount]);
+
   return {
     status,
     sessionId,
@@ -173,8 +203,14 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     usage,
     modelChoice,
     error,
+    appendStatus,
+    appendError,
+    updatedQuestionIds,
+    possiblyRepeatedQuestionIds,
+    pageCount,
     submit,
     stop,
+    append,
     reset,
   };
 };

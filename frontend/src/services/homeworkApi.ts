@@ -64,3 +64,23 @@ export const streamHomework = async (
     }
   }
 };
+
+export const appendHomeworkPages = async (
+  sessionId: string,
+  submissionId: string,
+  images: string[],
+  token: string,
+  onEvent: (event: StreamEvent) => void,
+): Promise<void> => {
+  const apiUrl = import.meta.env.VITE_HOMEWORK_API_URL;
+  if (!apiUrl) throw new Error("VITE_HOMEWORK_API_URL is not configured.");
+  const response = await fetch(apiUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ kind: "append_pages", sessionId, submissionId, images }) });
+  if (!response.ok || !response.body) throw new Error(`Request failed with status ${response.status}.`);
+  const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read(); if (done) break;
+    buffer += decoder.decode(value, { stream: true }); const lines = buffer.split("\n"); buffer = lines.pop() ?? "";
+    for (const line of lines) { if (!line.trim()) continue; try { const event = JSON.parse(line) as StreamEvent; onEvent(event); if (event.type === "error") return; } catch { /* ignore malformed NDJSON */ } }
+  }
+  if (buffer.trim()) { try { onEvent(JSON.parse(buffer) as StreamEvent); } catch { /* ignore malformed final event */ } }
+};

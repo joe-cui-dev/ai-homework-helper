@@ -20,8 +20,10 @@ import {
   chunkQuestionsForPacketCall,
   generateCoachingPackets,
 } from "./coachingPacket";
-import { saveSession, uploadSessionImages } from "../shared/sessionStore";
+import { loadSessionWithVersion, saveSession, saveSessionIfVersion, uploadHomeworkSubmissionImages, uploadSessionImages } from "../shared/sessionStore";
 import type { HomeworkSession } from "../shared/session";
+import { reconcileSubmission } from "./reconcileSubmission";
+import { generateCoachingPacketsFromContext } from "./coachingPacket";
 import type { BatchPacket, StreamEvent } from "../shared/types";
 import { parseOptionalModelChoice } from "../shared/modelChoice";
 import { logger } from "../shared/logger";
@@ -98,6 +100,9 @@ export const handler = awslambda.streamifyResponse(
 
       // ── Request parsing ─────────────────────────────────────────────────
       let body: {
+        kind?: unknown;
+        sessionId?: unknown;
+        submissionId?: unknown;
         question?: unknown;
         image?: unknown;
         images?: unknown;
@@ -191,6 +196,55 @@ export const handler = awslambda.streamifyResponse(
         return;
       }
 
+      // ── Append an immutable Page Submission to the current Session ──────
+      if (body.kind === "append_pages") {
+        const appendSessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+        const submissionId = typeof body.submissionId === "string" ? body.submissionId : "";
+        if (!appendSessionId || !submissionId || trimmedQuestion || validatedImages.length === 0) {
+          writeEvent({ type: "error", code: "validation", message: "Adding pages requires a session, submission ID, and one or more images." });
+          return;
+        }
+        const loaded = await loadSessionWithVersion(tokenSub, "homework", appendSessionId);
+        if (!loaded || loaded.session.sessionType !== "homework") {
+          writeEvent({ type: "error", code: "not_found", message: "This homework session is no longer available." });
+          return;
+        }
+        const session = loaded.session;
+        const payloadHash = require("crypto").createHash("sha256").update(validatedImages.join("\n")).digest("hex");
+        const established = session.submissions?.find((submission) => submission.submissionId === submissionId);
+        if (established) {
+          if (established.payloadHash !== payloadHash) {
+            writeEvent({ type: "error", code: "validation", message: "This submission ID belongs to different pages." });
+            return;
+          }
+          writeEvent({ type: "complete", sessionId: session.sessionId, packets: session.questions.map((q) => ({ questionId: q.questionId, questionText: q.input, subject: q.subject, yearLevel: q.yearLevel, packet: q.packet })), usage: session.usage, modelChoice: session.modelChoice, pageCount: session.pages?.length ?? session.imageKeys?.length ?? 0, updatedQuestionIds: established.updatedQuestionIds, possiblyRepeatedQuestionIds: established.possiblyRepeatedQuestionIds });
+          return;
+        }
+        const pageCount = session.pages?.length ?? session.imageKeys?.length ?? 0;
+        if (pageCount + validatedImages.length > 10) {
+          writeEvent({ type: "error", code: "page_limit", message: "A homework session can contain at most 10 pages." });
+          return;
+        }
+        writeEvent({ type: "analyzing" });
+        const { analysis, usage: analysisUsage } = await analyzePages(validatedImages, undefined, session.modelChoice);
+        const pageIds = validatedImages.map(() => uuidv4());
+        const reconciliation = reconcileSubmission(session.questions, analysis.questions.map((q) => ({ text: q.text, subject: q.subject, yearLevel: q.yearLevel, sourcePageIds: q.sourcePage === undefined ? pageIds : [pageIds[q.sourcePage]], relation: { kind: "new" as const, confidence: "high" as const } })));
+        const changedIds = new Set([...reconciliation.addedQuestionIds, ...reconciliation.updatedQuestionIds]);
+        const changed = reconciliation.questions.filter((q) => changedIds.has(q.questionId));
+        const contexts = [...(session.pages?.map((page) => page.context.content) ?? []), ...(analysis.pageContexts ?? validatedImages.map(() => "Page context was unavailable."))];
+        const packetResult = await generateCoachingPacketsFromContext(changed.map((q) => ({ id: q.questionId, text: q.input, usesArticle: false, subject: q.subject, yearLevel: q.yearLevel })), contexts, session.modelChoice);
+        const packets = new Map(packetResult.packets.map((packet) => [packet.questionId, packet]));
+        if (changed.some((q) => !packets.has(q.questionId))) throw new Error("Could not produce every coaching packet; no pages were added.");
+        const imageKeys = await uploadHomeworkSubmissionImages(tokenSub, session.sessionId, submissionId, validatedImages);
+        const now = new Date().toISOString();
+        const questions = reconciliation.questions.map((q) => ({ ...q, packet: packets.get(q.questionId) ?? q.packet! }));
+        const usage = sumUsage(session.usage, analysisUsage, packetResult.usage);
+        const next: HomeworkSession = { ...session, updatedAt: now, usage, questions, pages: [...(session.pages ?? (session.imageKeys ?? []).map((imageKey, index) => ({ pageId: `legacy-${index}`, imageKey, context: { content: "Legacy page; unavailable for append." } }))), ...imageKeys.map((imageKey, index) => ({ pageId: pageIds[index], imageKey, context: { content: contexts[index] ?? "" } }))], submissions: [...(session.submissions ?? []), { submissionId, payloadHash, timestamp: now, pageIds, addedQuestionIds: reconciliation.addedQuestionIds, updatedQuestionIds: reconciliation.updatedQuestionIds, possiblyRepeatedQuestionIds: reconciliation.possiblyRepeatedQuestionIds, usage: sumUsage(analysisUsage, packetResult.usage) }] };
+        await saveSessionIfVersion(next, loaded.eTag);
+        writeEvent({ type: "complete", sessionId: next.sessionId, packets: next.questions.map((q) => ({ questionId: q.questionId, questionText: q.input, subject: q.subject, yearLevel: q.yearLevel, packet: q.packet })), usage: next.usage, modelChoice: next.modelChoice, pageCount: next.pages?.length ?? 0, updatedQuestionIds: reconciliation.updatedQuestionIds, possiblyRepeatedQuestionIds: reconciliation.possiblyRepeatedQuestionIds });
+        return;
+      }
+
       const studentId = tokenSub;
       const sessionId = uuidv4();
 
@@ -208,16 +262,6 @@ export const handler = awslambda.streamifyResponse(
         trimmedQuestion,
         modelChoice,
       );
-
-      if (analysis.questions.length === 0) {
-        logger.warn("analyzer_no_questions_found");
-        writeEvent({
-          type: "error",
-          message:
-            "No questions were found in your submission. Please try a clearer photo.",
-        });
-        return;
-      }
 
       logger.info("analyzer_questions_found", {
         count: analysis.questions.length,
@@ -321,12 +365,19 @@ export const handler = awslambda.streamifyResponse(
           updatedAt: now,
           usage: batchUsage,
           imageKeys: batchImageKeys,
+          pages: batchImageKeys.map((imageKey, index) => ({
+            pageId: `initial-${index}`, imageKey, context: { content: analysis.pageContexts?.[index] ?? "" },
+          })),
           questions: allBatchPackets.map((p) => ({
             questionId: p.questionId,
             input: p.questionText,
             subject: p.subject,
             yearLevel: p.yearLevel,
             packet: p.packet,
+            sourcePageIds: (() => {
+              const sourcePage = analysis.questions.find((q) => q.id === p.questionId)?.sourcePage;
+              return sourcePage === undefined ? [] : [`initial-${sourcePage}`];
+            })(),
           })),
         };
         await saveSession(session);
@@ -343,6 +394,7 @@ export const handler = awslambda.streamifyResponse(
         packets: allBatchPackets,
         usage: batchUsage,
         modelChoice,
+        pageCount: batchImageKeys.length,
       });
       logger.info("request_complete", { packetCount: allBatchPackets.length });
     } catch (err) {
