@@ -38,7 +38,7 @@ export function QuestionResultList({
             </p>
           )}
           {(updatedQuestionIds.includes(bp.questionId) || possiblyRepeatedQuestionIds.includes(bp.questionId)) && (
-            <div className="flex gap-2 px-1 text-xs font-semibold">
+            <div className="flex gap-2 px-1 text-xs font-semibold" role="status" aria-live="polite">
               {updatedQuestionIds.includes(bp.questionId) && <span className="text-brand-600">Updated</span>}
               {possiblyRepeatedQuestionIds.includes(bp.questionId) && <span className="text-amber-700">Possibly repeated</span>}
             </div>

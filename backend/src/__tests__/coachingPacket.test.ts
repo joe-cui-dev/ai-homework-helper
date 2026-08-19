@@ -1,4 +1,4 @@
-import { generateCoachingPackets } from "../homework/coachingPacket";
+import { generateCoachingPackets, generateCoachingPacketsFromContext } from "../homework/coachingPacket";
 import type { IdentifiedQuestion, CoachingPacket } from "../shared/types";
 
 jest.mock("../shared/bedrock", () => ({
@@ -13,6 +13,11 @@ jest.mock("../shared/bedrock", () => ({
     costUsd: 0,
   }),
   parseToolInput: <T,>(raw: unknown): T => raw as T,
+  sumUsage: (...usages: Array<{ inputTokens: number; outputTokens: number; costUsd: number }>) => ({
+    inputTokens: usages.reduce((sum, usage) => sum + usage.inputTokens, 0),
+    outputTokens: usages.reduce((sum, usage) => sum + usage.outputTokens, 0),
+    costUsd: usages.reduce((sum, usage) => sum + usage.costUsd, 0),
+  }),
 }));
 
 jest.mock("../shared/logger", () => ({
@@ -33,6 +38,42 @@ const PACKET = (id: number): CoachingPacket => ({
   tldrAnswer: `Answer for question ${id}.`,
   whyItWorks: `Concept for question ${id}.`,
   childHint: `Hint for question ${id}.`,
+});
+
+describe("generateCoachingPacketsFromContext", () => {
+  const contextQuestions = [
+    { questionId: 4, input: "Use the graph", subject: "math" as const, yearLevel: "year-4" as const, sourcePageIds: ["page-a"] },
+    { questionId: 9, input: "Read the table", subject: "science" as const, yearLevel: "year-4" as const, sourcePageIds: ["page-b"] },
+  ];
+  const contexts = [
+    { pageId: "page-a", content: "GRAPH CONTEXT" },
+    { pageId: "page-b", content: "TABLE CONTEXT" },
+    { pageId: "page-c", content: "UNRELATED CONTEXT" },
+  ];
+
+  it("groups calls by the exact relevant Page Context set", async () => {
+    converseWithTools
+      .mockResolvedValueOnce({ stopReason: "tool_use", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 }, message: { role: "assistant", content: [{ toolUse: { name: "submit_coaching_packets", input: { packets: [PACKET(4)] } } }] } })
+      .mockResolvedValueOnce({ stopReason: "tool_use", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 }, message: { role: "assistant", content: [{ toolUse: { name: "submit_coaching_packets", input: { packets: [PACKET(9)] } } }] } });
+
+    const result = await generateCoachingPacketsFromContext(contextQuestions, contexts, "fast");
+
+    expect(result.packets.map((packet) => packet.questionId)).toEqual([4, 9]);
+    const firstPrompt = JSON.stringify(converseWithTools.mock.calls[0][0]);
+    const secondPrompt = JSON.stringify(converseWithTools.mock.calls[1][0]);
+    expect(firstPrompt).toContain("GRAPH CONTEXT");
+    expect(firstPrompt).not.toContain("TABLE CONTEXT");
+    expect(firstPrompt).not.toContain("UNRELATED CONTEXT");
+    expect(secondPrompt).toContain("TABLE CONTEXT");
+  });
+
+  it("fails the whole generation when output is missing or duplicated", async () => {
+    converseWithTools.mockResolvedValueOnce({ stopReason: "tool_use", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 }, message: { role: "assistant", content: [{ toolUse: { name: "submit_coaching_packets", input: { packets: [] } } }] } });
+    await expect(generateCoachingPacketsFromContext([contextQuestions[0]], contexts, "fast")).rejects.toThrow("exactly one");
+
+    converseWithTools.mockResolvedValueOnce({ stopReason: "tool_use", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 }, message: { role: "assistant", content: [{ toolUse: { name: "submit_coaching_packets", input: { packets: [PACKET(4), PACKET(4)] } } }] } });
+    await expect(generateCoachingPacketsFromContext([contextQuestions[0]], contexts, "fast")).rejects.toThrow("exactly one");
+  });
 });
 
 const QUESTIONS: IdentifiedQuestion[] = [

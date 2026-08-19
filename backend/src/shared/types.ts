@@ -128,6 +128,7 @@ export interface BookAnalysis {
 
 export type StreamEvent =
   | { type: "analyzing" }
+  | { type: "append_phase"; phase: "preparing" | "analyzing" | "generating" | "saving" }
   | {
       type: "packet_start";
       sessionId: string;
@@ -148,9 +149,11 @@ export type StreamEvent =
       packets: BatchPacket[];
       usage: TokenUsage;
       modelChoice: ModelChoice;
-      pageCount?: number;
-      updatedQuestionIds?: number[];
-      possiblyRepeatedQuestionIds?: number[];
+      pageCount: number;
+      questionCount: number;
+      updatedQuestionIds: number[];
+      possiblyRepeatedQuestionIds: number[];
+      hasNoCompleteQuestions: boolean;
     }
   // ── Reading-task events ───────────────────────────────────────────────
   | { type: "book_analyzing" }
@@ -175,7 +178,7 @@ export type StreamEvent =
       usage: TokenUsage;
       modelChoice: ModelChoice;
     }
-  | { type: "error"; message: string; code?: "validation" | "not_found" | "page_limit" | "question_limit" | "conflict" | "in_progress" };
+  | { type: "error"; message: string; code?: "validation" | "not_found" | "page_limit" | "question_limit" | "conflict" | "in_progress" | "processing_failure"; retryable?: boolean };
 
 // ── Phase 2: Practice Tutor Loop ─────────────────────────────────────────────
 

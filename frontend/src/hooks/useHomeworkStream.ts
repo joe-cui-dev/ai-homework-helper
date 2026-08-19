@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { appendHomeworkPages, streamHomework } from "../services/homeworkApi";
 import type { BatchPacket, ModelChoice, StreamEvent, TokenUsage } from "../types";
 
@@ -19,11 +19,13 @@ interface UseHomeworkStreamReturn {
   usage: TokenUsage | null;
   modelChoice: ModelChoice;
   error: string | null;
-  appendStatus: "idle" | "analyzing" | "saving" | "error";
+  appendStatus: "idle" | "preparing" | "analyzing" | "generating" | "saving" | "error";
   appendError: string | null;
+  appendNotice: string | null;
   updatedQuestionIds: number[];
   possiblyRepeatedQuestionIds: number[];
   pageCount: number;
+  hasNoCompleteQuestions: boolean;
   submit: (
     question: string,
     token: string,
@@ -37,18 +39,35 @@ interface UseHomeworkStreamReturn {
 
 export const useHomeworkStream = (): UseHomeworkStreamReturn => {
   const [status, setStatus] = useState<Status>("idle");
-  const [sessionId, setBatchId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [packets, setPackets] = useState<BatchPacket[]>([]);
   const [pending, setPending] = useState<PendingPacket[]>([]);
   const [totalQuestions, setTotalQuestions] = useState(0);
   const [usage, setUsage] = useState<TokenUsage | null>(null);
   const [modelChoice, setModelChoice] = useState<ModelChoice>("fast");
   const [error, setError] = useState<string | null>(null);
-  const [appendStatus, setAppendStatus] = useState<"idle" | "analyzing" | "saving" | "error">("idle");
+  const [appendStatus, setAppendStatus] = useState<"idle" | "preparing" | "analyzing" | "generating" | "saving" | "error">("idle");
   const [appendError, setAppendError] = useState<string | null>(null);
+  const [appendNotice, setAppendNotice] = useState<string | null>(null);
   const [updatedQuestionIds, setUpdatedQuestionIds] = useState<number[]>([]);
   const [possiblyRepeatedQuestionIds, setPossiblyRepeatedQuestionIds] = useState<number[]>([]);
   const [pageCount, setPageCount] = useState(0);
+  const [hasNoCompleteQuestions, setHasNoCompleteQuestions] = useState(false);
+
+  useEffect(() => {
+    if (updatedQuestionIds.length === 0 && possiblyRepeatedQuestionIds.length === 0) return;
+    const timer = window.setTimeout(() => {
+      setUpdatedQuestionIds([]);
+      setPossiblyRepeatedQuestionIds([]);
+    }, 6000);
+    return () => window.clearTimeout(timer);
+  }, [updatedQuestionIds, possiblyRepeatedQuestionIds]);
+
+  useEffect(() => {
+    if (!appendNotice) return;
+    const timer = window.setTimeout(() => setAppendNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [appendNotice]);
 
   // abortRef gates stale event processing; abortControllerRef cancels the fetch.
   const abortRef = useRef(false);
@@ -67,14 +86,14 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     abortRef.current = true;
     abortControllerRef.current?.abort();
     setStatus("idle");
-    setBatchId(null);
+    setSessionId(null);
     setPackets([]);
     setPending([]);
     setTotalQuestions(0);
     setUsage(null);
     setModelChoice("fast");
     setError(null);
-    setAppendStatus("idle"); setAppendError(null); setUpdatedQuestionIds([]); setPossiblyRepeatedQuestionIds([]); setPageCount(0);
+    setAppendStatus("idle"); setAppendError(null); setAppendNotice(null); setUpdatedQuestionIds([]); setPossiblyRepeatedQuestionIds([]); setPageCount(0); setHasNoCompleteQuestions(false);
     pendingTextRef.current.clear();
   }, []);
 
@@ -90,7 +109,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
       abortRef.current = false;
       pendingTextRef.current.clear();
       setStatus("analyzing");
-      setBatchId(null);
+      setSessionId(null);
       setPackets([]);
       setPending([]);
       setTotalQuestions(0);
@@ -106,7 +125,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
         } else if (event.type === "packet_start") {
           pendingTextRef.current.set(event.questionId, event.text);
           setTotalQuestions(event.total);
-          setBatchId(event.sessionId);
+          setSessionId(event.sessionId);
           setStatus("generating");
           setPending((prev) => {
             // Avoid duplicates if the same id is announced twice.
@@ -136,11 +155,13 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
             prev.filter((p) => p.questionId !== event.questionId),
           );
         } else if (event.type === "complete") {
-          setBatchId(event.sessionId);
+          setSessionId(event.sessionId);
           setPackets(event.packets);
           setUsage(event.usage);
           setModelChoice(event.modelChoice);
-          setPageCount(event.pageCount ?? 0);
+          setPageCount(event.pageCount);
+          setTotalQuestions(event.questionCount);
+          setHasNoCompleteQuestions(event.hasNoCompleteQuestions);
           setPending([]);
           setStatus("done");
         } else if (event.type === "error") {
@@ -179,20 +200,24 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
 
   const append = useCallback(async (token: string, images: string[], submissionId: string) => {
     if (!sessionId || !images.length) return;
-    setAppendStatus("analyzing"); setAppendError(null);
+    setAppendStatus("preparing"); setAppendError(null); setAppendNotice(null); setUpdatedQuestionIds([]); setPossiblyRepeatedQuestionIds([]);
     try {
       await appendHomeworkPages(sessionId, submissionId, images, token, (event) => {
-        if (event.type === "analyzing") setAppendStatus("analyzing");
+        if (event.type === "append_phase") setAppendStatus(event.phase);
         if (event.type === "complete") {
           // Append results are authoritative; replace only once the server committed.
           setPackets(event.packets); setUsage(event.usage); setModelChoice(event.modelChoice);
-          setTotalQuestions(event.packets.length); setPageCount(event.pageCount ?? pageCount); setUpdatedQuestionIds(event.updatedQuestionIds ?? []);
-          setPossiblyRepeatedQuestionIds(event.possiblyRepeatedQuestionIds ?? []); setAppendStatus("idle");
+          setTotalQuestions(event.questionCount); setPageCount(event.pageCount); setHasNoCompleteQuestions(event.hasNoCompleteQuestions); setUpdatedQuestionIds(event.updatedQuestionIds);
+          setPossiblyRepeatedQuestionIds(event.possiblyRepeatedQuestionIds); setAppendStatus("idle");
+          const changedQuestions = event.questionCount !== totalQuestions || event.updatedQuestionIds.length > 0;
+          setAppendNotice(changedQuestions
+            ? "Pages added and coaching updated."
+            : "Pages added as context; no complete questions changed.");
         }
         if (event.type === "error") { setAppendError(event.message); setAppendStatus("error"); }
       });
     } catch (err) { setAppendError(err instanceof Error ? err.message : "Could not add pages."); setAppendStatus("error"); }
-  }, [sessionId, pageCount]);
+  }, [sessionId, totalQuestions]);
 
   return {
     status,
@@ -205,9 +230,11 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     error,
     appendStatus,
     appendError,
+    appendNotice,
     updatedQuestionIds,
     possiblyRepeatedQuestionIds,
     pageCount,
+    hasNoCompleteQuestions,
     submit,
     stop,
     append,

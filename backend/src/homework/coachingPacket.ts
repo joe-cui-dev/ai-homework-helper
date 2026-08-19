@@ -13,10 +13,11 @@
 // multiple questions' answers into a single field.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
-import { buildUsage, converseWithTools, parseDataUrl, parseToolInput } from "../shared/bedrock";
+import { buildUsage, converseWithTools, parseDataUrl, parseToolInput, sumUsage } from "../shared/bedrock";
 import type { ModelChoice } from "../shared/modelChoice";
 import type { CoachingPacket, IdentifiedQuestion } from "../shared/types";
 import { logger } from "../shared/logger";
+import type { HomeworkQuestion, PageContext } from "../shared/session";
 
 export interface GenerateCoachingPacketsResult {
   packets: CoachingPacket[];
@@ -251,23 +252,59 @@ export const generateCoachingPackets = async (
   );
 };
 
-/** Generates packets from durable Page Context, avoiding old image re-reads. */
+export type ContextPacketQuestion = Pick<
+  HomeworkQuestion,
+  "questionId" | "input" | "subject" | "yearLevel" | "sourcePageIds"
+>;
+
+export type IdentifiedPageContext = PageContext & { pageId: string };
+
+/** Generates exactly one packet per changed Question from only its relevant Page Context. */
 export const generateCoachingPacketsFromContext = async (
-  questions: IdentifiedQuestion[],
-  pageContexts: string[],
+  questions: ContextPacketQuestion[],
+  pageContexts: IdentifiedPageContext[],
   modelChoice: ModelChoice = "fast",
 ): Promise<GenerateCoachingPacketsResult> => {
   if (questions.length === 0) return { packets: [], usage: buildUsage(0, 0, modelChoice) };
-  const questionList = questions.map((q) => `[questionId=${q.id}, subject=${q.subject}, yearLevel=${q.yearLevel}] ${q.text}`).join("\n");
-  const response = await converseWithTools(
-    [{ role: "user", content: [{ text: `Relevant Page Context:\n\n${pageContexts.join("\n\n---\n\n")}\n\nIdentified questions:\n${questionList}` }] }],
-    [SUBMIT_TOOL,], SYSTEM_PROMPT, { tool: { name: "submit_coaching_packets" } }, 8192, true, modelChoice,
-  );
-  for (const block of response.message.content ?? []) {
-    const toolUse = block.toolUse as { name: string; input: unknown } | undefined;
-    if (toolUse?.name === "submit_coaching_packets") {
-      return { packets: parseToolInput<{ packets: CoachingPacket[] }>(toolUse.input).packets, usage: response.usage };
+  const contextById = new Map(pageContexts.map((context) => [context.pageId, context.content]));
+  const groups = new Map<string, ContextPacketQuestion[]>();
+  for (const question of questions) {
+    const ids = [...new Set(question.sourcePageIds ?? [])].sort();
+    for (const id of ids) {
+      if (!contextById.has(id)) throw new Error(`Missing Page Context for ${id}.`);
     }
+    const key = ids.join("\u0000");
+    groups.set(key, [...(groups.get(key) ?? []), question]);
   }
-  throw new Error("The tutor could not produce a coaching packet for this submission. Please try again.");
+
+  const results = await Promise.all(
+    [...groups.entries()].flatMap(([key, groupQuestions]) =>
+      chunkArray(groupQuestions, MAX_QUESTIONS_PER_PACKET_CALL).map(async (chunk) => {
+        const relevantContexts = key ? key.split("\u0000").map((id) => ({ pageId: id, content: contextById.get(id)! })) : [];
+        const questionList = chunk.map((q) => `[questionId=${q.questionId}, subject=${q.subject}, yearLevel=${q.yearLevel}] ${q.input}`).join("\n");
+        const response = await converseWithTools(
+          [{ role: "user", content: [{ text: `Relevant Page Context:\n\n${relevantContexts.map((context) => `[pageId=${context.pageId}]\n${context.content}`).join("\n\n---\n\n") || "No page image was supplied; use the typed question."}\n\nIdentified questions:\n${questionList}` }] }],
+          [SUBMIT_TOOL], SYSTEM_PROMPT, { tool: { name: "submit_coaching_packets" } }, 8192, true, modelChoice,
+        );
+        for (const block of response.message.content ?? []) {
+          const toolUse = block.toolUse as { name: string; input: unknown } | undefined;
+          if (toolUse?.name === "submit_coaching_packets") {
+            return { packets: parseToolInput<{ packets: CoachingPacket[] }>(toolUse.input).packets, usage: response.usage };
+          }
+        }
+        throw new Error("The tutor could not produce a coaching packet for this submission. Please try again.");
+      }),
+    ),
+  );
+  const packets = results.flatMap((result) => result.packets);
+  const expected = new Set(questions.map((question) => question.questionId));
+  const counts = new Map<number, number>();
+  for (const packet of packets) counts.set(packet.questionId, (counts.get(packet.questionId) ?? 0) + 1);
+  if (packets.some((packet) => !expected.has(packet.questionId)) || [...expected].some((id) => counts.get(id) !== 1)) {
+    throw new Error("The tutor must return exactly one coaching packet for every changed Question.");
+  }
+  return {
+    packets: questions.map((question) => packets.find((packet) => packet.questionId === question.questionId)!),
+    usage: sumUsage(...results.map((result) => result.usage)),
+  };
 };

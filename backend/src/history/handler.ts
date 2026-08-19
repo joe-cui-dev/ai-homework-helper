@@ -30,7 +30,10 @@ const verifier = CognitoJwtVerifier.create({
 const s3 = new S3Client({});
 const PRESIGN_EXPIRES_IN = 3600;
 
-interface QuestionWithPractice extends HomeworkQuestion {
+interface QuestionWithPractice extends Pick<
+  HomeworkQuestion,
+  "questionId" | "input" | "subject" | "yearLevel" | "packet" | "possiblyRepeatedOfQuestionId"
+> {
   practiceSession?: PracticeSessionSummary;
 }
 
@@ -45,7 +48,7 @@ interface SessionSummary {
   sessionType: HistoryModule;
   modelChoice: ModelChoice;
   subjects: string[];
-  imageUrls: string[];
+  imageUrls: Array<string | null>;
   questions: QuestionWithPractice[];
   // Reading-only fields.
   bookContext?: BookContext;
@@ -109,12 +112,22 @@ export const handler = async (
   }
 
   const bucket = process.env.S3_BUCKET_NAME ?? "";
-  const { sessions, nextCursor } = await listSessions(
-    studentId,
-    typeParam,
-    cursor,
-    limit,
-  );
+  let scanCursor = cursor;
+  let nextCursor: string | null = null;
+  const sessions: Session[] = [];
+  do {
+    const page = await listSessions(
+      studentId,
+      typeParam,
+      scanCursor,
+      Math.max(1, limit - sessions.length),
+    );
+    sessions.push(...page.sessions.filter(
+      (record) => record.sessionType !== "homework" || record.questions.length > 0,
+    ));
+    nextCursor = page.nextCursor;
+    scanCursor = page.nextCursor ?? undefined;
+  } while (sessions.length < limit && nextCursor);
 
   // Practice never appears under homework|reading|writing prefixes — it lives
   // under its own practice/ prefix and is only fetched via
@@ -122,7 +135,7 @@ export const handler = async (
   const topLevel = sessions as Exclude<Session, { sessionType: "practice" }>[];
 
   const summaries: SessionSummary[] = await Promise.all(
-    topLevel.filter((record) => record.sessionType !== "homework" || record.questions.length > 0).map(async (record) => {
+    topLevel.map(async (record) => {
       // For writing, surface only prompt images. Otherwise the session's imageKeys.
       const presignKeys =
         record.sessionType === "writing"
@@ -133,15 +146,20 @@ export const handler = async (
       const [imageUrls, practiceSummaries] = await Promise.all([
         presignKeys.length
           ? Promise.all(
-              presignKeys.map((key) =>
-                getSignedUrl(
-                  s3,
-                  new GetObjectCommand({ Bucket: bucket, Key: key }),
-                  { expiresIn: PRESIGN_EXPIRES_IN },
-                ),
-              ),
+              presignKeys.map(async (key, imageIndex) => {
+                try {
+                  return await getSignedUrl(
+                    s3,
+                    new GetObjectCommand({ Bucket: bucket, Key: key }),
+                    { expiresIn: PRESIGN_EXPIRES_IN },
+                  );
+                } catch {
+                  logger.warn("history_image_unavailable", { sessionId: record.sessionId, imageIndex });
+                  return null;
+                }
+              }),
             )
-          : Promise.resolve([] as string[]),
+          : Promise.resolve([] as Array<string | null>),
         record.sessionType === "homework"
           ? listPracticeSessionsForOrigin(studentId, record.sessionId)
           : Promise.resolve([] as PracticeSessionSummary[]),
@@ -153,7 +171,14 @@ export const handler = async (
       const questions: QuestionWithPractice[] =
         record.sessionType === "homework"
           ? record.questions.map((q) => ({
-              ...q,
+              questionId: q.questionId,
+              input: q.input,
+              subject: q.subject,
+              yearLevel: q.yearLevel,
+              packet: q.packet,
+              ...(q.possiblyRepeatedOfQuestionId !== undefined
+                ? { possiblyRepeatedOfQuestionId: q.possiblyRepeatedOfQuestionId }
+                : {}),
               practiceSession: practiceByQuestion.get(q.questionId),
             }))
           : [];
@@ -174,6 +199,7 @@ export const handler = async (
         imageUrls,
         questions,
         usage: record.usage,
+        updatedAt: record.updatedAt,
       };
 
       if (record.sessionType === "reading") {
@@ -182,7 +208,6 @@ export const handler = async (
       } else if (record.sessionType === "writing") {
         summary.status = record.status;
         summary.endedReason = record.endedReason;
-        summary.updatedAt = record.updatedAt;
         summary.prompt = record.prompt;
         summary.plan = record.plan;
         summary.turns = await Promise.all(

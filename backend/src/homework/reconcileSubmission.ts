@@ -7,6 +7,8 @@ export type QuestionRelation =
   | { kind: "possible_duplicate"; questionId: number; confidence: "uncertain" };
 
 export interface SubmissionQuestionCandidate {
+  /** Same value marks high-confidence semantic overlap within this submission. */
+  overlapKey?: string;
   text: string;
   subject: Subject;
   yearLevel: YearLevel;
@@ -30,6 +32,41 @@ export const reconcileSubmission = (
   existingQuestions: HomeworkQuestion[],
   candidates: SubmissionQuestionCandidate[],
 ): ReconciliationResult => {
+  const existingIds = new Set(existingQuestions.map((question) => question.questionId));
+  for (const candidate of candidates) {
+    if (candidate.relation.kind !== "new" && !existingIds.has(candidate.relation.questionId)) {
+      throw new Error(`Analyzer related a candidate to unknown question ${candidate.relation.questionId}.`);
+    }
+  }
+
+  // A model can see the same complete question in overlapping photos. Collapse
+  // only confident `new` candidates with identical normalized text; uncertain
+  // relationships deliberately stay separate so we never erase ambiguity.
+  const normalizedNew = new Map<string, SubmissionQuestionCandidate>();
+  const distinctCandidates: SubmissionQuestionCandidate[] = [];
+  for (const candidate of candidates) {
+    if (candidate.relation.kind !== "new") {
+      distinctCandidates.push(candidate);
+      continue;
+    }
+    const fingerprint = candidate.overlapKey?.trim()
+      ? `model:${candidate.overlapKey.trim()}`
+      : `text:${candidate.text.trim().replace(/\s+/g, " ").toLocaleLowerCase()}`;
+    const prior = normalizedNew.get(fingerprint);
+    if (!prior) {
+      const copy = { ...candidate, sourcePageIds: [...new Set(candidate.sourcePageIds)] };
+      normalizedNew.set(fingerprint, copy);
+      distinctCandidates.push(copy);
+    } else {
+      prior.sourcePageIds = [...new Set([...prior.sourcePageIds, ...candidate.sourcePageIds])];
+    }
+  }
+
+  const distinctNewCount = distinctCandidates.filter((candidate) => candidate.relation.kind !== "update").length;
+  if (existingQuestions.length + distinctNewCount > 30) {
+    throw new Error("This submission would exceed the 30-question limit.");
+  }
+
   const questions: ReconciledHomeworkQuestion[] = [...existingQuestions];
   const byId = new Map(questions.map((question) => [question.questionId, question]));
   const addedQuestionIds: number[] = [];
@@ -37,28 +74,23 @@ export const reconcileSubmission = (
   const possiblyRepeatedQuestionIds: number[] = [];
   let nextQuestionId = Math.max(0, ...existingQuestions.map((q) => q.questionId)) + 1;
 
-  for (const candidate of candidates) {
+  for (const candidate of distinctCandidates) {
     if (candidate.relation.kind === "update") {
       const existing = byId.get(candidate.relation.questionId);
-      if (existing) {
-        const updated = {
-          ...existing,
-          input: candidate.text,
-          subject: candidate.subject,
-          yearLevel: candidate.yearLevel,
-          sourcePageIds: [...new Set([...(existing.sourcePageIds ?? []), ...candidate.sourcePageIds])],
-          revision: (existing.revision ?? 0) + 1,
-        };
-        const index = questions.findIndex((q) => q.questionId === existing.questionId);
-        questions[index] = updated;
-        byId.set(updated.questionId, updated);
-        updatedQuestionIds.push(updated.questionId);
-        continue;
-      }
-    }
-
-    if (questions.length >= 30) {
-      throw new Error("This submission would exceed the 30-question limit.");
+      // Targets were validated before any mutation.
+      const updated = {
+        ...existing!,
+        input: candidate.text,
+        subject: candidate.subject,
+        yearLevel: candidate.yearLevel,
+        sourcePageIds: [...new Set([...(existing!.sourcePageIds ?? []), ...candidate.sourcePageIds])],
+        revision: (existing!.revision ?? 0) + 1,
+      };
+      const index = questions.findIndex((q) => q.questionId === existing!.questionId);
+      questions[index] = updated;
+      byId.set(updated.questionId, updated);
+      if (!updatedQuestionIds.includes(updated.questionId)) updatedQuestionIds.push(updated.questionId);
+      continue;
     }
     const question: ReconciledHomeworkQuestion = {
       questionId: nextQuestionId++,

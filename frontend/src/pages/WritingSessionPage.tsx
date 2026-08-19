@@ -51,7 +51,7 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
       modelChoice: session.modelChoice,
       status: session.status ?? "active",
       endedReason: session.endedReason,
-      imageUrls: session.imageUrls,
+      imageUrls: session.imageUrls.filter((url): url is string => url !== null),
     });
   }, [sessionId, sessions, writing]);
 

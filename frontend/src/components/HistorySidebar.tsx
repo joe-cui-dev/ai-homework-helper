@@ -98,7 +98,7 @@ function SessionCard({ session, onClick, onResume }: SessionCardProps) {
           </span>
         )}
         <ModelChoiceBadge choice={session.modelChoice} />
-        <span className="text-xs text-gray-400">{formatDate(session.timestamp)}</span>
+        <span className="text-xs text-gray-400">{formatDate(session.updatedAt ?? session.timestamp)}</span>
       </div>
 
       <p className="text-sm text-gray-700 line-clamp-2">{previewText}</p>
@@ -121,13 +121,10 @@ function SessionCard({ session, onClick, onResume }: SessionCardProps) {
 
       {session.imageUrls.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
-          {session.imageUrls.map((url, i) => (
-            <img
-              key={i}
-              src={url}
-              alt={`Upload ${i + 1}`}
-              className="w-14 h-14 object-cover rounded-lg border border-gray-200"
-            />
+          {session.imageUrls.map((url, i) => url ? (
+            <img key={i} src={url} alt={`Upload ${i + 1}`} className="w-14 h-14 object-cover rounded-lg border border-gray-200" />
+          ) : (
+            <div key={i} role="img" aria-label={`Upload ${i + 1} unavailable`} className="w-14 h-14 rounded-lg border border-dashed border-gray-300 bg-gray-50 text-[10px] text-gray-400 flex items-center justify-center text-center">Unavailable</div>
           ))}
         </div>
       )}

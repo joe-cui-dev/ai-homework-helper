@@ -54,7 +54,7 @@ export function SessionDetailModal({ session, token: _token, onClose }: SessionD
               </span>
             ))}
             <ModelChoiceBadge choice={session.modelChoice} />
-            <span className="text-xs text-gray-400">{formatDate(session.timestamp)}</span>
+            <span className="text-xs text-gray-400">{formatDate(session.updatedAt ?? session.timestamp)}</span>
             {session.usage && (
               <span className="text-xs text-gray-400">
                 · {formatUsageCompact(session.usage)}
@@ -92,13 +92,10 @@ export function SessionDetailModal({ session, token: _token, onClose }: SessionD
           {/* Full-size uploaded images — shared across all questions */}
           {session.imageUrls.length > 0 && (
             <div className="space-y-3">
-              {session.imageUrls.map((url, i) => (
-                <img
-                  key={i}
-                  src={url}
-                  alt={`Upload ${i + 1}`}
-                  className="w-full rounded-xl border border-gray-200 object-contain bg-white"
-                />
+              {session.imageUrls.map((url, i) => url ? (
+                <img key={i} src={url} alt={`Upload ${i + 1}`} className="w-full rounded-xl border border-gray-200 object-contain bg-white" />
+              ) : (
+                <div key={i} role="img" aria-label={`Upload ${i + 1} unavailable`} className="w-full min-h-32 rounded-xl border border-dashed border-gray-300 bg-white text-sm text-gray-400 flex items-center justify-center">Image unavailable</div>
               ))}
             </div>
           )}

@@ -23,7 +23,7 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
   const analyzing = homework.status === "analyzing";
   const generating = homework.status === "generating";
   const working = analyzing || generating;
-  const appending = homework.appendStatus === "analyzing" || homework.appendStatus === "saving";
+  const appending = homework.appendStatus !== "idle" && homework.appendStatus !== "error";
   const done = homework.status === "done";
   const stopped = homework.status === "stopped";
   const error = homework.status === "error";
@@ -144,16 +144,22 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
             <AddHomeworkPages
               disabled={appending}
               remainingPages={10 - homework.pageCount}
+              remainingQuestions={30 - homework.totalQuestions}
               error={homework.appendError}
               completedPageCount={homework.pageCount}
               onSubmit={(images, submissionId) => { void homework.append(token, images, submissionId); }}
             />
           )}
+          {done && homework.hasNoCompleteQuestions && (
+            <p className="text-center text-sm text-amber-700">No complete question yet—add the next worksheet page when you’re ready.</p>
+          )}
           {appending && <p className="text-center text-sm text-gray-500">Adding pages while your current results remain available…</p>}
+          {homework.appendNotice && <p role="status" aria-live="polite" className="text-center text-sm font-semibold text-emerald-700">{homework.appendNotice}</p>}
         <div className="text-center">
           <button
             onClick={homework.reset}
-            className="px-6 py-2.5 rounded-2xl bg-white border-2 border-brand-200 text-brand-600 font-bold hover:bg-brand-50 transition-colors shadow-sm"
+            disabled={appending}
+            className="px-6 py-2.5 rounded-2xl bg-white border-2 border-brand-200 text-brand-600 font-bold hover:bg-brand-50 transition-colors shadow-sm disabled:opacity-50"
           >
             Coach another question
           </button>

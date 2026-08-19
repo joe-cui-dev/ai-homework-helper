@@ -1,4 +1,19 @@
 import type { ModelChoice, StreamEvent } from "../types";
+import { parseNdjsonStream } from "./ndjson";
+
+interface InitialHomeworkRequest {
+  kind: "initial";
+  question: string;
+  images: string[] | null;
+  modelChoice: ModelChoice;
+}
+
+interface AppendHomeworkPagesRequest {
+  kind: "append_pages";
+  sessionId: string;
+  submissionId: string;
+  images: string[];
+}
 
 export const streamHomework = async (
   question: string,
@@ -18,10 +33,11 @@ export const streamHomework = async (
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
+      kind: "initial",
       question,
       images: images?.length ? images : null,
       modelChoice,
-    }),
+    } satisfies InitialHomeworkRequest),
     signal,
   });
 
@@ -30,39 +46,7 @@ export const streamHomework = async (
     throw new Error(text || `Request failed with status ${response.status}.`);
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const event = JSON.parse(trimmed) as StreamEvent;
-        onEvent(event);
-        if (event.type === "error") return;
-      } catch {
-        // Ignore malformed lines.
-      }
-    }
-  }
-
-  if (buffer.trim()) {
-    try {
-      const event = JSON.parse(buffer.trim()) as StreamEvent;
-      onEvent(event);
-    } catch {
-      // Ignore malformed final line.
-    }
-  }
+  await parseNdjsonStream<StreamEvent>(response.body, onEvent);
 };
 
 export const appendHomeworkPages = async (
@@ -74,13 +58,8 @@ export const appendHomeworkPages = async (
 ): Promise<void> => {
   const apiUrl = import.meta.env.VITE_HOMEWORK_API_URL;
   if (!apiUrl) throw new Error("VITE_HOMEWORK_API_URL is not configured.");
-  const response = await fetch(apiUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ kind: "append_pages", sessionId, submissionId, images }) });
+  const request: AppendHomeworkPagesRequest = { kind: "append_pages", sessionId, submissionId, images };
+  const response = await fetch(apiUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(request) });
   if (!response.ok || !response.body) throw new Error(`Request failed with status ${response.status}.`);
-  const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read(); if (done) break;
-    buffer += decoder.decode(value, { stream: true }); const lines = buffer.split("\n"); buffer = lines.pop() ?? "";
-    for (const line of lines) { if (!line.trim()) continue; try { const event = JSON.parse(line) as StreamEvent; onEvent(event); if (event.type === "error") return; } catch { /* ignore malformed NDJSON */ } }
-  }
-  if (buffer.trim()) { try { onEvent(JSON.parse(buffer) as StreamEvent); } catch { /* ignore malformed final event */ } }
+  await parseNdjsonStream<StreamEvent>(response.body, onEvent);
 };

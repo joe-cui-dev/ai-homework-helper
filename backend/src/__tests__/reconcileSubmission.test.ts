@@ -34,4 +34,54 @@ describe("reconcileSubmission", () => {
     const questions = Array.from({ length: 30 }, (_, i) => existing(i + 1, `Question ${i + 1}`));
     expect(() => reconcileSubmission(questions, [{ text: "Another", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-2"], relation: { kind: "new", confidence: "high" } }])).toThrow("30-question limit");
   });
+
+  it("rejects model relations that target a question outside the session", () => {
+    expect(() => reconcileSubmission([existing(4, "What is 2 + 2?")], [{
+      text: "continued text", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-2"], relation: { kind: "update", questionId: 99, confidence: "high" },
+    }])).toThrow("unknown question 99");
+  });
+
+  it("deduplicates confident overlaps inside one submission before checking the limit", () => {
+    const questions = Array.from({ length: 29 }, (_, i) => existing(i + 1, `Question ${i + 1}`));
+    const result = reconcileSubmission(questions, [
+      { text: "What is 8 x 7?", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-30"], relation: { kind: "new", confidence: "high" } },
+      { text: "  what   is 8 X 7? ", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-31"], relation: { kind: "new", confidence: "high" } },
+    ]);
+
+    expect(result.questions).toHaveLength(30);
+    expect(result.addedQuestionIds).toEqual([30]);
+    expect(result.questions[29].sourcePageIds).toEqual(["page-30", "page-31"]);
+  });
+
+  it("deduplicates semantic OCR variants carrying the analyzer's overlap key", () => {
+    const result = reconcileSubmission([], [
+      { overlapKey: "worksheet-q7", text: "7. Find 12 ÷ 3", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-a"], relation: { kind: "new", confidence: "high" } },
+      { overlapKey: "worksheet-q7", text: "Q7 Find 12 / 3", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-b"], relation: { kind: "new", confidence: "high" } },
+    ]);
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0].sourcePageIds).toEqual(["page-a", "page-b"]);
+  });
+
+  it("preflights every distinct new question so overflow leaves the inputs untouched", () => {
+    const questions = Array.from({ length: 29 }, (_, i) => existing(i + 1, `Question ${i + 1}`));
+    const snapshot = JSON.stringify(questions);
+
+    expect(() => reconcileSubmission(questions, [
+      { text: "New A", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-30"], relation: { kind: "new", confidence: "high" } },
+      { text: "New B", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-31"], relation: { kind: "new", confidence: "high" } },
+    ])).toThrow("30-question limit");
+    expect(JSON.stringify(questions)).toBe(snapshot);
+  });
+
+  it("allocates after sparse ids and preserves unchanged question identity", () => {
+    const first = existing(2, "First");
+    const second = existing(8, "Second");
+    const result = reconcileSubmission([first, second], [{
+      text: "Third", subject: "science", yearLevel: "year-4", sourcePageIds: ["page-3"], relation: { kind: "new", confidence: "high" },
+    }]);
+
+    expect(result.questions[0]).toBe(first);
+    expect(result.questions[1]).toBe(second);
+    expect(result.questions[2].questionId).toBe(9);
+  });
 });

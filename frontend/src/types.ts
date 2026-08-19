@@ -38,6 +38,7 @@ export interface SessionQuestion {
   subject: Subject;
   yearLevel: YearLevel;
   packet: CoachingPacket;
+  possiblyRepeatedOfQuestionId?: number;
   practiceSession?: PracticeSessionSummary;
 }
 
@@ -77,7 +78,7 @@ export interface SessionSummary {
   sessionType: TaskType;
   modelChoice?: ModelChoice;
   subjects: string[];
-  imageUrls: string[];
+  imageUrls: Array<string | null>;
   questions: SessionQuestion[];
   // Reading-only fields. Empty/undefined for non-reading sessions.
   bookContext?: BookContext;
@@ -96,6 +97,7 @@ export interface SessionSummary {
 
 export type StreamEvent =
   | { type: "analyzing" }
+  | { type: "append_phase"; phase: "preparing" | "analyzing" | "generating" | "saving" }
   | {
       type: "packet_start";
       sessionId: string;
@@ -116,9 +118,11 @@ export type StreamEvent =
       packets: BatchPacket[];
       usage: TokenUsage;
       modelChoice: ModelChoice;
-      pageCount?: number;
-      updatedQuestionIds?: number[];
-      possiblyRepeatedQuestionIds?: number[];
+      pageCount: number;
+      questionCount: number;
+      updatedQuestionIds: number[];
+      possiblyRepeatedQuestionIds: number[];
+      hasNoCompleteQuestions: boolean;
     }
   // ── Reading-task events ───────────────────────────────────────────────
   | { type: "book_analyzing" }
@@ -147,7 +151,7 @@ export type StreamEvent =
       usage: TokenUsage;
       modelChoice: ModelChoice;
     }
-  | { type: "error"; message: string; code?: string };
+  | { type: "error"; message: string; code?: string; retryable?: boolean };
 
 // ── Phase 2: Practice Tutor Loop ─────────────────────────────────────────────
 

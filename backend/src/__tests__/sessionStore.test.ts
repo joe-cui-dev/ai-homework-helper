@@ -5,6 +5,9 @@ import {
   saveAgentSidecar,
   loadAgentSidecar,
   uploadSessionImages,
+  acquireHomeworkSubmissionClaim,
+  updateHomeworkSubmissionClaim,
+  uploadHomeworkSubmissionImages,
 } from "../shared/sessionStore";
 import type { AgentSidecar } from "../shared/sessionStore";
 import type {
@@ -448,6 +451,34 @@ describe("listSessions", () => {
     expect(second.sessions).toHaveLength(2);
     expect(second.nextCursor).toBeNull();
   });
+
+  it("keeps later activity out of an existing cursor snapshot", async () => {
+    const original = [
+      { Key: "sessions/student-1/homework/a.json", LastModified: new Date("2024-01-01") },
+      { Key: "sessions/student-1/homework/b.json", LastModified: new Date("2024-01-02") },
+      { Key: "sessions/student-1/homework/c.json", LastModified: new Date("2024-01-03") },
+    ];
+    let contents = original;
+    s3Mock._sendMock.mockImplementation(async (cmd: { Body?: string; Key?: string; Prefix?: string }) => {
+      if (cmd.Prefix) return { Contents: contents, IsTruncated: false };
+      if (typeof cmd.Body === "string") { s3Mock._store.set(cmd.Key!, cmd.Body); return {}; }
+      const body = s3Mock._store.get(cmd.Key!);
+      if (!body) throw Object.assign(new Error("NoSuchKey"), { name: "NoSuchKey" });
+      return { Body: { transformToString: async () => body } };
+    });
+    await Promise.all(["a", "b", "c"].map((id) => saveSession(homeworkFixture(id, "2024-01-01T00:00:00Z"))));
+    const first = await listSessions("student-1", "homework", undefined, 1);
+    expect(first.sessions.map((session) => session.sessionId)).toEqual(["c"]);
+
+    contents = [
+      original[0],
+      { ...original[1], LastModified: new Date("2099-01-01") },
+      original[2],
+      { Key: "sessions/student-1/homework/new.json", LastModified: new Date("2099-01-02") },
+    ];
+    const second = await listSessions("student-1", "homework", first.nextCursor!, 10);
+    expect(second.sessions.map((session) => session.sessionId)).toEqual(["b", "a"]);
+  });
 });
 
 describe("Agent sidecar", () => {
@@ -566,5 +597,81 @@ describe("uploadSessionImages", () => {
   it("returns empty array when no images provided", async () => {
     const keys = await uploadSessionImages("student-1", "homework", "sess-1", []);
     expect(keys).toEqual([]);
+  });
+});
+
+describe("Homework submission storage", () => {
+  it("uses deterministic submission-scoped image keys", async () => {
+    s3Mock._sendMock.mockResolvedValue({});
+    await expect(uploadHomeworkSubmissionImages("student-1", "sess-1", "sub-7", [
+      "data:image/jpeg;base64,/9j/abc",
+    ])).resolves.toEqual([
+      "sessions/student-1/homework/sess-1/submission-sub-7-image-0.jpeg",
+    ]);
+  });
+
+  it("acquires a claim with create-only semantics before work begins", async () => {
+    s3Mock._sendMock.mockResolvedValueOnce({ ETag: '"claim-v1"' });
+    const result = await acquireHomeworkSubmissionClaim({
+      studentId: "student-1", sessionId: "sess-1", submissionId: "sub-1",
+      payloadHash: "hash-a", ownerAttemptId: "attempt-1", now: "2026-08-19T00:00:00.000Z",
+      leaseExpiresAt: "2026-08-19T00:06:00.000Z",
+    });
+
+    expect(result.kind).toBe("acquired");
+    expect(s3Mock._sendMock).toHaveBeenCalledWith(expect.objectContaining({
+      Key: "sessions/student-1/homework/sess-1/submission-sub-1.claim",
+      IfNoneMatch: "*",
+    }));
+  });
+
+  it("suppresses a live duplicate and rejects a different payload", async () => {
+    const conflict = Object.assign(new Error("exists"), { name: "PreconditionFailed" });
+    const liveClaim = {
+      status: "processing", payloadHash: "hash-a", ownerAttemptId: "attempt-other",
+      leaseExpiresAt: "2026-08-19T00:06:00.000Z", updatedAt: "2026-08-19T00:00:00.000Z", version: 1,
+    };
+    s3Mock._sendMock
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce({ ETag: '"claim-v1"', Body: { transformToString: async () => JSON.stringify(liveClaim) } });
+    await expect(acquireHomeworkSubmissionClaim({
+      studentId: "student-1", sessionId: "sess-1", submissionId: "sub-1", payloadHash: "hash-a",
+      ownerAttemptId: "attempt-2", now: "2026-08-19T00:01:00.000Z", leaseExpiresAt: "2026-08-19T00:07:00.000Z",
+    })).resolves.toMatchObject({ kind: "in_progress" });
+
+    s3Mock._sendMock
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce({ ETag: '"claim-v1"', Body: { transformToString: async () => JSON.stringify(liveClaim) } });
+    await expect(acquireHomeworkSubmissionClaim({
+      studentId: "student-1", sessionId: "sess-1", submissionId: "sub-1", payloadHash: "hash-b",
+      ownerAttemptId: "attempt-2", now: "2026-08-19T00:01:00.000Z", leaseExpiresAt: "2026-08-19T00:07:00.000Z",
+    })).resolves.toMatchObject({ kind: "payload_mismatch" });
+  });
+
+  it("reclaims a failed claim conditionally and increments its version", async () => {
+    const conflict = Object.assign(new Error("exists"), { name: "PreconditionFailed" });
+    const failedClaim = {
+      status: "failed", payloadHash: "hash-a", ownerAttemptId: "attempt-old",
+      leaseExpiresAt: "2026-08-18T23:00:00.000Z", updatedAt: "2026-08-18T23:00:00.000Z", version: 2,
+    };
+    s3Mock._sendMock
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce({ ETag: '"claim-v2"', Body: { transformToString: async () => JSON.stringify(failedClaim) } })
+      .mockResolvedValueOnce({ ETag: '"claim-v3"' });
+
+    await expect(acquireHomeworkSubmissionClaim({
+      studentId: "student-1", sessionId: "sess-1", submissionId: "sub-1", payloadHash: "hash-a",
+      ownerAttemptId: "attempt-new", now: "2026-08-19T00:00:00.000Z", leaseExpiresAt: "2026-08-19T00:06:00.000Z",
+    })).resolves.toMatchObject({ kind: "acquired", claim: { version: 3, ownerAttemptId: "attempt-new" } });
+    expect(s3Mock._sendMock).toHaveBeenLastCalledWith(expect.objectContaining({ IfMatch: '"claim-v2"' }));
+  });
+
+  it("updates a claim only for the owning attempt", async () => {
+    s3Mock._sendMock.mockResolvedValueOnce({ ETag: '"claim-v2"' });
+    await updateHomeworkSubmissionClaim({
+      studentId: "student-1", sessionId: "sess-1", submissionId: "sub-1", eTag: '"claim-v1"',
+      claim: { status: "complete", payloadHash: "hash-a", ownerAttemptId: "attempt-1", leaseExpiresAt: "2026-08-19T00:06:00.000Z", updatedAt: "2026-08-19T00:02:00.000Z", version: 2 },
+    });
+    expect(s3Mock._sendMock).toHaveBeenCalledWith(expect.objectContaining({ IfMatch: '"claim-v1"' }));
   });
 });
