@@ -310,6 +310,16 @@ describe("history handler", () => {
     expect(serialized).toContain("possiblyRepeatedOfQuestionId");
   });
 
+  it("hides a questionless Homework detail without presigning or loading Practice", async () => {
+    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
+    mockLoadSession.mockResolvedValueOnce(baseSession({ questions: [] }));
+    const response = await handler(makeEvent({ headers: { authorization: "Bearer valid-token" }, queryStringParameters: { type: "homework", sessionId: "batch-abc" } }), {} as never);
+    expect(response.statusCode).toBe(404);
+    expect(JSON.parse(response.body as string)).toEqual({ message: "Session unavailable." });
+    expect(mockGetSignedUrl).not.toHaveBeenCalled();
+    expect(mockListPracticeSessions).not.toHaveBeenCalled();
+  });
+
   it("keeps ordered placeholders when one image cannot be presigned", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
     mockLoadSession.mockResolvedValueOnce(baseSession({ imageKeys: ["first", "second"] }));

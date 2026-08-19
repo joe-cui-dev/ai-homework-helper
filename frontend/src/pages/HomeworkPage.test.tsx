@@ -12,7 +12,7 @@ const state = (overrides = {}) => ({
     questionId: 1, questionText: "Visible old question", subject: "math", yearLevel: "year-3",
     packet: { questionId: 1, tldrAnswer: "4", whyItWorks: "why", childHint: "hint" },
   }], pending: [], totalQuestions: 1, usage: { inputTokens: 1, outputTokens: 1, costUsd: 0.01 }, modelChoice: "fast",
-  error: null, appendStatus: "idle", appendError: null, updatedQuestionIds: [], possiblyRepeatedQuestionIds: [],
+  error: null, appendStatus: "idle", appendError: null, updatedQuestionIds: [], possiblyRepeatedQuestionIds: [], clearAppendError: vi.fn(),
   appendNotice: null,
   pageCount: 1, hasNoCompleteQuestions: false, submit: vi.fn(), stop: vi.fn(), append: vi.fn(), reset: vi.fn(),
   ...overrides,

@@ -104,6 +104,9 @@ interface SessionCardSummary {
 
 type HistorySession = Exclude<Session, { sessionType: "practice" }>;
 
+const isHistoryVisible = (record: HistorySession): boolean =>
+  record.sessionType !== "homework" || record.questions.length > 0;
+
 const presignImages = async (
   keys: string[],
   bucket: string,
@@ -302,7 +305,7 @@ export const handler = async (
       };
     }
     const selected = await loadSession(studentId, typeParam, selectedSessionId);
-    if (!selected || selected.sessionType === "practice") {
+    if (!selected || selected.sessionType === "practice" || !isHistoryVisible(selected)) {
       logger.resetKeys();
       return {
         statusCode: 404,
@@ -330,7 +333,7 @@ export const handler = async (
       Math.max(1, limit - sessions.length),
     );
     sessions.push(...page.sessions.filter(
-      (record) => record.sessionType !== "homework" || record.questions.length > 0,
+      (record): record is HistorySession => record.sessionType !== "practice" && isHistoryVisible(record),
     ));
     nextCursor = page.nextCursor;
     scanCursor = page.nextCursor ?? undefined;

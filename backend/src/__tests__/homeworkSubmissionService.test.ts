@@ -1,4 +1,4 @@
-import { processHomeworkSubmission, HomeworkSubmissionError, type HomeworkSubmissionDependencies } from "../homework/submissionService";
+import { hashHomeworkSubmissionImages, processHomeworkSubmission, HomeworkSubmissionError, type HomeworkSubmissionDependencies } from "../homework/submissionService";
 import type { HomeworkSession } from "../shared/session";
 
 const ZERO = { inputTokens: 0, outputTokens: 0, costUsd: 0 };
@@ -27,6 +27,15 @@ const dependencies = (): jest.Mocked<HomeworkSubmissionDependencies> => ({
 });
 
 describe("processHomeworkSubmission", () => {
+  it("hashes ordered image arrays with unambiguous boundaries", () => {
+    const first = "data:image/png;base64,one\ndata:image/jpeg;base64,two";
+    expect(hashHomeworkSubmissionImages([first])).toBe(hashHomeworkSubmissionImages([first]));
+    expect(hashHomeworkSubmissionImages([first])).not.toBe(hashHomeworkSubmissionImages(["data:image/png;base64,one", "data:image/jpeg;base64,two"]));
+    expect(hashHomeworkSubmissionImages(["a", "b"])).not.toBe(hashHomeworkSubmissionImages(["b", "a"]));
+    expect(hashHomeworkSubmissionImages([])).not.toBe(hashHomeworkSubmissionImages([""]));
+    expect(hashHomeworkSubmissionImages(["data:image/png;base64,abc"])).not.toBe(hashHomeworkSubmissionImages(["data:image/jpeg;base64,abc"]));
+  });
+
   it("owns the claim before append analysis and commits all state once", async () => {
     const deps = dependencies();
     const event = await processHomeworkSubmission({ studentId: "student-1", request: { kind: "append_pages", sessionId: "session-1", submissionId: "sub-1", images: ["data:image/jpeg;base64,abc"] }, emit: jest.fn(), deps });
@@ -71,6 +80,41 @@ describe("processHomeworkSubmission", () => {
     const deps = dependencies();
     deps.acquireClaim.mockResolvedValue({ kind: "in_progress", claim: { status: "processing", payloadHash: "payload-hash", ownerAttemptId: "other", leaseExpiresAt: "2026-08-19T00:07:00.000Z", updatedAt: "2026-08-19T00:00:00.000Z", version: 1 } });
     await expect(processHomeworkSubmission({ studentId: "student-1", request: { kind: "append_pages", sessionId: "session-1", submissionId: "sub-1", images: ["data:image/jpeg;base64,abc"] }, emit: jest.fn(), deps })).rejects.toMatchObject({ code: "in_progress", retryable: true });
+    expect(deps.analyze).not.toHaveBeenCalled();
+  });
+
+  it("rejects a same-ID payload mismatch before analysis, upload, or commit", async () => {
+    const deps = dependencies();
+    const establishedHash = hashHomeworkSubmissionImages(["data:image/jpeg;base64,first"]);
+    deps.hashImages.mockImplementation(hashHomeworkSubmissionImages);
+    deps.acquireClaim.mockImplementation(async ({ payloadHash }) => {
+      expect(payloadHash).not.toBe(establishedHash);
+      return { kind: "payload_mismatch", claim: { status: "processing", payloadHash: establishedHash, ownerAttemptId: "winner", leaseExpiresAt: "2026-08-19T00:07:00.000Z", updatedAt: "2026-08-19T00:00:00.000Z", version: 1 } };
+    });
+    await expect(processHomeworkSubmission({ studentId: "student-1", request: { kind: "append_pages", sessionId: "session-1", submissionId: "sub-1", images: ["data:image/jpeg;base64,different"] }, emit: jest.fn(), deps })).rejects.toMatchObject({ code: "validation", retryable: false });
+    expect(deps.analyze).not.toHaveBeenCalled();
+    expect(deps.uploadAppendImages).not.toHaveBeenCalled();
+    expect(deps.saveSessionIfVersion).not.toHaveBeenCalled();
+  });
+
+  it("replays a completed claim after the initial session read raced its commit", async () => {
+    const deps = dependencies();
+    const committed = baseSession();
+    committed.submissions = [{ submissionId: "sub-1", payloadHash: "payload-hash", timestamp: committed.updatedAt, pageIds: ["old-1"], addedQuestionIds: [], updatedQuestionIds: [4], possiblyRepeatedQuestionIds: [], usage: ZERO }];
+    deps.acquireClaim.mockResolvedValue({ kind: "complete", claim: { status: "complete", payloadHash: "payload-hash", ownerAttemptId: "winner", leaseExpiresAt: "2026-08-19T00:07:00.000Z", updatedAt: "2026-08-19T00:00:00.000Z", version: 2 } });
+    deps.loadSessionWithVersion.mockResolvedValueOnce({ session: baseSession(), eTag: '"v1"' }).mockResolvedValueOnce({ session: committed, eTag: '"v2"' });
+
+    await expect(processHomeworkSubmission({ studentId: "student-1", request: { kind: "append_pages", sessionId: "session-1", submissionId: "sub-1", images: ["data:image/jpeg;base64,abc"] }, emit: jest.fn(), deps })).resolves.toMatchObject({ type: "complete", updatedQuestionIds: [4] });
+    expect(deps.analyze).not.toHaveBeenCalled();
+    expect(deps.generatePackets).not.toHaveBeenCalled();
+    expect(deps.uploadAppendImages).not.toHaveBeenCalled();
+    expect(deps.saveSessionIfVersion).not.toHaveBeenCalled();
+  });
+
+  it("does not restart AI when a completed claim lacks its committed record", async () => {
+    const deps = dependencies();
+    deps.acquireClaim.mockResolvedValue({ kind: "complete", claim: { status: "complete", payloadHash: "payload-hash", ownerAttemptId: "winner", leaseExpiresAt: "2026-08-19T00:07:00.000Z", updatedAt: "2026-08-19T00:00:00.000Z", version: 2 } });
+    await expect(processHomeworkSubmission({ studentId: "student-1", request: { kind: "append_pages", sessionId: "session-1", submissionId: "sub-1", images: ["data:image/jpeg;base64,abc"] }, emit: jest.fn(), deps })).rejects.toMatchObject({ code: "processing_failure", retryable: true });
     expect(deps.analyze).not.toHaveBeenCalled();
   });
 

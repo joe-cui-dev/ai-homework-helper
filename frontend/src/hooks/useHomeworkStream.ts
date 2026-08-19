@@ -4,6 +4,12 @@ import type { BatchPacket, ModelChoice, StreamEvent, TokenUsage } from "../types
 
 type Status = "idle" | "analyzing" | "generating" | "done" | "stopped" | "error";
 
+export interface HomeworkAppendError {
+  message: string;
+  code?: Extract<StreamEvent, { type: "error" }>["code"];
+  retryable: boolean;
+}
+
 export interface PendingPacket {
   questionId: number;
   total: number;
@@ -20,7 +26,7 @@ interface UseHomeworkStreamReturn {
   modelChoice: ModelChoice;
   error: string | null;
   appendStatus: "idle" | "preparing" | "analyzing" | "generating" | "saving" | "error";
-  appendError: string | null;
+  appendError: HomeworkAppendError | null;
   appendNotice: string | null;
   updatedQuestionIds: number[];
   possiblyRepeatedQuestionIds: number[];
@@ -34,6 +40,7 @@ interface UseHomeworkStreamReturn {
   ) => Promise<void>;
   stop: () => void;
   append: (token: string, images: string[], submissionId: string) => Promise<void>;
+  clearAppendError: () => void;
   reset: () => void;
 }
 
@@ -47,7 +54,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
   const [modelChoice, setModelChoice] = useState<ModelChoice>("fast");
   const [error, setError] = useState<string | null>(null);
   const [appendStatus, setAppendStatus] = useState<"idle" | "preparing" | "analyzing" | "generating" | "saving" | "error">("idle");
-  const [appendError, setAppendError] = useState<string | null>(null);
+  const [appendError, setAppendError] = useState<HomeworkAppendError | null>(null);
   const [appendNotice, setAppendNotice] = useState<string | null>(null);
   const [updatedQuestionIds, setUpdatedQuestionIds] = useState<number[]>([]);
   const [possiblyRepeatedQuestionIds, setPossiblyRepeatedQuestionIds] = useState<number[]>([]);
@@ -211,10 +218,21 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
             ? "Pages added and coaching updated."
             : "Pages added as context; no complete questions changed.");
         }
-        if (event.type === "error") { setAppendError(event.message); setAppendStatus("error"); }
+        if (event.type === "error") {
+          setAppendError({ message: event.message, code: event.code, retryable: event.retryable === true });
+          setAppendStatus("error");
+        }
       });
-    } catch (err) { setAppendError(err instanceof Error ? err.message : "Could not add pages."); setAppendStatus("error"); }
+    } catch (err) {
+      setAppendError({ message: err instanceof Error ? err.message : "Could not add pages.", code: "processing_failure", retryable: true });
+      setAppendStatus("error");
+    }
   }, [sessionId, totalQuestions]);
+
+  const clearAppendError = useCallback(() => {
+    setAppendError(null);
+    setAppendStatus((current) => current === "error" ? "idle" : current);
+  }, []);
 
   return {
     status,
@@ -235,6 +253,7 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
     submit,
     stop,
     append,
+    clearAppendError,
     reset,
   };
 };

@@ -148,6 +148,7 @@ export const HomeworkPage = ({ token }: HomeworkPageProps) => {
               error={homework.appendError}
               completedPageCount={homework.pageCount}
               onSubmit={(images, submissionId) => { void homework.append(token, images, submissionId); }}
+              onAttachmentsChanged={homework.clearAppendError}
             />
           )}
           {done && homework.hasNoCompleteQuestions && (

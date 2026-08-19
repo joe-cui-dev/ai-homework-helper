@@ -71,6 +71,27 @@ export interface HomeworkSubmissionDependencies {
   hashImages(images: string[]): string;
 }
 
+/**
+ * Creates a versioned, length-delimited identity for an ordered Page
+ * Submission. Delimiters alone are ambiguous because data URLs are arbitrary
+ * strings and can themselves contain the delimiter.
+ */
+export const hashHomeworkSubmissionImages = (images: string[]): string => {
+  const hash = createHash("sha256");
+  hash.update(Buffer.from("homework-page-submission:v1\0", "utf8"));
+  const count = Buffer.allocUnsafe(4);
+  count.writeUInt32BE(images.length);
+  hash.update(count);
+  for (const image of images) {
+    const bytes = Buffer.from(image, "utf8");
+    const length = Buffer.allocUnsafe(4);
+    length.writeUInt32BE(bytes.length);
+    hash.update(length);
+    hash.update(bytes);
+  }
+  return hash.digest("hex");
+};
+
 const defaultDependencies: HomeworkSubmissionDependencies = {
   loadSessionWithVersion,
   saveSession,
@@ -85,7 +106,7 @@ const defaultDependencies: HomeworkSubmissionDependencies = {
   now: () => new Date(),
   newSessionId: randomUUID,
   newAttemptId: randomUUID,
-  hashImages: (images) => createHash("sha256").update(images.join("\n")).digest("hex"),
+  hashImages: hashHomeworkSubmissionImages,
 };
 
 const completeEvent = (
@@ -237,7 +258,21 @@ const runAppend = async (
     now: startedAt.toISOString(), leaseExpiresAt: new Date(startedAt.getTime() + 6 * 60_000).toISOString(),
   });
   if (claimResult.kind === "payload_mismatch") throw new HomeworkSubmissionError("This submission ID belongs to different pages.", "validation");
-  if (claimResult.kind !== "acquired") throw new HomeworkSubmissionError("This page submission is still processing. Retry shortly.", "in_progress", true);
+  if (claimResult.kind === "in_progress") throw new HomeworkSubmissionError("This page submission is still processing. Retry shortly.", "in_progress", true);
+  if (claimResult.kind === "complete") {
+    const reloaded = await deps.loadSessionWithVersion(studentId, "homework", request.sessionId);
+    if (reloaded?.session.sessionType === "homework") {
+      const committedSubmission = reloaded.session.submissions?.find((submission) => submission.submissionId === request.submissionId);
+      if (committedSubmission) {
+        const event = replayCommitted(reloaded.session, committedSubmission, payloadHash);
+        logger.info("homework_submission_replay_after_claim_complete", { sessionId: request.sessionId, submissionId: request.submissionId });
+        emit(event);
+        return event;
+      }
+    }
+    logger.warn("homework_submission_complete_claim_without_session_record", { sessionId: request.sessionId, submissionId: request.submissionId });
+    throw new HomeworkSubmissionError("This page submission is finalizing. Retry shortly.", "processing_failure", true);
+  }
 
   const claim = claimResult.claim;
   const claimETag = claimResult.eTag;

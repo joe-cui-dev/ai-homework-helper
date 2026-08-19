@@ -64,7 +64,17 @@ describe("useHomeworkStream append", () => {
     expect(result.current.packets).toEqual([oldPacket]);
     expect(result.current.pageCount).toBe(1);
     expect(result.current.appendStatus).toBe("error");
-    expect(result.current.appendError).toBe("Try again");
+    expect(result.current.appendError).toEqual({ message: "Try again", code: "processing_failure", retryable: true });
+  });
+
+  it("preserves a permanent append error without labelling it retryable", async () => {
+    mocks.appendHomeworkPages.mockImplementation(async (_s, _id, _images, _token, onEvent: (event: StreamEvent) => void) => {
+      onEvent({ type: "error", code: "validation", retryable: false, message: "Choose different pages" });
+    });
+    const { result } = renderHook(() => useHomeworkStream());
+    await act(() => result.current.submit("", "token", ["image"]));
+    await act(() => result.current.append("token", ["new-image"], "submission-1"));
+    expect(result.current.appendError).toEqual({ message: "Choose different pages", code: "validation", retryable: false });
   });
 
   it("turns append EOF after saving into a retryable error without replacing results", async () => {
@@ -78,7 +88,7 @@ describe("useHomeworkStream append", () => {
 
     expect(result.current.packets).toEqual([oldPacket]);
     expect(result.current.appendStatus).toBe("error");
-    expect(result.current.appendError).toContain("terminal event");
+    expect(result.current.appendError).toMatchObject({ message: expect.stringContaining("terminal event"), retryable: true });
   });
 
   it("does not mark an initial request done when the stream has no completion", async () => {
