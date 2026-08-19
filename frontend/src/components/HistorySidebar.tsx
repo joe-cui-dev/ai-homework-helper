@@ -110,16 +110,14 @@ function SessionCard({ session, onClick, onResume }: SessionCardProps) {
         <p className="text-xs font-semibold text-violet-600">Resume →</p>
       )}
 
-      {session.imageUrls.length > 0 && (
-        <div className="flex gap-1.5 flex-wrap">
-          {session.imageUrls.slice(0, 1).map((url, i) => url ? (
-            <img key={i} src={url} alt="Upload 1" className="w-14 h-14 object-cover rounded-lg border border-gray-200" />
-          ) : (
-            <div key={i} role="img" aria-label="Upload 1 unavailable" className="w-14 h-14 rounded-lg border border-dashed border-gray-300 bg-gray-50 text-[10px] text-gray-400 flex items-center justify-center text-center">Unavailable</div>
-          ))}
-          <span className="self-end text-xs text-gray-400">{session.imageCount} {session.imageCount === 1 ? "image" : "images"}</span>
-        </div>
-      )}
+      <div className="flex gap-1.5 flex-wrap">
+        {session.imageUrls.slice(0, 1).map((url, i) => url ? (
+          <img key={i} src={url} alt="Upload 1" className="w-14 h-14 object-cover rounded-lg border border-gray-200" />
+        ) : (
+          <div key={i} role="img" aria-label="Upload 1 unavailable" className="w-14 h-14 rounded-lg border border-dashed border-gray-300 bg-gray-50 text-[10px] text-gray-400 flex items-center justify-center text-center">Unavailable</div>
+        ))}
+        <span className="self-end text-xs text-gray-400">{session.imageCount} {session.imageCount === 1 ? "image" : "images"}</span>
+      </div>
     </button>
   );
 }

@@ -188,6 +188,8 @@ export interface PracticeSessionSummary {
   problemCount: number;
   updatedAt: string;
   totalUsage?: TokenUsage;
+  modelChoice: ModelChoice;
+  finalSummary?: string;
 }
 
 // Per-turn UI-facing transcript entry. Built up in usePracticeSession from
@@ -323,7 +325,7 @@ export type WritingTurn =
       kind: "draft";
       turnIndex: number;
       ts: string;
-      input: { text?: string; imageKeys?: string[]; imageUrls?: Array<string | null> };
+      input: { text?: string; imageUrls?: Array<string | null> };
       packet: DraftFeedbackPacket;
     }
   | {

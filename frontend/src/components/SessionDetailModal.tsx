@@ -175,9 +175,11 @@ export function SessionDetailModal({ session, token: _token, onClose }: SessionD
                   <div className="space-y-2">
                     {(q.practiceSessions ?? []).map((practice, practiceIndex) => (
                       <div key={`${q.questionId}-${practice.updatedAt}-${practiceIndex}`} className="bg-violet-50 border border-violet-100 rounded-xl px-3 py-2 text-xs text-violet-800">
-                        <span className="font-semibold">Practice {practiceIndex + 1}: {practice.status === "active" ? "In progress" : practice.endedReason ?? "Ended"}</span>
+                        <span className="font-semibold">Practice {practiceIndex + 1}: {practice.status === "active" ? "In progress" : practice.endedReason ?? "Ended"}</span>{" "}
+                        <ModelChoiceBadge choice={practice.modelChoice} />
                         <span className="text-violet-600"> · {practice.problemCount} problems · {formatDate(practice.updatedAt)}</span>
                         {practice.totalUsage && <span className="text-violet-600"> · {formatUsageCompact(practice.totalUsage)}</span>}
+                        {practice.finalSummary && <p className="mt-1 text-violet-700">{practice.finalSummary}</p>}
                       </div>
                     ))}
                   </div>

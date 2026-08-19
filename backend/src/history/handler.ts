@@ -38,7 +38,15 @@ interface PracticeHistorySummary {
   problemCount: number;
   updatedAt: string;
   totalUsage: TokenUsage;
+  modelChoice: ModelChoice;
+  finalSummary?: string;
 }
+
+type PublicWritingTurn =
+  | (Omit<Extract<WritingTurn, { kind: "draft" }>, "input"> & {
+      input: { text?: string; imageUrls?: Array<string | null> };
+    })
+  | Extract<WritingTurn, { kind: "question" }>;
 
 interface QuestionWithPractice extends Pick<
   HomeworkQuestion,
@@ -69,7 +77,7 @@ interface SessionSummary {
   updatedAt?: string;
   prompt?: { input: string };
   plan?: WritingPlanPacket;
-  turns?: WritingTurn[];
+  turns?: PublicWritingTurn[];
   draftCount?: number;
   questionCount?: number;
   usage?: TokenUsage;
@@ -195,6 +203,8 @@ const projectSession = async (
           problemCount: practice.problemCount,
           updatedAt: practice.updatedAt,
           totalUsage: practice.usage,
+          modelChoice: practice.modelChoice,
+          finalSummary: practice.finalSummary,
         })),
       }))
     : [];
@@ -218,9 +228,10 @@ const projectSession = async (
     summary.endedReason = record.endedReason;
     summary.prompt = { input: record.prompt.input };
     summary.plan = record.plan;
-    summary.turns = await Promise.all(record.turns.map(async (turn): Promise<WritingTurn> => {
-      if (turn.kind !== "draft" || !turn.input.imageKeys?.length) return turn;
+    summary.turns = await Promise.all(record.turns.map(async (turn): Promise<PublicWritingTurn> => {
+      if (turn.kind !== "draft") return turn;
       const { imageKeys, ...publicInput } = turn.input;
+      if (!imageKeys?.length) return { ...turn, input: publicInput };
       const draftImageUrls = await presignImages(imageKeys, bucket, record.sessionId);
       return { ...turn, input: { ...publicInput, imageUrls: draftImageUrls } };
     }));

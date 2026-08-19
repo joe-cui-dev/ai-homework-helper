@@ -164,6 +164,8 @@ export interface PracticeSessionSummary {
   problemCount: number;
   updatedAt: string;
   usage: PracticeSession["usage"];
+  modelChoice: PracticeSession["modelChoice"];
+  finalSummary?: string;
 }
 
 export const listPracticeSessionsForOrigin = async (
@@ -186,6 +188,8 @@ export const listPracticeSessionsForOrigin = async (
           problemCount: s.problemCount,
           updatedAt: s.updatedAt,
           usage: s.usage,
+          modelChoice: s.modelChoice,
+          finalSummary: s.finalSummary,
         });
       }
     }

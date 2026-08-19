@@ -92,4 +92,16 @@ describe("HistorySidebar", () => {
     resolveFirst({ ...latestSession, questions: [{ ...latestSession.questions[0], input: "Late older selection" }] });
     await waitFor(() => expect(screen.queryByText("Late older selection")).not.toBeInTheDocument());
   });
+
+  it("shows the image count even when a card has no thumbnail", () => {
+    const noImage = { ...oldSession, imageUrls: [], imageCount: 0 };
+    mocks.fetchSessionDetail.mockResolvedValue(latestSession);
+    // The mocked hook returns oldSession; verify the card renderer contract via a temporary value.
+    oldSession.imageUrls = noImage.imageUrls;
+    oldSession.imageCount = noImage.imageCount;
+    render(<MemoryRouter><HistorySidebar token="token" module="homework" open onClose={vi.fn()} /></MemoryRouter>);
+    expect(screen.getByText("0 images")).toBeInTheDocument();
+    oldSession.imageUrls = ["old-first"];
+    oldSession.imageCount = 2;
+  });
 });

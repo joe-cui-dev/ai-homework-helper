@@ -417,8 +417,8 @@ describe("history handler", () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
     mockLoadSession.mockResolvedValueOnce(baseSession());
     mockListPracticeSessions.mockResolvedValueOnce([
-      { sessionId: "old", origin: { sessionId: "batch-abc", questionId: 1 }, status: "ended", problemCount: 2, updatedAt: "2026-08-18T00:00:00Z", usage: ZERO },
-      { sessionId: "new", origin: { sessionId: "batch-abc", questionId: 1 }, status: "active", problemCount: 1, updatedAt: "2026-08-19T00:00:00Z", usage: ZERO },
+      { sessionId: "old", origin: { sessionId: "batch-abc", questionId: 1 }, status: "ended", problemCount: 2, updatedAt: "2026-08-18T00:00:00Z", usage: ZERO, modelChoice: "fast", finalSummary: "Good progress" },
+      { sessionId: "new", origin: { sessionId: "batch-abc", questionId: 1 }, status: "active", problemCount: 1, updatedAt: "2026-08-19T00:00:00Z", usage: ZERO, modelChoice: "advanced" },
     ]);
 
     const response = await handler(makeEvent({ headers: { authorization: "Bearer valid-token" }, queryStringParameters: { type: "homework", sessionId: "batch-abc" } }), {} as never);
@@ -426,5 +426,6 @@ describe("history handler", () => {
     expect(body.session.questions[0].practiceSessions.map((practice) => practice.updatedAt)).toEqual([
       "2026-08-19T00:00:00Z", "2026-08-18T00:00:00Z",
     ]);
+    expect(body.session.questions[0].practiceSessions[1]).toMatchObject({ modelChoice: "fast", finalSummary: "Good progress" });
   });
 });
