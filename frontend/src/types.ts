@@ -39,7 +39,7 @@ export interface SessionQuestion {
   yearLevel: YearLevel;
   packet: CoachingPacket;
   possiblyRepeatedOfQuestionId?: number;
-  practiceSession?: PracticeSessionSummary;
+  practiceSessions?: PracticeSessionSummary[];
 }
 
 // ── Reading Session types ───────────────────────────────────────────────────
@@ -87,12 +87,31 @@ export interface SessionSummary {
   status?: "active" | "ended";
   endedReason?: WritingEndedReason;
   updatedAt?: string;
-  prompt?: { input: string; imageKeys?: string[] };
+  prompt?: { input: string };
   plan?: WritingPlanPacket;
   turns?: WritingTurn[];
   draftCount?: number;
   questionCount?: number;
   usage?: TokenUsage;
+}
+
+export interface SessionCardSummary {
+  sessionId: string;
+  timestamp: string;
+  updatedAt?: string;
+  sessionType: TaskType;
+  modelChoice?: ModelChoice;
+  subjects: string[];
+  imageUrls: Array<string | null>;
+  imageCount: number;
+  questionPreview?: string;
+  questionCount: number;
+  bookContext?: BookContext;
+  status?: "active" | "ended";
+  endedReason?: WritingEndedReason;
+  prompt?: { input: string };
+  assignmentSummary?: string;
+  draftCount?: number;
 }
 
 export type StreamEvent =
@@ -304,7 +323,7 @@ export type WritingTurn =
       kind: "draft";
       turnIndex: number;
       ts: string;
-      input: { text?: string; imageKeys?: string[]; imageUrls?: string[] };
+      input: { text?: string; imageKeys?: string[]; imageUrls?: Array<string | null> };
       packet: DraftFeedbackPacket;
     }
   | {

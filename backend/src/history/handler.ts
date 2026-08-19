@@ -31,11 +31,20 @@ const verifier = CognitoJwtVerifier.create({
 const s3 = new S3Client({});
 const PRESIGN_EXPIRES_IN = 3600;
 
+interface PracticeHistorySummary {
+  questionId: number;
+  status: PracticeSessionSummary["status"];
+  endedReason?: PracticeSessionSummary["endedReason"];
+  problemCount: number;
+  updatedAt: string;
+  totalUsage: TokenUsage;
+}
+
 interface QuestionWithPractice extends Pick<
   HomeworkQuestion,
   "questionId" | "input" | "subject" | "yearLevel" | "packet" | "possiblyRepeatedOfQuestionId"
 > {
-  practiceSession?: PracticeSessionSummary;
+  practiceSessions?: PracticeHistorySummary[];
 }
 
 type HistoryModule = "homework" | "reading" | "writing";
@@ -58,7 +67,7 @@ interface SessionSummary {
   status?: "active" | "ended";
   endedReason?: WritingEndedReason;
   updatedAt?: string;
-  prompt?: { input: string; imageKeys?: string[] };
+  prompt?: { input: string };
   plan?: WritingPlanPacket;
   turns?: WritingTurn[];
   draftCount?: number;
@@ -66,38 +75,109 @@ interface SessionSummary {
   usage?: TokenUsage;
 }
 
+interface SessionCardSummary {
+  sessionId: string;
+  timestamp: string;
+  updatedAt?: string;
+  sessionType: HistoryModule;
+  modelChoice: ModelChoice;
+  subjects: string[];
+  imageUrls: Array<string | null>;
+  imageCount: number;
+  questionPreview?: string;
+  questionCount: number;
+  bookContext?: BookContext;
+  status?: "active" | "ended";
+  endedReason?: WritingEndedReason;
+  prompt?: { input: string };
+  assignmentSummary?: string;
+  draftCount?: number;
+}
+
 type HistorySession = Exclude<Session, { sessionType: "practice" }>;
+
+const presignImages = async (
+  keys: string[],
+  bucket: string,
+  sessionId: string,
+): Promise<Array<string | null>> => Promise.all(keys.map(async (key, imageIndex) => {
+  try {
+    return await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+      { expiresIn: PRESIGN_EXPIRES_IN },
+    );
+  } catch {
+    logger.warn("history_image_unavailable", { sessionId, imageIndex });
+    return null;
+  }
+}));
+
+const sessionImageKeys = (record: HistorySession): string[] => record.sessionType === "writing"
+  ? record.prompt.imageKeys
+  : record.sessionType === "homework"
+    ? homeworkImageKeys(record)
+    : record.imageKeys;
+
+const sessionSubjects = (record: HistorySession): string[] => record.sessionType === "reading"
+  ? ["reading"]
+  : record.sessionType === "writing"
+    ? ["writing"]
+    : [...new Set(record.questions.map((question) => question.subject))];
+
+const projectSessionCard = async (
+  record: HistorySession,
+  bucket: string,
+): Promise<SessionCardSummary> => {
+  const imageKeys = sessionImageKeys(record);
+  const card: SessionCardSummary = {
+    sessionId: record.sessionId,
+    timestamp: record.timestamp,
+    updatedAt: record.updatedAt,
+    sessionType: record.sessionType,
+    modelChoice: record.modelChoice,
+    subjects: sessionSubjects(record),
+    imageUrls: await presignImages(imageKeys.slice(0, 1), bucket, record.sessionId),
+    imageCount: imageKeys.length,
+    questionCount: record.sessionType === "homework"
+      ? record.questions.length
+      : record.sessionType === "reading"
+        ? record.readingPackets.length
+        : record.questionCount,
+  };
+  if (record.sessionType === "homework") card.questionPreview = record.questions[0]?.input;
+  if (record.sessionType === "reading") {
+    card.bookContext = record.bookContext;
+    card.questionPreview = record.readingPackets[0]?.questionText;
+  }
+  if (record.sessionType === "writing") {
+    card.status = record.status;
+    card.endedReason = record.endedReason;
+    card.prompt = { input: record.prompt.input };
+    card.assignmentSummary = record.plan.assignmentSummary;
+    card.draftCount = record.draftCount;
+  }
+  return card;
+};
 
 const projectSession = async (
   record: HistorySession,
   studentId: string,
   bucket: string,
 ): Promise<SessionSummary> => {
-  const presignKeys = record.sessionType === "writing"
-    ? record.prompt.imageKeys
-    : record.sessionType === "homework"
-      ? homeworkImageKeys(record)
-      : record.imageKeys;
+  const presignKeys = sessionImageKeys(record);
   const [imageUrls, practiceSummaries] = await Promise.all([
-    Promise.all(presignKeys.map(async (key, imageIndex) => {
-      try {
-        return await getSignedUrl(
-          s3,
-          new GetObjectCommand({ Bucket: bucket, Key: key }),
-          { expiresIn: PRESIGN_EXPIRES_IN },
-        );
-      } catch {
-        logger.warn("history_image_unavailable", { sessionId: record.sessionId, imageIndex });
-        return null;
-      }
-    })),
+    presignImages(presignKeys, bucket, record.sessionId),
     record.sessionType === "homework"
       ? listPracticeSessionsForOrigin(studentId, record.sessionId)
       : Promise.resolve([] as PracticeSessionSummary[]),
   ]);
-  const practiceByQuestion = new Map(
-    practiceSummaries.map((practice) => [practice.origin.questionId, practice]),
-  );
+  const practiceByQuestion = new Map<number, PracticeSessionSummary[]>();
+  for (const practice of [...practiceSummaries].sort((left, right) =>
+    right.updatedAt.localeCompare(left.updatedAt))) {
+    const questionId = practice.origin.questionId;
+    practiceByQuestion.set(questionId, [...(practiceByQuestion.get(questionId) ?? []), practice]);
+  }
   const questions: QuestionWithPractice[] = record.sessionType === "homework"
     ? record.questions.map((question) => ({
         questionId: question.questionId,
@@ -108,20 +188,22 @@ const projectSession = async (
         ...(question.possiblyRepeatedOfQuestionId !== undefined
           ? { possiblyRepeatedOfQuestionId: question.possiblyRepeatedOfQuestionId }
           : {}),
-        practiceSession: practiceByQuestion.get(question.questionId),
+        practiceSessions: (practiceByQuestion.get(question.questionId) ?? []).map((practice) => ({
+          questionId: question.questionId,
+          status: practice.status,
+          endedReason: practice.endedReason,
+          problemCount: practice.problemCount,
+          updatedAt: practice.updatedAt,
+          totalUsage: practice.usage,
+        })),
       }))
     : [];
-  const subjects = record.sessionType === "reading"
-    ? ["reading"]
-    : record.sessionType === "writing"
-      ? ["writing"]
-      : [...new Set(record.questions.map((question) => question.subject))];
   const summary: SessionSummary = {
     sessionId: record.sessionId,
     timestamp: record.timestamp,
     sessionType: record.sessionType,
     modelChoice: record.modelChoice,
-    subjects,
+    subjects: sessionSubjects(record),
     imageUrls,
     questions,
     usage: record.usage,
@@ -134,17 +216,13 @@ const projectSession = async (
   } else if (record.sessionType === "writing") {
     summary.status = record.status;
     summary.endedReason = record.endedReason;
-    summary.prompt = record.prompt;
+    summary.prompt = { input: record.prompt.input };
     summary.plan = record.plan;
     summary.turns = await Promise.all(record.turns.map(async (turn): Promise<WritingTurn> => {
       if (turn.kind !== "draft" || !turn.input.imageKeys?.length) return turn;
-      const draftImageUrls = await Promise.all(turn.input.imageKeys.map((key) =>
-        getSignedUrl(
-          s3,
-          new GetObjectCommand({ Bucket: bucket, Key: key }),
-          { expiresIn: PRESIGN_EXPIRES_IN },
-        )));
-      return { ...turn, input: { ...turn.input, imageUrls: draftImageUrls } };
+      const { imageKeys, ...publicInput } = turn.input;
+      const draftImageUrls = await presignImages(imageKeys, bucket, record.sessionId);
+      return { ...turn, input: { ...publicInput, imageUrls: draftImageUrls } };
     }));
     summary.draftCount = record.draftCount;
     summary.questionCount = record.questionCount;
@@ -252,7 +330,7 @@ export const handler = async (
   // listPracticeSessionsForOrigin to nest under each Homework card.
   const topLevel = sessions as HistorySession[];
   const summaries = await Promise.all(
-    topLevel.map((record) => projectSession(record, studentId, bucket)),
+    topLevel.map((record) => projectSessionCard(record, bucket)),
   );
 
   logger.info("history_fetched", { studentId, count: summaries.length });

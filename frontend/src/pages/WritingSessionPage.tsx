@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { MAX_DRAFTS, MAX_QUESTIONS, useWritingSession } from "../hooks/useWritingSession";
-import { useSessionHistory } from "../hooks/useSessionHistory";
+import { fetchSessionDetail } from "../services/api";
 import { WritingPlanCard } from "../components/WritingPlanCard";
 import { DraftFeedbackCard } from "../components/DraftFeedbackCard";
 import { CoachingNoteCard } from "../components/CoachingNoteCard";
@@ -25,7 +25,7 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const writing = useWritingSession();
-  const { sessions, loading } = useSessionHistory(token, "writing");
+  const [loadingResume, setLoadingResume] = useState(true);
 
   const hydratedRef = useRef(false);
 
@@ -33,30 +33,34 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
   // the hook already has state for this sessionId (just-submitted prompt
   // redirect), skip hydration.
   useEffect(() => {
-    if (!sessionId || hydratedRef.current) return;
+    if (!sessionId || hydratedRef.current) { setLoadingResume(false); return; }
     if (writing.sessionId === sessionId && writing.plan) {
       hydratedRef.current = true;
+      setLoadingResume(false);
       return;
     }
-    const session = sessions.find((s) => s.sessionId === sessionId);
-    if (!session || session.sessionType !== "writing" || !session.plan) return;
-    hydratedRef.current = true;
-    writing.hydrate({
-      sessionId,
-      plan: session.plan,
-      turns: session.turns ?? [],
-      draftCount: session.draftCount ?? 0,
-      questionCount: session.questionCount ?? 0,
-      usage: session.usage,
-      modelChoice: session.modelChoice,
-      status: session.status ?? "active",
-      endedReason: session.endedReason,
-      imageUrls: session.imageUrls.filter((url): url is string => url !== null),
-    });
-  }, [sessionId, sessions, writing]);
+    let cancelled = false;
+    void fetchSessionDetail(token, "writing", sessionId).then((session) => {
+      if (cancelled || session.sessionType !== "writing" || !session.plan) return;
+      hydratedRef.current = true;
+      writing.hydrate({
+        sessionId,
+        plan: session.plan,
+        turns: session.turns ?? [],
+        draftCount: session.draftCount ?? 0,
+        questionCount: session.questionCount ?? 0,
+        usage: session.usage,
+        modelChoice: session.modelChoice,
+        status: session.status ?? "active",
+        endedReason: session.endedReason,
+        imageUrls: session.imageUrls.filter((url): url is string => url !== null),
+      });
+    }).finally(() => { if (!cancelled) setLoadingResume(false); });
+    return () => { cancelled = true; };
+  }, [sessionId, token, writing]);
 
   const isLoadingResume =
-    !writing.plan && !hydratedRef.current && (loading || sessions.length === 0);
+    !writing.plan && !hydratedRef.current && loadingResume;
 
   if (!sessionId) {
     return (
@@ -143,7 +147,7 @@ export const WritingSessionPage = ({ token }: WritingSessionPageProps) => {
             <DraftFeedbackCard
               key={turn.turnIndex}
               packet={turn.packet}
-              imageUrls={turn.input.imageUrls}
+              imageUrls={turn.input.imageUrls?.filter((url): url is string => url !== null)}
               draftIndex={
                 writing.turns
                   .slice(0, writing.turns.indexOf(turn) + 1)

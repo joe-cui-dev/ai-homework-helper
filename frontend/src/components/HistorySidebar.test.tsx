@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SessionSummary } from "../types";
+import type { SessionCardSummary, SessionSummary } from "../types";
 import { HistorySidebar } from "./HistorySidebar";
 
 const mocks = vi.hoisted(() => ({
@@ -10,14 +10,23 @@ const mocks = vi.hoisted(() => ({
   removeSession: vi.fn(),
 }));
 
-const oldSession: SessionSummary = {
+const oldSession: SessionCardSummary = {
   sessionId: "session-1",
   timestamp: "2026-08-18T00:00:00Z",
   updatedAt: "2026-08-18T00:00:00Z",
   sessionType: "homework",
   modelChoice: "fast",
   subjects: ["math"],
-  imageUrls: ["old-first", "old-second"],
+  imageUrls: ["old-first"],
+  imageCount: 2,
+  questionPreview: "Old question",
+  questionCount: 1,
+};
+
+const latestSession: SessionSummary = {
+  ...oldSession,
+  updatedAt: "2026-08-19T00:00:00Z",
+  imageUrls: ["latest-first", "latest-second", "latest-third"],
   questions: [{
     questionId: 1, input: "Old question", subject: "math", yearLevel: "year-3",
     packet: { questionId: 1, tldrAnswer: "old", whyItWorks: "old why", childHint: "old hint" },
@@ -40,11 +49,9 @@ describe("HistorySidebar", () => {
 
   it("shows one representative card thumbnail and fetches latest detail on selection", async () => {
     const latest = {
-      ...oldSession,
-      updatedAt: "2026-08-19T00:00:00Z",
-      imageUrls: ["latest-first", "latest-second", "latest-third"],
+      ...latestSession,
       questions: [{
-        ...oldSession.questions[0], input: "Latest appended question",
+        ...latestSession.questions[0], input: "Latest appended question",
         possiblyRepeatedOfQuestionId: 9,
       }],
     };
@@ -67,5 +74,22 @@ describe("HistorySidebar", () => {
 
     await waitFor(() => expect(mocks.removeSession).toHaveBeenCalledWith("session-1"));
     expect(await screen.findByText("Session unavailable.")).toBeInTheDocument();
+  });
+
+  it("ignores an older detail response after a newer selection", async () => {
+    let resolveFirst!: (value: SessionSummary) => void;
+    mocks.fetchSessionDetail
+      .mockImplementationOnce(() => new Promise<SessionSummary>((resolve) => { resolveFirst = resolve; }))
+      .mockResolvedValueOnce({
+        ...latestSession,
+        questions: [{ ...latestSession.questions[0], input: "Newer selection" }],
+      });
+    render(<MemoryRouter><HistorySidebar token="token" module="homework" open onClose={vi.fn()} /></MemoryRouter>);
+
+    await userEvent.click(screen.getByText("Old question"));
+    await userEvent.click(screen.getByText("Old question"));
+    expect(await screen.findByText("Newer selection")).toBeInTheDocument();
+    resolveFirst({ ...latestSession, questions: [{ ...latestSession.questions[0], input: "Late older selection" }] });
+    await waitFor(() => expect(screen.queryByText("Late older selection")).not.toBeInTheDocument());
   });
 });

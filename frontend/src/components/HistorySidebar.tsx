@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { SessionSummary } from "../types";
+import type { SessionCardSummary, SessionSummary } from "../types";
 import { useSessionHistory } from "../hooks/useSessionHistory";
 import { fetchSessionDetail, type HistoryModule } from "../services/api";
 import { subjectColour } from "../utils/subjectColour";
-import { formatUsageCompact } from "../utils/formatUsage";
 import { SessionDetailModal } from "./SessionDetailModal";
 import { ModelChoiceBadge } from "./ModelChoiceBadge";
 
@@ -31,7 +30,7 @@ const WRITING_ENDED_LABEL: Record<string, { text: string; chip: string }> = {
 };
 
 interface SessionCardProps {
-  session: SessionSummary;
+  session: SessionCardSummary;
   onClick: () => void;
   onResume?: () => void;
 }
@@ -39,22 +38,20 @@ interface SessionCardProps {
 function SessionCard({ session, onClick, onResume }: SessionCardProps) {
   const isReading = session.sessionType === "reading";
   const isWriting = session.sessionType === "writing";
-  const readingPackets = session.readingPackets ?? [];
 
   let previewText = "";
   let extraText: string | null = null;
   if (isWriting) {
     previewText =
-      session.plan?.assignmentSummary ?? session.prompt?.input ?? "Writing session";
+      session.assignmentSummary ?? session.prompt?.input ?? "Writing session";
     extraText = `${session.draftCount ?? 0} drafts · ${session.questionCount ?? 0} questions`;
   } else if (isReading) {
     previewText =
-      session.bookContext?.title ?? readingPackets[0]?.questionText ?? "Reading session";
-    const extraCount = Math.max(0, readingPackets.length - 1);
-    if (extraCount > 0) extraText = `${extraCount + 1} questions`;
+      session.bookContext?.title ?? session.questionPreview ?? "Reading session";
+    if (session.questionCount > 0) extraText = `${session.questionCount} questions`;
   } else {
-    previewText = session.questions[0]?.input ?? "";
-    const extraCount = Math.max(0, session.questions.length - 1);
+    previewText = session.questionPreview ?? "";
+    const extraCount = Math.max(0, session.questionCount - 1);
     if (extraCount > 0) extraText = `+${extraCount} more`;
   }
 
@@ -113,12 +110,6 @@ function SessionCard({ session, onClick, onResume }: SessionCardProps) {
         <p className="text-xs font-semibold text-violet-600">Resume →</p>
       )}
 
-      {session.usage && (
-        <p className="text-[11px] text-gray-400">
-          {formatUsageCompact(session.usage)}
-        </p>
-      )}
-
       {session.imageUrls.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
           {session.imageUrls.slice(0, 1).map((url, i) => url ? (
@@ -126,7 +117,7 @@ function SessionCard({ session, onClick, onResume }: SessionCardProps) {
           ) : (
             <div key={i} role="img" aria-label="Upload 1 unavailable" className="w-14 h-14 rounded-lg border border-dashed border-gray-300 bg-gray-50 text-[10px] text-gray-400 flex items-center justify-center text-center">Unavailable</div>
           ))}
-          <span className="self-end text-xs text-gray-400">{session.imageUrls.length} {session.imageUrls.length === 1 ? "image" : "images"}</span>
+          <span className="self-end text-xs text-gray-400">{session.imageCount} {session.imageCount === 1 ? "image" : "images"}</span>
         </div>
       )}
     </button>
@@ -153,14 +144,18 @@ export function HistorySidebar({ token, module, open, onClose }: HistorySidebarP
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const detailRequestRef = useRef(0);
 
-  const selectSession = async (session: SessionSummary) => {
+  const selectSession = async (session: SessionCardSummary) => {
+    const requestId = ++detailRequestRef.current;
     setSelectedSessionId(session.sessionId);
     setSelectedSession(null);
     setDetailError(null);
     try {
-      setSelectedSession(await fetchSessionDetail(token, module, session.sessionId));
+      const detail = await fetchSessionDetail(token, module, session.sessionId);
+      if (detailRequestRef.current === requestId) setSelectedSession(detail);
     } catch (error) {
+      if (detailRequestRef.current !== requestId) return;
       if ((error as Error & { status?: number }).status === 404) {
         removeSession(session.sessionId);
       }
@@ -169,6 +164,7 @@ export function HistorySidebar({ token, module, open, onClose }: HistorySidebarP
   };
 
   const closeDetail = () => {
+    detailRequestRef.current += 1;
     setSelectedSessionId(null);
     setSelectedSession(null);
     setDetailError(null);

@@ -45,10 +45,12 @@ import { listSessions, loadSession } from "../shared/sessionStore";
 import type { HomeworkSession } from "../shared/session";
 import type { CoachingPacket } from "../shared/types";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { listPracticeSessionsForOrigin } from "../practice/practiceStorage";
 
 const mockListSessions = listSessions as jest.MockedFunction<typeof listSessions>;
 const mockLoadSession = loadSession as jest.MockedFunction<typeof loadSession>;
 const mockGetSignedUrl = getSignedUrl as jest.MockedFunction<typeof getSignedUrl>;
+const mockListPracticeSessions = listPracticeSessionsForOrigin as jest.MockedFunction<typeof listPracticeSessionsForOrigin>;
 
 process.env.COGNITO_USER_POOL_ID = "us-east-1_test";
 process.env.COGNITO_APP_CLIENT_ID = "test-client";
@@ -101,6 +103,7 @@ const baseSession = (overrides: Partial<HomeworkSession> = {}): HomeworkSession 
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGetSignedUrl.mockReset();
   process.env.S3_BUCKET_NAME = "test-bucket";
 });
 
@@ -146,8 +149,10 @@ describe("history handler", () => {
     const body = JSON.parse(response.body as string) as {
       sessions: {
         imageUrls: string[];
+        imageCount: number;
         subjects: string[];
-        questions: { input: string; packet: CoachingPacket }[];
+        questionPreview: string;
+        questionCount: number;
         updatedAt: string;
       }[];
       nextCursor: null;
@@ -157,10 +162,13 @@ describe("history handler", () => {
       "https://s3.example.com/presigned-url",
     ]);
     expect(body.sessions[0].subjects).toEqual(["math"]);
-    expect(body.sessions[0].questions[0].input).toBe("What is 2+2?");
-    expect(body.sessions[0].questions[0].packet.tldrAnswer).toBe("4");
+    expect(body.sessions[0].questionPreview).toBe("What is 2+2?");
+    expect(body.sessions[0].questionCount).toBe(1);
+    expect(body.sessions[0].imageCount).toBe(1);
     expect(body.sessions[0].updatedAt).toBe("2024-01-01T00:00:00Z");
     expect(body.nextCursor).toBeNull();
+    expect(JSON.stringify(body.sessions[0])).not.toContain("tldrAnswer");
+    expect(JSON.stringify(body.sessions[0])).not.toContain("usage");
   });
 
   it("deduplicates subjects when multiple questions share the same subject", async () => {
@@ -287,16 +295,13 @@ describe("history handler", () => {
 
   it("projects final Questions without Page Context linkage or submission internals", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
-    mockListSessions.mockResolvedValueOnce({
-      sessions: [baseSession({
+    mockLoadSession.mockResolvedValueOnce(baseSession({
         pages: [{ pageId: "page-secret", imageKey: "image-secret", context: { content: "private worksheet transcription" } }],
         submissions: [{ submissionId: "sub-secret", payloadHash: "hash-secret", timestamp: "2024-01-01T00:00:00Z", pageIds: ["page-secret"], addedQuestionIds: [], updatedQuestionIds: [], possiblyRepeatedQuestionIds: [], usage: ZERO }],
         questions: [{ ...baseSession().questions[0], sourcePageIds: ["page-secret"], revision: 2, possiblyRepeatedOfQuestionId: 9 }],
-      })],
-      nextCursor: null,
-    });
+      }));
     mockGetSignedUrl.mockResolvedValueOnce("signed");
-    const response = await handler(makeEvent({ headers: { authorization: "Bearer valid-token" } }), {} as never);
+    const response = await handler(makeEvent({ headers: { authorization: "Bearer valid-token" }, queryStringParameters: { type: "homework", sessionId: "batch-abc" } }), {} as never);
     const body = JSON.parse(response.body as string) as Record<string, unknown>;
     const serialized = JSON.stringify(body);
     expect(serialized).not.toContain("private worksheet transcription");
@@ -307,12 +312,12 @@ describe("history handler", () => {
 
   it("keeps ordered placeholders when one image cannot be presigned", async () => {
     mockVerify.mockResolvedValueOnce({ sub: "student-1" });
-    mockListSessions.mockResolvedValueOnce({ sessions: [baseSession({ imageKeys: ["first", "second"] })], nextCursor: null });
+    mockLoadSession.mockResolvedValueOnce(baseSession({ imageKeys: ["first", "second"] }));
     mockGetSignedUrl.mockResolvedValueOnce("signed-first").mockRejectedValueOnce(new Error("temporary"));
-    const response = await handler(makeEvent({ headers: { authorization: "Bearer valid-token" } }), {} as never);
-    const body = JSON.parse(response.body as string) as { sessions: Array<{ imageUrls: Array<string | null> }> };
+    const response = await handler(makeEvent({ headers: { authorization: "Bearer valid-token" }, queryStringParameters: { type: "homework", sessionId: "batch-abc" } }), {} as never);
+    const body = JSON.parse(response.body as string) as { session: { imageUrls: Array<string | null> } };
     expect(response.statusCode).toBe(200);
-    expect(body.sessions[0].imageUrls).toEqual(["signed-first", null]);
+    expect(body.session.imageUrls).toEqual(["signed-first", null]);
   });
 
   it("returns 400 when the type query parameter is missing", async () => {
@@ -385,5 +390,41 @@ describe("history handler", () => {
 
     expect(response.statusCode).toBe(404);
     expect(JSON.parse(response.body as string)).toEqual({ message: "Session unavailable." });
+  });
+
+  it("strips Writing image keys and degrades an unavailable draft image only", async () => {
+    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
+    mockLoadSession.mockResolvedValueOnce({
+      sessionType: "writing", sessionId: "writing-1", studentId: "student-1", modelChoice: "fast",
+      timestamp: "2026-08-19T00:00:00Z", updatedAt: "2026-08-19T00:00:00Z", usage: ZERO,
+      status: "active", prompt: { input: "Write a story", imageKeys: ["prompt-secret-key"] },
+      plan: { assignmentSummary: "Story", genre: "narrative", yearLevel: "year-3", successCriteria: [], planningQuestions: [], coachingApproach: "Plan" },
+      turns: [{ kind: "draft", turnIndex: 1, ts: "2026-08-19T00:01:00Z", input: { text: "Draft", imageKeys: ["draft-secret-key"] }, packet: {} }],
+      draftCount: 1, questionCount: 0,
+    } as never);
+    mockGetSignedUrl.mockResolvedValueOnce("signed-prompt").mockRejectedValueOnce(new Error("temporary"));
+
+    const response = await handler(makeEvent({ headers: { authorization: "Bearer valid-token" }, queryStringParameters: { type: "writing", sessionId: "writing-1" } }), {} as never);
+    const serialized = response.body as string;
+    const body = JSON.parse(serialized) as { session: { turns: Array<{ input: { imageUrls: Array<string | null> } }> } };
+    expect(response.statusCode).toBe(200);
+    expect(serialized).not.toContain("imageKeys");
+    expect(serialized).not.toContain("secret-key");
+    expect(body.session.turns[0].input.imageUrls).toEqual([null]);
+  });
+
+  it("returns every Practice summary under its Question in recent-activity order", async () => {
+    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
+    mockLoadSession.mockResolvedValueOnce(baseSession());
+    mockListPracticeSessions.mockResolvedValueOnce([
+      { sessionId: "old", origin: { sessionId: "batch-abc", questionId: 1 }, status: "ended", problemCount: 2, updatedAt: "2026-08-18T00:00:00Z", usage: ZERO },
+      { sessionId: "new", origin: { sessionId: "batch-abc", questionId: 1 }, status: "active", problemCount: 1, updatedAt: "2026-08-19T00:00:00Z", usage: ZERO },
+    ]);
+
+    const response = await handler(makeEvent({ headers: { authorization: "Bearer valid-token" }, queryStringParameters: { type: "homework", sessionId: "batch-abc" } }), {} as never);
+    const body = JSON.parse(response.body as string) as { session: { questions: Array<{ practiceSessions: Array<{ status: string; updatedAt: string }> }> } };
+    expect(body.session.questions[0].practiceSessions.map((practice) => practice.updatedAt)).toEqual([
+      "2026-08-19T00:00:00Z", "2026-08-18T00:00:00Z",
+    ]);
   });
 });

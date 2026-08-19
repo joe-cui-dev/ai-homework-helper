@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchSessionHistory } from "../services/api";
 import type { HistoryModule } from "../services/api";
-import type { SessionSummary } from "../types";
+import type { SessionCardSummary } from "../types";
 
 interface UseSessionHistoryReturn {
-  sessions: SessionSummary[];
+  sessions: SessionCardSummary[];
   loading: boolean;
   loadingMore: boolean;
   error: string | null;
@@ -17,7 +17,7 @@ export function useSessionHistory(
   token: string,
   module: HistoryModule,
 ): UseSessionHistoryReturn {
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessions, setSessions] = useState<SessionCardSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);

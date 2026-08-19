@@ -145,9 +145,10 @@ const joinPackets = (
 const reconcileWithLimitCode = (
   existingQuestions: HomeworkQuestion[],
   candidates: Parameters<typeof reconcileSubmission>[1],
+  orderedPageIds: string[] = [],
 ) => {
   try {
-    return reconcileSubmission(existingQuestions, candidates);
+    return reconcileSubmission(existingQuestions, candidates, orderedPageIds);
   } catch (error) {
     if (error instanceof Error && error.message.includes("30-question limit")) {
       throw new HomeworkSubmissionError(error.message, "question_limit");
@@ -170,7 +171,7 @@ const runInitial = async (
     priorPages: [], existingQuestions: [], questionText: request.question,
     modelChoice: request.modelChoice, loadPriorImage: async () => { throw new Error("Initial submissions have no prior pages."); },
   });
-  const reconciliation = reconcileWithLimitCode([], analysis.candidates);
+  const reconciliation = reconcileWithLimitCode([], analysis.candidates, pageIds);
   for (const question of reconciliation.questions) {
     emit({ type: "packet_start", sessionId, questionId: question.questionId, total: reconciliation.questions.length, text: question.input });
   }
@@ -264,7 +265,11 @@ const runAppend = async (
       inputTokens: analysis.usage.inputTokens,
       outputTokens: analysis.usage.outputTokens,
     });
-    const reconciliation = reconcileWithLimitCode(session.questions, analysis.candidates);
+    const reconciliation = reconcileWithLimitCode(
+      session.questions,
+      analysis.candidates,
+      [...session.pages.map((page) => page.pageId), ...pageIds],
+    );
     const changedIds = new Set([...reconciliation.addedQuestionIds, ...reconciliation.updatedQuestionIds]);
     const changedQuestions = reconciliation.questions.filter((question) => changedIds.has(question.questionId));
     const contexts = [

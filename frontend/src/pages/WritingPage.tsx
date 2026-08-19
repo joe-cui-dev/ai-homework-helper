@@ -10,7 +10,7 @@ import {
   guardFormDrop,
   type ImageAttachmentValue,
 } from "../components/ImageAttachmentField";
-import type { ModelChoice, SessionSummary, YearLevel } from "../types";
+import type { ModelChoice, SessionCardSummary, YearLevel } from "../types";
 
 const MAX_CHARS = 4000;
 const MAX_IMAGES = 5;
@@ -30,7 +30,7 @@ export const WritingPage = ({ token }: WritingPageProps) => {
   const [attachments, setAttachments] = useState<ImageAttachmentValue[]>([]);
   const [isCompressing, setIsCompressing] = useState(false);
 
-  const activeSessions: SessionSummary[] = sessions.filter(
+  const activeSessions: SessionCardSummary[] = sessions.filter(
     (s) => s.sessionType === "writing" && s.status === "active",
   );
 
@@ -176,20 +176,10 @@ export const WritingPage = ({ token }: WritingPageProps) => {
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700">
                     ✍️ Writing
                   </span>
-                  {s.plan?.genre && (
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 capitalize">
-                      {s.plan.genre.replace(/_/g, " ")}
-                    </span>
-                  )}
-                  {s.plan?.yearLevel && (
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                      {s.plan.yearLevel.replace("year-", "Year ")}
-                    </span>
-                  )}
                   <ModelChoiceBadge choice={s.modelChoice} />
                 </div>
                 <p className="text-sm text-gray-700 line-clamp-2">
-                  {s.plan?.assignmentSummary ?? s.prompt?.input ?? ""}
+                  {s.assignmentSummary ?? s.prompt?.input ?? ""}
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
                   {(s.draftCount ?? 0)} drafts · {(s.questionCount ?? 0)} questions

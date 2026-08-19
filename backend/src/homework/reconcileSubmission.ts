@@ -36,8 +36,17 @@ const normalizeOverlapKey = (value: string): string =>
 const compareStrings = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
-const uniqueSorted = (values: string[]): string[] =>
-  [...new Set(values)].sort(compareStrings);
+const uniqueInPageOrder = (values: string[], pageOrder: Map<string, number>): string[] =>
+  [...new Set(values)].sort((left, right) => {
+    const leftRank = pageOrder.get(left);
+    const rightRank = pageOrder.get(right);
+    if (leftRank !== undefined || rightRank !== undefined) {
+      if (leftRank === undefined) return 1;
+      if (rightRank === undefined) return -1;
+      if (leftRank !== rightRank) return leftRank - rightRank;
+    }
+    return compareStrings(left, right);
+  });
 
 const candidateGroupKey = (candidate: SubmissionQuestionCandidate): string => {
   if (candidate.overlapKey?.trim()) return `overlap:${normalizeOverlapKey(candidate.overlapKey)}`;
@@ -53,6 +62,8 @@ const chooseRepresentative = (
   if (lengthDifference !== 0) return lengthDifference;
   const textDifference = compareStrings(normalizeText(left.text), normalizeText(right.text));
   if (textDifference !== 0) return textDifference;
+  const rawTextDifference = compareStrings(left.text, right.text);
+  if (rawTextDifference !== 0) return rawTextDifference;
   const subjectDifference = compareStrings(left.subject, right.subject);
   if (subjectDifference !== 0) return subjectDifference;
   return compareStrings(left.yearLevel, right.yearLevel);
@@ -61,6 +72,7 @@ const chooseRepresentative = (
 const reconcileGroup = (
   groupKey: string,
   candidates: SubmissionQuestionCandidate[],
+  pageOrder: Map<string, number>,
 ): SubmissionQuestionCandidate => {
   const relatedIds = new Set(candidates.flatMap((candidate) =>
     candidate.relation.kind === "new" ? [] : [candidate.relation.questionId]));
@@ -80,7 +92,7 @@ const reconcileGroup = (
   const representative = chooseRepresentative(eligible);
   return {
     ...representative,
-    sourcePageIds: uniqueSorted(candidates.flatMap((candidate) => candidate.sourcePageIds)),
+    sourcePageIds: uniqueInPageOrder(candidates.flatMap((candidate) => candidate.sourcePageIds), pageOrder),
   };
 };
 
@@ -88,7 +100,9 @@ const reconcileGroup = (
 export const reconcileSubmission = (
   existingQuestions: HomeworkQuestion[],
   candidates: SubmissionQuestionCandidate[],
+  orderedPageIds: string[] = [],
 ): ReconciliationResult => {
+  const pageOrder = new Map(orderedPageIds.map((pageId, index) => [pageId, index]));
   const existingIds = new Set(existingQuestions.map((question) => question.questionId));
   for (const candidate of candidates) {
     if (candidate.relation.kind !== "new" && !existingIds.has(candidate.relation.questionId)) {
@@ -105,7 +119,7 @@ export const reconcileSubmission = (
   }
   const distinctCandidates = [...groups.entries()]
     .sort(([left], [right]) => compareStrings(left, right))
-    .map(([key, group]) => reconcileGroup(key, group));
+    .map(([key, group]) => reconcileGroup(key, group, pageOrder));
 
   const updateGroupsByQuestionId = new Map<number, number>();
   for (const candidate of distinctCandidates) {

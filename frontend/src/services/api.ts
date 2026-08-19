@@ -1,4 +1,4 @@
-import type { SessionSummary } from "../types";
+import type { SessionCardSummary, SessionSummary } from "../types";
 
 // Sanity cap on the raw file before compression runs.
 // Genuine homework photos are never this large; this mainly guards against
@@ -60,7 +60,7 @@ export const fetchSessionHistory = async (
   module: HistoryModule,
   cursor?: string,
   signal?: AbortSignal,
-): Promise<{ sessions: SessionSummary[]; nextCursor: string | null }> => {
+): Promise<{ sessions: SessionCardSummary[]; nextCursor: string | null }> => {
   const historyUrl = import.meta.env.VITE_HISTORY_API_URL as string | undefined;
   if (!historyUrl) throw new Error("VITE_HISTORY_API_URL is not configured.");
 
@@ -77,7 +77,7 @@ export const fetchSessionHistory = async (
     throw new Error(`History fetch failed with status ${response.status}.`);
   }
 
-  return response.json() as Promise<{ sessions: SessionSummary[]; nextCursor: string | null }>;
+  return response.json() as Promise<{ sessions: SessionCardSummary[]; nextCursor: string | null }>;
 };
 
 export const fetchSessionDetail = async (

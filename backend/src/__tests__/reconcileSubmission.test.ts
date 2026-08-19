@@ -128,4 +128,15 @@ describe("reconcileSubmission", () => {
       { overlapKey: "part-b", text: "First B", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-3"], relation: { kind: "update", questionId: 4, confidence: "high" } },
     ])).toThrow("more than one overlap group");
   });
+
+  it("uses authoritative page order and a total text tie-breaker across permutations", () => {
+    const candidates = [
+      { overlapKey: "same", text: "  SAME question ", subject: "math" as const, yearLevel: "year-3" as const, sourcePageIds: ["opaque-new"], relation: { kind: "new" as const, confidence: "high" as const } },
+      { overlapKey: "same", text: "same   question", subject: "math" as const, yearLevel: "year-3" as const, sourcePageIds: ["opaque-old"], relation: { kind: "new" as const, confidence: "high" as const } },
+    ];
+    const forward = reconcileSubmission([], candidates, ["opaque-old", "opaque-new"]);
+    const reverse = reconcileSubmission([], [...candidates].reverse(), ["opaque-old", "opaque-new"]);
+    expect(forward).toEqual(reverse);
+    expect(forward.questions[0].sourcePageIds).toEqual(["opaque-old", "opaque-new"]);
+  });
 });
