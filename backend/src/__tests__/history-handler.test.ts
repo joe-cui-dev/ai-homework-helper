@@ -10,6 +10,7 @@ jest.mock("aws-jwt-verify", () => ({
 
 jest.mock("../shared/sessionStore", () => ({
   listSessions: jest.fn(),
+  loadSession: jest.fn(),
 }));
 
 jest.mock("../practice/practiceStorage", () => ({
@@ -40,12 +41,13 @@ const mockVerify = jest.fn();
 
 import type { APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { handler } from "../history/handler";
-import { listSessions } from "../shared/sessionStore";
+import { listSessions, loadSession } from "../shared/sessionStore";
 import type { HomeworkSession } from "../shared/session";
 import type { CoachingPacket } from "../shared/types";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const mockListSessions = listSessions as jest.MockedFunction<typeof listSessions>;
+const mockLoadSession = loadSession as jest.MockedFunction<typeof loadSession>;
 const mockGetSignedUrl = getSignedUrl as jest.MockedFunction<typeof getSignedUrl>;
 
 process.env.COGNITO_USER_POOL_ID = "us-east-1_test";
@@ -339,5 +341,49 @@ describe("history handler", () => {
     )) as APIGatewayProxyStructuredResultV2;
 
     expect(response.statusCode).toBe(400);
+  });
+
+  it("reads the latest purpose-built Session Detail when a session is selected", async () => {
+    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
+    mockLoadSession.mockResolvedValueOnce(baseSession({
+      sessionId: "batch-abc",
+      updatedAt: "2026-08-19T00:00:00Z",
+      pages: [
+        { pageId: "page-1", imageKey: "first-key", context: { content: "secret first context" } },
+        { pageId: "page-2", imageKey: "second-key", context: { content: "secret second context" } },
+      ],
+      questions: [{
+        ...baseSession().questions[0], input: "Latest appended question",
+        possiblyRepeatedOfQuestionId: 9, sourcePageIds: ["page-2"],
+      }],
+    }));
+    mockGetSignedUrl.mockResolvedValueOnce("signed-first").mockResolvedValueOnce("signed-second");
+
+    const response = await handler(makeEvent({
+      headers: { authorization: "Bearer valid-token" },
+      queryStringParameters: { type: "homework", sessionId: "batch-abc" },
+    }), {} as never);
+    const body = JSON.parse(response.body as string) as { session: { imageUrls: string[]; questions: Array<{ input: string; possiblyRepeatedOfQuestionId?: number }> } };
+
+    expect(response.statusCode).toBe(200);
+    expect(mockLoadSession).toHaveBeenCalledWith("student-1", "homework", "batch-abc");
+    expect(mockListSessions).not.toHaveBeenCalled();
+    expect(body.session.imageUrls).toEqual(["signed-first", "signed-second"]);
+    expect(body.session.questions[0]).toMatchObject({ input: "Latest appended question", possiblyRepeatedOfQuestionId: 9 });
+    expect(JSON.stringify(body)).not.toContain("secret");
+    expect(JSON.stringify(body)).not.toContain("sourcePageIds");
+  });
+
+  it("uses one non-enumerating unavailable response for missing selected sessions", async () => {
+    mockVerify.mockResolvedValueOnce({ sub: "student-1" });
+    mockLoadSession.mockResolvedValueOnce(null);
+
+    const response = await handler(makeEvent({
+      headers: { authorization: "Bearer valid-token" },
+      queryStringParameters: { type: "homework", sessionId: "missing" },
+    }), {} as never);
+
+    expect(response.statusCode).toBe(404);
+    expect(JSON.parse(response.body as string)).toEqual({ message: "Session unavailable." });
   });
 });

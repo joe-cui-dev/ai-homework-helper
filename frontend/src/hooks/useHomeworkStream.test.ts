@@ -66,4 +66,28 @@ describe("useHomeworkStream append", () => {
     expect(result.current.appendStatus).toBe("error");
     expect(result.current.appendError).toBe("Try again");
   });
+
+  it("turns append EOF after saving into a retryable error without replacing results", async () => {
+    mocks.appendHomeworkPages.mockImplementation(async (_s, _id, _images, _token, onEvent: (event: StreamEvent) => void) => {
+      onEvent({ type: "append_phase", phase: "saving" });
+      throw new Error("The response stream ended before a terminal event.");
+    });
+    const { result } = renderHook(() => useHomeworkStream());
+    await act(() => result.current.submit("", "token", ["image"]));
+    await act(() => result.current.append("token", ["new-image"], "submission-1"));
+
+    expect(result.current.packets).toEqual([oldPacket]);
+    expect(result.current.appendStatus).toBe("error");
+    expect(result.current.appendError).toContain("terminal event");
+  });
+
+  it("does not mark an initial request done when the stream has no completion", async () => {
+    mocks.streamHomework.mockRejectedValueOnce(new Error("The response stream ended before a terminal event."));
+    const { result } = renderHook(() => useHomeworkStream());
+
+    await act(() => result.current.submit("", "token", ["image"]));
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.error).toContain("terminal event");
+  });
 });

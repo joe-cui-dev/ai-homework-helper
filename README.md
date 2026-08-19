@@ -4,7 +4,7 @@ A serverless, parent-led AI coaching app for Australian primary-school students 
 
 ## What it provides
 
-- **Homework** — upload a worksheet or enter questions; the app extracts questions and creates one `CoachingPacket` for each.
+- **Homework** — upload a worksheet or enter questions, then add later worksheet pages to the same result; the app atomically updates the Session and creates or refreshes the relevant `CoachingPacket`s.
 - **Reading** — upload a book cover and pages; the app creates five comprehension `ReadingPacket`s grounded only in those pages.
 - **Writing** — start from an assignment prompt, receive a parent coaching plan, then return with drafts or clarifying questions in the same Writing Session.
 - **Practice** — launch an adaptive, multi-turn tutor from a Homework question.
@@ -24,7 +24,7 @@ React SPA (CloudFront + S3)
                 +-- S3: session records, agent sidecars, uploaded images
 ```
 
-All POST coaching endpoints stream NDJSON responses. Homework and Reading are one-shot pipelines; Writing keeps session-level state across requests; Practice may call its tutoring tools repeatedly within a turn. Session data expires after 30 days.
+All POST coaching endpoints stream NDJSON responses. Homework starts with an explicit `initial` request and can accept idempotent `append_pages` Page Submissions while the current result is open; Reading is one-shot, Writing keeps session-level state across requests, and Practice may call tutoring tools repeatedly within a turn. Homework normally reuses saved semantic Page Context for earlier images instead of resending them. Session data expires after 30 days. See [ADR 0011](docs/adr/0011-append-homework-pages-with-page-context.md) for the append design.
 
 ## Prerequisites
 

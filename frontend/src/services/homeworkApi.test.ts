@@ -4,7 +4,12 @@ import { appendHomeworkPages, streamHomework } from "./homeworkApi";
 describe("homework API request contracts", () => {
   beforeEach(() => {
     vi.stubEnv("VITE_HOMEWORK_API_URL", "https://example.test/homework");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("\n", { status: 200 })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      type: "complete", sessionId: "session-1", packets: [],
+      usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 }, modelChoice: "fast",
+      pageCount: 1, questionCount: 0, updatedQuestionIds: [],
+      possiblyRepeatedQuestionIds: [], hasNoCompleteQuestions: true,
+    }) + "\n", { status: 200 })));
   });
 
   it("sends an explicit initial discriminator", async () => {

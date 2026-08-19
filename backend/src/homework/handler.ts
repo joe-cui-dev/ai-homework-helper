@@ -4,6 +4,7 @@ import { parseOptionalModelChoice } from "../shared/modelChoice";
 import { logger } from "../shared/logger";
 import type { StreamEvent } from "../shared/types";
 import { HomeworkSubmissionError, processHomeworkSubmission, type HomeworkSubmissionRequest } from "./submissionService";
+import { parseSessionId, parseStudentId, parseSubmissionId } from "../shared/storageIdentifiers";
 
 const verifier = CognitoJwtVerifier.create({
   userPoolId: process.env.COGNITO_USER_POOL_ID ?? "",
@@ -37,10 +38,14 @@ const parseRequest = (body: Record<string, unknown>): HomeworkSubmissionRequest 
   if (body.kind === "append_pages") {
     const allowed = new Set(["kind", "sessionId", "submissionId", "images"]);
     if (Object.keys(body).some((key) => !allowed.has(key))) throw validationError("Append requests accept only sessionId, submissionId, and images.");
-    if (typeof body.sessionId !== "string" || !body.sessionId || typeof body.submissionId !== "string" || !body.submissionId || images.length === 0) {
+    if (typeof body.sessionId !== "string" || typeof body.submissionId !== "string" || images.length === 0) {
       throw validationError("Adding pages requires a session, submission ID, and one or more images.");
     }
-    return { kind: "append_pages", sessionId: body.sessionId, submissionId: body.submissionId, images };
+    try {
+      return { kind: "append_pages", sessionId: parseSessionId(body.sessionId), submissionId: parseSubmissionId(body.submissionId), images };
+    } catch (error) {
+      throw validationError(error instanceof Error ? error.message : "Invalid homework identifier.");
+    }
   }
   if (body.kind !== "initial") throw validationError("Homework requests require an explicit kind discriminator.");
   const allowed = new Set(["kind", "question", "images", "modelChoice"]);
@@ -61,7 +66,7 @@ export const handler = awslambda.streamifyResponse(
       const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
       if (!bearerToken) throw new HomeworkSubmissionError("Missing Authorization header", "validation");
       let studentId: string;
-      try { studentId = (await verifier.verify(bearerToken)).sub; }
+      try { studentId = parseStudentId((await verifier.verify(bearerToken)).sub); }
       catch { throw new HomeworkSubmissionError("Invalid or expired token", "validation"); }
       logger.appendKeys({ studentId });
       let body: Record<string, unknown>;

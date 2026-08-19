@@ -13,11 +13,12 @@
 // multiple questions' answers into a single field.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
-import { buildUsage, converseWithTools, parseDataUrl, parseToolInput, sumUsage } from "../shared/bedrock";
+import { buildUsage, parseDataUrl, sumUsage } from "../shared/bedrock";
 import type { ModelChoice } from "../shared/modelChoice";
 import type { CoachingPacket, IdentifiedQuestion } from "../shared/types";
 import { logger } from "../shared/logger";
 import type { HomeworkQuestion, PageContext } from "../shared/session";
+import { runForcedHomeworkTool } from "./modelTool";
 
 export interface GenerateCoachingPacketsResult {
   packets: CoachingPacket[];
@@ -210,46 +211,20 @@ export const generateCoachingPackets = async (
   });
 
   // 8192 tokens to comfortably fit ~6 packets × 5 prose fields.
-  const response = await converseWithTools(
+  const response = await runForcedHomeworkTool<{ packets: CoachingPacket[] }>({
     messages,
-    [SUBMIT_TOOL],
-    SYSTEM_PROMPT,
-    { tool: { name: "submit_coaching_packets" } },
-    8192,
-    true,
+    tool: SUBMIT_TOOL,
+    toolName: "submit_coaching_packets",
+    systemPrompt: SYSTEM_PROMPT,
     modelChoice,
-  );
-
-  if (response.stopReason === "guardrail_intervened") {
-    const guardrailMessage =
-      (response.message.content ?? [])
-        .map((b) => (b as { text?: string }).text)
-        .filter(Boolean)
-        .join(" ") ||
-      "Your submission was blocked by the content filter. Please rephrase it.";
-    logger.warn("packet_guardrail_intervened", { message: guardrailMessage });
-    throw new Error(guardrailMessage);
-  }
-
-  for (const block of response.message.content ?? []) {
-    const toolUse = block.toolUse as
-      | { name: string; input: unknown }
-      | undefined;
-    if (toolUse?.name === "submit_coaching_packets") {
-      const input = parseToolInput<{ packets: CoachingPacket[] }>(toolUse.input);
-      logger.info("packet_generate_complete", {
-        packetCount: input.packets.length,
-        inputTokens: response.usage.inputTokens,
-        outputTokens: response.usage.outputTokens,
-      });
-      return { packets: input.packets, usage: response.usage };
-    }
-  }
-
-  logger.warn("packet_no_tool_call");
-  throw new Error(
-    "The tutor could not produce a coaching packet for this submission. Please try again.",
-  );
+    missingToolMessage: "The tutor could not produce a coaching packet for this submission. Please try again.",
+  });
+  logger.info("packet_generate_complete", {
+    packetCount: response.input.packets.length,
+    inputTokens: response.usage.inputTokens,
+    outputTokens: response.usage.outputTokens,
+  });
+  return { packets: response.input.packets, usage: response.usage };
 };
 
 export type ContextPacketQuestion = Pick<
@@ -282,17 +257,15 @@ export const generateCoachingPacketsFromContext = async (
       chunkArray(groupQuestions, MAX_QUESTIONS_PER_PACKET_CALL).map(async (chunk) => {
         const relevantContexts = key ? key.split("\u0000").map((id) => ({ pageId: id, content: contextById.get(id)! })) : [];
         const questionList = chunk.map((q) => `[questionId=${q.questionId}, subject=${q.subject}, yearLevel=${q.yearLevel}] ${q.input}`).join("\n");
-        const response = await converseWithTools(
-          [{ role: "user", content: [{ text: `Relevant Page Context:\n\n${relevantContexts.map((context) => `[pageId=${context.pageId}]\n${context.content}`).join("\n\n---\n\n") || "No page image was supplied; use the typed question."}\n\nIdentified questions:\n${questionList}` }] }],
-          [SUBMIT_TOOL], SYSTEM_PROMPT, { tool: { name: "submit_coaching_packets" } }, 8192, true, modelChoice,
-        );
-        for (const block of response.message.content ?? []) {
-          const toolUse = block.toolUse as { name: string; input: unknown } | undefined;
-          if (toolUse?.name === "submit_coaching_packets") {
-            return { packets: parseToolInput<{ packets: CoachingPacket[] }>(toolUse.input).packets, usage: response.usage };
-          }
-        }
-        throw new Error("The tutor could not produce a coaching packet for this submission. Please try again.");
+        const response = await runForcedHomeworkTool<{ packets: CoachingPacket[] }>({
+          messages: [{ role: "user", content: [{ text: `Relevant Page Context:\n\n${relevantContexts.map((context) => `[pageId=${context.pageId}]\n${context.content}`).join("\n\n---\n\n") || "No page image was supplied; use the typed question."}\n\nIdentified questions:\n${questionList}` }] }],
+          tool: SUBMIT_TOOL,
+          toolName: "submit_coaching_packets",
+          systemPrompt: SYSTEM_PROMPT,
+          modelChoice,
+          missingToolMessage: "The tutor could not produce a coaching packet for this submission. Please try again.",
+        });
+        return { packets: response.input.packets, usage: response.usage };
       }),
     ),
   );

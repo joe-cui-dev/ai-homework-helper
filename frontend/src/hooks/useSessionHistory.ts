@@ -10,6 +10,7 @@ interface UseSessionHistoryReturn {
   error: string | null;
   nextCursor: string | null;
   loadMore: () => Promise<void>;
+  removeSession: (sessionId: string) => void;
 }
 
 export function useSessionHistory(
@@ -60,5 +61,9 @@ export function useSessionHistory(
     }
   }, [token, module, nextCursor]); // loadingMore excluded — it's a guard, not a dep
 
-  return { sessions, loading, loadingMore, error, nextCursor, loadMore };
+  const removeSession = useCallback((sessionId: string) => {
+    setSessions((current) => current.filter((session) => session.sessionId !== sessionId));
+  }, []);
+
+  return { sessions, loading, loadingMore, error, nextCursor, loadMore, removeSession };
 }

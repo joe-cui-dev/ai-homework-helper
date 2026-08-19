@@ -39,7 +39,7 @@ This is an npm workspaces monorepo with three packages: `backend/`, `frontend/`,
 
 **Modules** (each is its own Lambda Function URL):
 
-- **Homework** (`backend/src/homework/`) — stateless. Parent uploads a worksheet image; the AI extracts questions and emits a `CoachingPacket` per question. SPA route `/homework`.
+- **Homework** (`backend/src/homework/`) — appendable Session workflow. An `initial` request creates the Session; while viewing its result, the parent may send atomic `append_pages` Page Submissions that add images, Page Context, final Questions, and changed `CoachingPacket`s to the same Session. See [ADR 0011](docs/adr/0011-append-homework-pages-with-page-context.md). SPA route `/homework`.
 - **Reading** (`backend/src/reading/`) — stateless. Parent uploads book cover + pages; the AI generates 5 grounded comprehension `ReadingPacket`s. SPA route `/reading`.
 - **Writing** (`backend/src/writing/`) — multi-turn coaching for an English writing assignment. Four HTTP turn kinds (`/writing/start`, `/writing/draft`, `/writing/question`, `/writing/end`); each productive turn is one forced-tool Converse call (no per-turn loop). The user-facing Session at `sessions/{studentId}/writing/{sessionId}.json` is mutated across requests. Raw Bedrock messages and per-turn usage live in the `.agent.json` sidecar. See [docs/adr/0004-unified-session-model.md](docs/adr/0004-unified-session-model.md) and [docs/adr/0005-session-key-includes-type.md](docs/adr/0005-session-key-includes-type.md). SPA routes `/writing` and `/writing/:sessionId`.
 - **Practice** (`backend/src/practice/`) — multi-turn agentic loop launched from a CoachingPacket. Each turn iterates a 7-tool dispatch up to 5 times until terminal `end_turn`. SPA route `/practice/:sessionId`.
@@ -47,13 +47,14 @@ This is an npm workspaces monorepo with three packages: `backend/`, `frontend/`,
 
 **Request flow (Homework example):**
 
-1. React SPA authenticates via Amazon Cognito and POSTs questions (+ optional base64 image) to the Homework Function URL with a JWT Bearer token
-2. `backend/src/homework/handler.ts` — Lambda entry: validates JWT, extracts `studentId` from `sub`, validates input, then calls `analyzePages()` and `generateCoachingPackets()`
-3. NDJSON stream emits `analyzing` → `packet_start` per question → `packet_complete` per packet → `complete`
-4. `backend/src/shared/sessionStore.ts` — persists the Homework Session to S3 under its `homework` prefix
-5. `backend/src/shared/curriculum.ts` — local lookup of AU Curriculum outcomes (math/science/english) plus English writing outcomes per genre via `lookupWritingOutcomes`
+1. The authenticated React SPA POSTs an explicit request kind to the Homework Function URL: `{ kind: "initial", question, images, modelChoice }` or `{ kind: "append_pages", sessionId, submissionId, images }`. `studentId` always comes from the verified Cognito access token.
+2. `backend/src/homework/handler.ts` validates the wire payload and identifiers, then calls `processHomeworkSubmission()`.
+3. Initial processing analyzes new images into durable Page Context, reconciles Questions, generates packets, saves one Homework Session, and emits `analyzing` / packet progress followed by authoritative `complete` (or `error`).
+4. Append processing emits `append_phase` progress (`preparing` → `analyzing` → `generating` → `saving`), uses saved Page Context for earlier pages by default, and rereads only specifically requested earlier images when semantic context is insufficient.
+5. `backend/src/shared/sessionStore.ts` uses a submission claim, payload hash, deterministic image keys, and conditional S3 Session write so a Page Submission commits atomically and same-ID retries replay the established outcome.
+6. Frontend Homework handling treats only `complete` or structured `error` as terminal; malformed or prematurely ended NDJSON becomes a retryable failure without replacing the prior visible result.
 
-**Streaming:** all four POST endpoints use NDJSON (`application/x-ndjson`) via `awslambda.streamifyResponse`. Frontend parses lines via `ReadableStream`; per-module hooks (`useHomeworkStream`, `useReadingStream`, `useWritingSession`, `usePracticeSession`) manage state.
+**Streaming:** all four POST endpoints use NDJSON (`application/x-ndjson`) via `awslambda.streamifyResponse`. Frontend parses lines via `ReadableStream`; per-module hooks (`useHomeworkStream`, `useReadingStream`, `useWritingSession`, `usePracticeSession`) manage state. The backend/frontend `StreamEvent` mirrors are guarded by `backend/src/__tests__/streamContract.test.ts`.
 
 **Safety:** two-layer enforcement — Bedrock Guardrails (harmful content/profanity/PII/prompt attacks/off-topic) on all model calls, plus Cognito access-token validation ensuring `studentId` always comes from the verified token.
 
@@ -84,6 +85,7 @@ See `frontend/.env.local.example` for the template.
 - **CDK context overrides:** `logLevel` and `allowedOrigin` can be changed at deploy time via `--context` flags without code changes
 - **Writing is "agentic at session level only":** each turn is one forced-tool Converse call; the multi-turn-ness across HTTP requests is the agent character, not iteration inside a turn. Cheaper and lower-latency than a per-turn loop, and the only branching decision (`nextStep` discriminator) is one conditional, not a loop.
 - **Model Choice is locked per Session:** starts default to Fast; Writing keeps its selected choice and Practice inherits it from the source Homework Session.
+- **Homework append is atomic and context-first:** earlier worksheet images are normally represented by saved Page Context; a targeted old-image fallback is allowed only when required. The Session JSON conditional write is the commit point. See [ADR 0011](docs/adr/0011-append-homework-pages-with-page-context.md).
 
 ## Agent skills
 

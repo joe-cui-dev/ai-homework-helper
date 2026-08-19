@@ -23,7 +23,7 @@ const dependencies = (): jest.Mocked<HomeworkSubmissionDependencies> => ({
   generatePackets: jest.fn().mockResolvedValue({ packets: [packet(5)], usage: { inputTokens: 4, outputTokens: 3, costUsd: 0.002 } }),
   uploadInitialImages: jest.fn().mockResolvedValue(["initial-key"]),
   uploadAppendImages: jest.fn().mockResolvedValue(["append-key"]), loadImage: jest.fn().mockResolvedValue({ mediaType: "image/jpeg", data: new Uint8Array([1]) }),
-  now: jest.fn(() => new Date("2026-08-19T00:00:00.000Z")), id: jest.fn().mockReturnValueOnce("attempt-1"), hashImages: jest.fn().mockReturnValue("payload-hash"),
+  now: jest.fn(() => new Date("2026-08-19T00:00:00.000Z")), newSessionId: jest.fn().mockReturnValue("session-new"), newAttemptId: jest.fn().mockReturnValue("attempt-1"), hashImages: jest.fn().mockReturnValue("payload-hash"),
 });
 
 describe("processHomeworkSubmission", () => {
@@ -74,6 +74,21 @@ describe("processHomeworkSubmission", () => {
     expect(deps.analyze).not.toHaveBeenCalled();
   });
 
+  it.each(["../claim", "path/claim", "作業", "line\nbreak", `x${"a".repeat(128)}`])(
+    "rejects unsafe submission IDs before storage or model work: %j",
+    async (submissionId) => {
+      const deps = dependencies();
+      await expect(processHomeworkSubmission({
+        studentId: "student-1",
+        request: { kind: "append_pages", sessionId: "session-1", submissionId, images: ["data:image/jpeg;base64,abc"] },
+        emit: jest.fn(), deps,
+      })).rejects.toThrow("Submission ID");
+      expect(deps.loadSessionWithVersion).not.toHaveBeenCalled();
+      expect(deps.acquireClaim).not.toHaveBeenCalled();
+      expect(deps.analyze).not.toHaveBeenCalled();
+    },
+  );
+
   it("leaves the prior Session authoritative and marks the claim failed on pre-commit failure", async () => {
     const deps = dependencies();
     deps.uploadAppendImages.mockRejectedValue(new Error("upload failed"));
@@ -96,7 +111,7 @@ describe("processHomeworkSubmission", () => {
 
   it("publishes an initial waiting Session only after analysis, images, and save succeed", async () => {
     const deps = dependencies();
-    deps.id.mockReset().mockReturnValueOnce("session-new");
+    deps.newSessionId.mockReturnValueOnce("session-new");
     deps.analyze.mockResolvedValue({ newPageContexts: [{ pageId: "initial-page-0", content: "cover context" }], candidates: [], usage: ZERO, fallbackPageIds: [] });
     deps.generatePackets.mockResolvedValue({ packets: [], usage: ZERO });
     const event = await processHomeworkSubmission({ studentId: "student-1", request: { kind: "initial", question: "", images: ["data:image/jpeg;base64,abc"], modelChoice: "fast" }, emit: jest.fn(), deps });

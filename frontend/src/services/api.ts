@@ -80,3 +80,26 @@ export const fetchSessionHistory = async (
   return response.json() as Promise<{ sessions: SessionSummary[]; nextCursor: string | null }>;
 };
 
+export const fetchSessionDetail = async (
+  token: string,
+  module: HistoryModule,
+  sessionId: string,
+): Promise<SessionSummary> => {
+  const historyUrl = import.meta.env.VITE_HISTORY_API_URL as string | undefined;
+  if (!historyUrl) throw new Error("VITE_HISTORY_API_URL is not configured.");
+  const url = new URL(historyUrl);
+  url.searchParams.set("type", module);
+  url.searchParams.set("sessionId", sessionId);
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const error = new Error(response.status === 404
+      ? "Session unavailable."
+      : `History detail fetch failed with status ${response.status}.`);
+    Object.assign(error, { status: response.status });
+    throw error;
+  }
+  const body = await response.json() as { session: SessionSummary };
+  return body.session;
+};

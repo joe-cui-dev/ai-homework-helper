@@ -18,6 +18,7 @@ import {
   type StoredImage,
 } from "../shared/sessionStore";
 import type { StreamEvent } from "../shared/types";
+import { parseSessionId, parseStudentId, parseSubmissionId } from "../shared/storageIdentifiers";
 import { analyzeHomeworkSubmission, type HomeworkSubmissionAnalysisResult } from "./analyzer";
 import { generateCoachingPacketsFromContext, type ContextPacketQuestion, type IdentifiedPageContext } from "./coachingPacket";
 import { reconcileSubmission } from "./reconcileSubmission";
@@ -65,7 +66,8 @@ export interface HomeworkSubmissionDependencies {
   uploadAppendImages(studentId: string, sessionId: string, submissionId: string, images: string[]): Promise<string[]>;
   loadImage(imageKey: string): Promise<StoredImage>;
   now(): Date;
-  id(): string;
+  newSessionId(): string;
+  newAttemptId(): string;
   hashImages(images: string[]): string;
 }
 
@@ -81,7 +83,8 @@ const defaultDependencies: HomeworkSubmissionDependencies = {
   uploadAppendImages: uploadHomeworkSubmissionImages,
   loadImage: loadSessionImage,
   now: () => new Date(),
-  id: randomUUID,
+  newSessionId: randomUUID,
+  newAttemptId: randomUUID,
   hashImages: (images) => createHash("sha256").update(images.join("\n")).digest("hex"),
 };
 
@@ -159,7 +162,7 @@ const runInitial = async (
   emit: (event: StreamEvent) => void,
   deps: HomeworkSubmissionDependencies,
 ): Promise<HomeworkCompleteEvent> => {
-  const sessionId = deps.id();
+  const sessionId = deps.newSessionId();
   const pageIds = request.images.map((_, index) => `initial-page-${index}`);
   emit({ type: "analyzing" });
   const analysis = await deps.analyze({
@@ -226,7 +229,7 @@ const runAppend = async (
   if (session.questions.length >= 30) throw new HomeworkSubmissionError("This homework session has reached its 30-question limit.", "question_limit");
 
   const startedAt = deps.now();
-  const ownerAttemptId = deps.id();
+  const ownerAttemptId = deps.newAttemptId();
   emit({ type: "append_phase", phase: "preparing" });
   const claimResult = await deps.acquireClaim({
     studentId, sessionId: session.sessionId, submissionId: request.submissionId, payloadHash, ownerAttemptId,
@@ -352,6 +355,11 @@ export const processHomeworkSubmission = async (input: {
   deps?: HomeworkSubmissionDependencies;
 }): Promise<HomeworkCompleteEvent> => {
   const deps = input.deps ?? defaultDependencies;
+  parseStudentId(input.studentId);
+  if (input.request.kind === "append_pages") {
+    parseSessionId(input.request.sessionId);
+    parseSubmissionId(input.request.submissionId);
+  }
   if (input.request.images.length > 5) throw new HomeworkSubmissionError("Please upload at most 5 images at a time.", "validation");
   if (input.request.kind === "append_pages" && input.request.images.length === 0) throw new HomeworkSubmissionError("Adding pages requires at least one image.", "validation");
   return input.request.kind === "initial"

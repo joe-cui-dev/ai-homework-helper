@@ -14,6 +14,7 @@ import {
   GetObjectCommand,
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
+import { parseSessionId, parseStudentId, parseSubmissionId } from "./storageIdentifiers";
 import type { Session, SessionType } from "./session";
 import type { BedrockMessage } from "./bedrock";
 import { normaliseModelChoice } from "./modelChoice";
@@ -76,19 +77,19 @@ const sessionKey = (
   studentId: string,
   sessionType: SessionType,
   sessionId: string,
-): string => `sessions/${studentId}/${sessionType}/${sessionId}.json`;
+): string => `sessions/${parseStudentId(studentId)}/${sessionType}/${parseSessionId(sessionId)}.json`;
 
 const sidecarKey = (
   studentId: string,
   sessionType: SessionType,
   sessionId: string,
-): string => `sessions/${studentId}/${sessionType}/${sessionId}.agent.json`;
+): string => `sessions/${parseStudentId(studentId)}/${sessionType}/${parseSessionId(sessionId)}.agent.json`;
 
 const homeworkSubmissionClaimKey = (
   studentId: string,
   sessionId: string,
   submissionId: string,
-): string => `sessions/${studentId}/homework/${sessionId}/submission-${submissionId}.claim`;
+): string => `sessions/${parseStudentId(studentId)}/homework/${parseSessionId(sessionId)}/submission-${parseSubmissionId(submissionId)}.claim`;
 
 const isConditionalConflict = (err: unknown): boolean => {
   const name = (err as { name?: string }).name;
@@ -277,10 +278,11 @@ export const listSessions = async (
   limit = 10,
 ): Promise<SessionPage> => {
   const bucket = bucketName();
+  const safeStudentId = parseStudentId(studentId);
   const list = await s3.send(
     new ListObjectsV2Command({
       Bucket: bucket,
-      Prefix: `sessions/${studentId}/${sessionType}/`,
+      Prefix: `sessions/${safeStudentId}/${sessionType}/`,
     }),
   );
 
@@ -363,6 +365,8 @@ export const uploadSessionImages = async (
 ): Promise<string[]> => {
   if (images.length === 0) return [];
   const bucket = bucketName();
+  const safeStudentId = parseStudentId(studentId);
+  const safeSessionId = parseSessionId(sessionId);
 
   return Promise.all(
     images.map(async (dataUrl, i) => {
@@ -371,7 +375,7 @@ export const uploadSessionImages = async (
       );
       if (!match) throw new Error(`Invalid image data URL at index ${i}`);
       const [, mediaType, ext, base64Data] = match;
-      const key = `sessions/${studentId}/${sessionType}/${sessionId}/${prefix}-${i}.${ext}`;
+      const key = `sessions/${safeStudentId}/${sessionType}/${safeSessionId}/${prefix}-${i}.${ext}`;
       await s3.send(
         new PutObjectCommand({
           Bucket: bucket,
@@ -391,7 +395,13 @@ export const uploadHomeworkSubmissionImages = async (
   sessionId: string,
   submissionId: string,
   images: string[],
-): Promise<string[]> => uploadSessionImages(studentId, "homework", sessionId, images, `submission-${submissionId}-image`);
+): Promise<string[]> => uploadSessionImages(
+  studentId,
+  "homework",
+  sessionId,
+  images,
+  `submission-${parseSubmissionId(submissionId)}-image`,
+);
 
 export interface StoredImage {
   mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";

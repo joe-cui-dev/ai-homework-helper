@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SessionSummary } from "../types";
 import { useSessionHistory } from "../hooks/useSessionHistory";
-import type { HistoryModule } from "../services/api";
+import { fetchSessionDetail, type HistoryModule } from "../services/api";
 import { subjectColour } from "../utils/subjectColour";
 import { formatUsageCompact } from "../utils/formatUsage";
 import { SessionDetailModal } from "./SessionDetailModal";
@@ -121,11 +121,12 @@ function SessionCard({ session, onClick, onResume }: SessionCardProps) {
 
       {session.imageUrls.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
-          {session.imageUrls.map((url, i) => url ? (
-            <img key={i} src={url} alt={`Upload ${i + 1}`} className="w-14 h-14 object-cover rounded-lg border border-gray-200" />
+          {session.imageUrls.slice(0, 1).map((url, i) => url ? (
+            <img key={i} src={url} alt="Upload 1" className="w-14 h-14 object-cover rounded-lg border border-gray-200" />
           ) : (
-            <div key={i} role="img" aria-label={`Upload ${i + 1} unavailable`} className="w-14 h-14 rounded-lg border border-dashed border-gray-300 bg-gray-50 text-[10px] text-gray-400 flex items-center justify-center text-center">Unavailable</div>
+            <div key={i} role="img" aria-label="Upload 1 unavailable" className="w-14 h-14 rounded-lg border border-dashed border-gray-300 bg-gray-50 text-[10px] text-gray-400 flex items-center justify-center text-center">Unavailable</div>
           ))}
+          <span className="self-end text-xs text-gray-400">{session.imageUrls.length} {session.imageUrls.length === 1 ? "image" : "images"}</span>
         </div>
       )}
     </button>
@@ -146,10 +147,32 @@ function SkeletonCard() {
 }
 
 export function HistorySidebar({ token, module, open, onClose }: HistorySidebarProps) {
-  const { sessions, loading, loadingMore, error, nextCursor, loadMore } =
+  const { sessions, loading, loadingMore, error, nextCursor, loadMore, removeSession } =
     useSessionHistory(token, module);
   const navigate = useNavigate();
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  const selectSession = async (session: SessionSummary) => {
+    setSelectedSessionId(session.sessionId);
+    setSelectedSession(null);
+    setDetailError(null);
+    try {
+      setSelectedSession(await fetchSessionDetail(token, module, session.sessionId));
+    } catch (error) {
+      if ((error as Error & { status?: number }).status === 404) {
+        removeSession(session.sessionId);
+      }
+      setDetailError(error instanceof Error ? error.message : "Session unavailable.");
+    }
+  };
+
+  const closeDetail = () => {
+    setSelectedSessionId(null);
+    setSelectedSession(null);
+    setDetailError(null);
+  };
 
   // Pin active writing sessions to the top.
   const activeWriting = sessions.filter(
@@ -217,7 +240,7 @@ export function HistorySidebar({ token, module, open, onClose }: HistorySidebarP
                 <SessionCard
                   key={s.sessionId}
                   session={s}
-                  onClick={() => setSelectedSession(s)}
+                  onClick={() => { void selectSession(s); }}
                   onResume={() => {
                     onClose();
                     navigate(`/writing/${s.sessionId}`);
@@ -231,7 +254,7 @@ export function HistorySidebar({ token, module, open, onClose }: HistorySidebarP
             <SessionCard
               key={s.sessionId}
               session={s}
-              onClick={() => setSelectedSession(s)}
+              onClick={() => { void selectSession(s); }}
               onResume={() => {
                 onClose();
                 navigate(`/writing/${s.sessionId}`);
@@ -255,8 +278,16 @@ export function HistorySidebar({ token, module, open, onClose }: HistorySidebarP
         <SessionDetailModal
           session={selectedSession}
           token={token}
-          onClose={() => setSelectedSession(null)}
+          onClose={closeDetail}
         />
+      )}
+      {selectedSessionId && !selectedSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-label="Session detail">
+          <div className="bg-white rounded-2xl shadow-xl p-6 text-sm text-gray-600">
+            {detailError ?? "Loading latest session…"}
+            {detailError && <button className="block mt-4 text-brand-600 font-semibold" onClick={closeDetail}>Close</button>}
+          </div>
+        </div>
       )}
     </>
   );

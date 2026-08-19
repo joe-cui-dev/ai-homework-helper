@@ -9,13 +9,14 @@
 // can orchestrate sequential per-question solves using the existing runAgent().
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
-import { buildUsage, converseWithTools, parseDataUrl, parseToolInput, sumUsage } from "../shared/bedrock";
+import { buildUsage, parseDataUrl, sumUsage } from "../shared/bedrock";
 import type { ModelChoice } from "../shared/modelChoice";
 import type { PageAnalysis, IdentifiedQuestion } from "../shared/types";
 import { logger } from "../shared/logger";
 import type { HomeworkQuestion } from "../shared/session";
 import type { SubmissionQuestionCandidate } from "./reconcileSubmission";
 import type { StoredImage } from "../shared/sessionStore";
+import { runForcedHomeworkTool } from "./modelTool";
 
 export type { PageAnalysis };
 
@@ -154,68 +155,27 @@ export const analyzePages = async (
   logger.info("analyzer_start", { imageCount: images.length, hasText: !!questionText?.trim() });
 
   // 8192 tokens to accommodate long articles without truncation.
-  const response = await converseWithTools(
+  const response = await runForcedHomeworkTool<{
+    pageContexts?: string[];
+    articleContext?: string;
+    questions: IdentifiedQuestion[];
+  }>({
     messages,
-    [SUBMIT_TOOL],
-    ANALYZER_SYSTEM_PROMPT,
-    { tool: { name: "submit_page_analysis" } },
-    8192,
-    true,
+    tool: SUBMIT_TOOL,
+    toolName: "submit_page_analysis",
+    systemPrompt: ANALYZER_SYSTEM_PROMPT,
     modelChoice,
-  );
-
-  if (response.stopReason === "guardrail_intervened") {
-    const guardrailMessage =
-      (response.message.content ?? [])
-        .map((b) => (b as { text?: string }).text)
-        .filter(Boolean)
-        .join(" ") ||
-      "Your submission was blocked by the content filter. Please rephrase it.";
-    logger.warn("analyzer_guardrail_intervened", { message: guardrailMessage });
-    throw new Error(guardrailMessage);
-  }
-
-  // Extract the tool input from the response.
-  for (const block of response.message.content ?? []) {
-    const toolUse = block.toolUse as
-      | { name: string; input: unknown }
-      | undefined;
-    if (toolUse?.name === "submit_page_analysis") {
-      const input = parseToolInput<{
-        pageContexts?: string[];
-        articleContext?: string;
-        questions: IdentifiedQuestion[];
-      }>(toolUse.input);
-      logger.info("analyzer_complete", {
-        questionCount: input.questions.length,
-        hasArticle: !!input.articleContext,
-      });
-      return {
-        analysis: {
-          articleContext: input.articleContext,
-          pageContexts: input.pageContexts,
-          questions: input.questions,
-        },
-        usage: response.usage,
-      };
-    }
-  }
-
-  // Fallback: Claude didn't call the tool — treat whole input as one question.
-  logger.warn("analyzer_no_tool_call");
+    missingToolMessage: "The analyzer did not return structured page analysis.",
+  });
+  logger.info("analyzer_complete", {
+    questionCount: response.input.questions.length,
+    hasArticle: !!response.input.articleContext,
+  });
   return {
     analysis: {
-      questions: questionText?.trim()
-        ? [
-            {
-              id: 1,
-              text: questionText.trim(),
-              usesArticle: false,
-              subject: "other",
-              yearLevel: "year-3",
-            },
-          ]
-        : [],
+      articleContext: response.input.articleContext,
+      pageContexts: response.input.pageContexts,
+      questions: response.input.questions,
     },
     usage: response.usage,
   };
@@ -286,16 +246,6 @@ const imageBlockFromStored = (image: StoredImage): Record<string, unknown> => ({
   image: { format: image.mediaType.split("/")[1], source: { bytes: image.data } },
 });
 
-const extractHomeworkAnalysis = (response: Awaited<ReturnType<typeof converseWithTools>>): HomeworkAnalysisToolInput => {
-  for (const block of response.message.content ?? []) {
-    const toolUse = block.toolUse as { name: string; input: unknown } | undefined;
-    if (toolUse?.name === "submit_homework_submission_analysis") {
-      return parseToolInput<HomeworkAnalysisToolInput>(toolUse.input);
-    }
-  }
-  throw new Error("The analyzer did not return structured Page Context.");
-};
-
 const validateHomeworkAnalysis = (
   input: HomeworkAnalysisToolInput,
   newPageIds: Set<string>,
@@ -351,11 +301,15 @@ export const analyzeHomeworkSubmission = async (input: {
       : input.newPages.map((page) => imageBlockFromDataUrl(page.image));
     for (const targeted of targetedImages) content.push(imageBlockFromStored(targeted.image));
     content.push({ text: `Submission context (stable IDs are authoritative):\n${semanticPrompt}\nTargeted prior images included: ${targetedImages.map((p) => p.pageId).join(", ") || "none"}${firstPass ? `\nThe first-pass Page Context below is final and must not be reinterpreted. Use the targeted old images only to resolve Question relations, and reproduce these contexts unchanged:\n${JSON.stringify(firstPass)}` : ""}` });
-    const response = await converseWithTools(
-      [{ role: "user", content }], [SUBMIT_HOMEWORK_ANALYSIS_TOOL], APPEND_ANALYZER_SYSTEM_PROMPT,
-      { tool: { name: "submit_homework_submission_analysis" } }, 8192, true, input.modelChoice,
-    );
-    const extracted = extractHomeworkAnalysis(response);
+    const response = await runForcedHomeworkTool<HomeworkAnalysisToolInput>({
+      messages: [{ role: "user", content }],
+      tool: SUBMIT_HOMEWORK_ANALYSIS_TOOL,
+      toolName: "submit_homework_submission_analysis",
+      systemPrompt: APPEND_ANALYZER_SYSTEM_PROMPT,
+      modelChoice: input.modelChoice,
+      missingToolMessage: "The analyzer did not return structured Page Context.",
+    });
+    const extracted = response.input;
     const analysis = firstPass ? { ...extracted, pageContexts: firstPass.pageContexts } : extracted;
     validateHomeworkAnalysis(analysis, newPageIds, priorPageIds, existingQuestionIds);
     return { analysis, usage: response.usage };

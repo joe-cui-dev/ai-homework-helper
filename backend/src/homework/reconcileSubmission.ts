@@ -27,6 +27,63 @@ export interface ReconciliationResult {
   possiblyRepeatedQuestionIds: number[];
 }
 
+const normalizeText = (value: string): string =>
+  value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+
+const normalizeOverlapKey = (value: string): string =>
+  normalizeText(value);
+
+const compareStrings = (left: string, right: string): number =>
+  left < right ? -1 : left > right ? 1 : 0;
+
+const uniqueSorted = (values: string[]): string[] =>
+  [...new Set(values)].sort(compareStrings);
+
+const candidateGroupKey = (candidate: SubmissionQuestionCandidate): string => {
+  if (candidate.overlapKey?.trim()) return `overlap:${normalizeOverlapKey(candidate.overlapKey)}`;
+  if (candidate.relation.kind === "new") return `new-text:${normalizeText(candidate.text)}`;
+  if (candidate.relation.kind === "update") return `update:${candidate.relation.questionId}`;
+  return `possible:${candidate.relation.questionId}:${normalizeText(candidate.text)}`;
+};
+
+const chooseRepresentative = (
+  candidates: SubmissionQuestionCandidate[],
+): SubmissionQuestionCandidate => [...candidates].sort((left, right) => {
+  const lengthDifference = normalizeText(right.text).length - normalizeText(left.text).length;
+  if (lengthDifference !== 0) return lengthDifference;
+  const textDifference = compareStrings(normalizeText(left.text), normalizeText(right.text));
+  if (textDifference !== 0) return textDifference;
+  const subjectDifference = compareStrings(left.subject, right.subject);
+  if (subjectDifference !== 0) return subjectDifference;
+  return compareStrings(left.yearLevel, right.yearLevel);
+})[0];
+
+const reconcileGroup = (
+  groupKey: string,
+  candidates: SubmissionQuestionCandidate[],
+): SubmissionQuestionCandidate => {
+  const relatedIds = new Set(candidates.flatMap((candidate) =>
+    candidate.relation.kind === "new" ? [] : [candidate.relation.questionId]));
+  if (relatedIds.size > 1) {
+    throw new Error(`Analyzer produced a contradictory overlap group (${groupKey}).`);
+  }
+
+  // A confident update wins over a new/uncertain rendering of the same overlap.
+  // Otherwise uncertainty is preserved rather than silently promoted to `new`.
+  const updates = candidates.filter((candidate) => candidate.relation.kind === "update");
+  const possibleDuplicates = candidates.filter((candidate) => candidate.relation.kind === "possible_duplicate");
+  const eligible = updates.length > 0
+    ? updates
+    : possibleDuplicates.length > 0
+      ? possibleDuplicates
+      : candidates;
+  const representative = chooseRepresentative(eligible);
+  return {
+    ...representative,
+    sourcePageIds: uniqueSorted(candidates.flatMap((candidate) => candidate.sourcePageIds)),
+  };
+};
+
 /** Applies model-proposed identity only when it is an explicit high-confidence match. */
 export const reconcileSubmission = (
   existingQuestions: HomeworkQuestion[],
@@ -39,26 +96,24 @@ export const reconcileSubmission = (
     }
   }
 
-  // A model can see the same complete question in overlapping photos. Collapse
-  // only confident `new` candidates with identical normalized text; uncertain
-  // relationships deliberately stay separate so we never erase ambiguity.
-  const normalizedNew = new Map<string, SubmissionQuestionCandidate>();
-  const distinctCandidates: SubmissionQuestionCandidate[] = [];
+  // Reconcile every explicit overlap identity as a group. Only genuinely new
+  // candidates without an analyzer identity receive the normalized-text fallback.
+  const groups = new Map<string, SubmissionQuestionCandidate[]>();
   for (const candidate of candidates) {
-    if (candidate.relation.kind !== "new") {
-      distinctCandidates.push(candidate);
-      continue;
-    }
-    const fingerprint = candidate.overlapKey?.trim()
-      ? `model:${candidate.overlapKey.trim()}`
-      : `text:${candidate.text.trim().replace(/\s+/g, " ").toLocaleLowerCase()}`;
-    const prior = normalizedNew.get(fingerprint);
-    if (!prior) {
-      const copy = { ...candidate, sourcePageIds: [...new Set(candidate.sourcePageIds)] };
-      normalizedNew.set(fingerprint, copy);
-      distinctCandidates.push(copy);
-    } else {
-      prior.sourcePageIds = [...new Set([...prior.sourcePageIds, ...candidate.sourcePageIds])];
+    const key = candidateGroupKey(candidate);
+    groups.set(key, [...(groups.get(key) ?? []), candidate]);
+  }
+  const distinctCandidates = [...groups.entries()]
+    .sort(([left], [right]) => compareStrings(left, right))
+    .map(([key, group]) => reconcileGroup(key, group));
+
+  const updateGroupsByQuestionId = new Map<number, number>();
+  for (const candidate of distinctCandidates) {
+    if (candidate.relation.kind !== "update") continue;
+    const count = (updateGroupsByQuestionId.get(candidate.relation.questionId) ?? 0) + 1;
+    updateGroupsByQuestionId.set(candidate.relation.questionId, count);
+    if (count > 1) {
+      throw new Error(`Analyzer updated question ${candidate.relation.questionId} from more than one overlap group.`);
     }
   }
 

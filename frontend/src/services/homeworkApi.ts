@@ -46,7 +46,11 @@ export const streamHomework = async (
     throw new Error(text || `Request failed with status ${response.status}.`);
   }
 
-  await parseNdjsonStream<StreamEvent>(response.body, onEvent);
+  await parseNdjsonStream<StreamEvent>(
+    response.body,
+    onEvent,
+    (event) => event.type === "complete" || event.type === "error",
+  );
 };
 
 export const appendHomeworkPages = async (
@@ -61,5 +65,9 @@ export const appendHomeworkPages = async (
   const request: AppendHomeworkPagesRequest = { kind: "append_pages", sessionId, submissionId, images };
   const response = await fetch(apiUrl, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(request) });
   if (!response.ok || !response.body) throw new Error(`Request failed with status ${response.status}.`);
-  await parseNdjsonStream<StreamEvent>(response.body, onEvent);
+  await parseNdjsonStream<StreamEvent>(
+    response.body,
+    onEvent,
+    (event) => event.type === "complete" || event.type === "error",
+  );
 };

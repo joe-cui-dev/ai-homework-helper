@@ -151,7 +151,12 @@ export type StreamEvent =
       usage: TokenUsage;
       modelChoice: ModelChoice;
     }
-  | { type: "error"; message: string; code?: string; retryable?: boolean };
+  | {
+      type: "error";
+      message: string;
+      code?: "validation" | "not_found" | "page_limit" | "question_limit" | "conflict" | "in_progress" | "processing_failure";
+      retryable?: boolean;
+    };
 
 // ── Phase 2: Practice Tutor Loop ─────────────────────────────────────────────
 

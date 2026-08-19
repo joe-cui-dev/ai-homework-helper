@@ -84,4 +84,48 @@ describe("reconcileSubmission", () => {
     expect(result.questions[1]).toBe(second);
     expect(result.questions[2].questionId).toBe(9);
   });
+
+  it.each([
+    ["forward", [0, 1, 2]],
+    ["reverse", [2, 1, 0]],
+    ["mixed", [1, 0, 2]],
+  ])("reconciles update plus new overlap deterministically (%s)", (_name, order) => {
+    const candidates = [
+      { overlapKey: " Worksheet-Q4 ", text: "Complete: 2, 4, 6, 8", subject: "math" as const, yearLevel: "year-3" as const, sourcePageIds: ["page-3"], relation: { kind: "new" as const, confidence: "high" as const } },
+      { overlapKey: "worksheet-q4", text: "Complete the pattern: 2, 4, 6, 8", subject: "math" as const, yearLevel: "year-3" as const, sourcePageIds: ["page-2"], relation: { kind: "update" as const, questionId: 4, confidence: "high" as const } },
+      { overlapKey: "WORKSHEET-Q4", text: "Complete: 2, 4, 6, 8", subject: "math" as const, yearLevel: "year-3" as const, sourcePageIds: ["page-2", "page-3"], relation: { kind: "new" as const, confidence: "high" as const } },
+    ];
+
+    const result = reconcileSubmission([existing(4, "Complete the pattern")], order.map((index) => candidates[index]));
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0]).toMatchObject({ questionId: 4, revision: 1, sourcePageIds: ["page-1", "page-2", "page-3"] });
+    expect(result.updatedQuestionIds).toEqual([4]);
+    expect(result.addedQuestionIds).toEqual([]);
+  });
+
+  it("collapses repeated possible duplicates for one overlap identity", () => {
+    const result = reconcileSubmission([existing(4, "What is 2 + 2?")], [
+      { overlapKey: "q4-copy", text: "What is two plus two?", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-3"], relation: { kind: "possible_duplicate", questionId: 4, confidence: "uncertain" } },
+      { overlapKey: "q4-copy", text: "What is 2 + 2?", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-2"], relation: { kind: "possible_duplicate", questionId: 4, confidence: "uncertain" } },
+    ]);
+
+    expect(result.questions).toHaveLength(2);
+    expect(result.questions[1]).toMatchObject({ questionId: 5, possiblyRepeatedOfQuestionId: 4, sourcePageIds: ["page-2", "page-3"] });
+  });
+
+  it("rejects contradictory overlap updates before mutating the session", () => {
+    const questions = [existing(4, "First"), existing(8, "Second")];
+    expect(() => reconcileSubmission(questions, [
+      { overlapKey: "same", text: "First continued", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-2"], relation: { kind: "update", questionId: 4, confidence: "high" } },
+      { overlapKey: "same", text: "Second continued", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-2"], relation: { kind: "update", questionId: 8, confidence: "high" } },
+    ])).toThrow("contradictory overlap");
+    expect(questions.map((question) => question.revision)).toEqual([undefined, undefined]);
+  });
+
+  it("rejects separate overlap groups that would update one question twice", () => {
+    expect(() => reconcileSubmission([existing(4, "First")], [
+      { overlapKey: "part-a", text: "First A", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-2"], relation: { kind: "update", questionId: 4, confidence: "high" } },
+      { overlapKey: "part-b", text: "First B", subject: "math", yearLevel: "year-3", sourcePageIds: ["page-3"], relation: { kind: "update", questionId: 4, confidence: "high" } },
+    ])).toThrow("more than one overlap group");
+  });
 });

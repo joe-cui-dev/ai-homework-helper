@@ -179,9 +179,6 @@ export const useHomeworkStream = (): UseHomeworkStreamReturn => {
           controller.signal,
           selectedModelChoice,
         );
-        setStatus((prev) =>
-          prev === "analyzing" || prev === "generating" ? "done" : prev,
-        );
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") {
           setStatus((prev) =>
