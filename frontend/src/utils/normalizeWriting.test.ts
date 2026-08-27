@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DraftFeedbackPacket } from "../types";
-import { normaliseDraftFeedback } from "./normalizeWriting";
+import { normaliseDraftFeedback, normalisePlan } from "./normalizeWriting";
+import type { WritingPlanPacket } from "../types";
 
 const basePacket = (): DraftFeedbackPacket =>
   ({
@@ -46,5 +47,42 @@ describe("normaliseDraftFeedback", () => {
     const out = normaliseDraftFeedback(basePacket());
 
     expect(out.rubric.dimensions.map((d) => d.score)).toEqual([1, 2, 4, 1]);
+  });
+});
+
+describe("normalisePlan", () => {
+  it("recovers planning-question objects from malformed JSON returned as a string", () => {
+    const plan = {
+      assignmentSummary: "Write two persuasive texts about koala hospitals.",
+      genre: "persuasive",
+      yearLevel: "year-4",
+      yearLevelSource: "user",
+      successCriteria: [],
+      planningQuestions: `[
+        {
+          "question": "What is your position on the first text?",
+          "suggestedAnswers": ["Hospitals help save koalas' lives"]
+        },
+        {
+          "question": "Where will you place your strongest reason?"",
+          "suggestedAnswers": ["Start strong to hook the reader"]
+        }
+      ]`,
+      modelAnswers: {},
+      vocabularyToOffer: [],
+      watchFor: [],
+      coachingScript: "",
+    } as unknown as WritingPlanPacket;
+
+    expect(normalisePlan(plan).planningQuestions).toEqual([
+      {
+        question: "What is your position on the first text?",
+        suggestedAnswers: ["Hospitals help save koalas' lives"],
+      },
+      {
+        question: "Where will you place your strongest reason?",
+        suggestedAnswers: ["Start strong to hook the reader"],
+      },
+    ]);
   });
 });

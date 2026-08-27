@@ -20,6 +20,17 @@ import type {
 // </invoke> garbage from the XML tool format). Extract the items.
 const ITEM_TAG_RE = /<item[^>]*>([\s\S]*?)<\/item>/gi;
 
+// A forced tool response can occasionally contain one extra closing quote in
+// a planning-question value (`"question": "... ?"",`). Repair only that
+// narrow, otherwise-invalid pattern before parsing the JSON array. Do not use
+// a broad quote replacement: escaped quotes inside a valid question must stay
+// intact.
+const repairPlanningQuestionJson = (s: string): string =>
+  s.replace(
+    /("question"\s*:\s*"(?:\\.|[^"\\])*)""(?=\s*[,}])/g,
+    '$1"',
+  );
+
 const stripXmlGarbage = (s: string): string =>
   s.replace(
     /<\/?(?:invoke|parameter|answer|item|tool_use|tool_result)[^>]*>/gi,
@@ -74,7 +85,7 @@ const objectArray = <T>(
     const trimmed = v.trim();
     if (trimmed.startsWith("[")) {
       try {
-        const parsed = JSON.parse(trimmed);
+        const parsed = JSON.parse(repairPlanningQuestionJson(trimmed));
         if (Array.isArray(parsed)) return objectArray(parsed, shape);
       } catch {
         // fall through

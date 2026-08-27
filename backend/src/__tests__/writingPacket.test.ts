@@ -35,6 +35,33 @@ const VALID_PLAN: WritingPlanPacket = {
 };
 
 describe("normalisePlan", () => {
+  it("recovers planning-question objects from malformed JSON returned as a string", () => {
+    const plan = {
+      ...VALID_PLAN,
+      planningQuestions: `[
+        {
+          "question": "What is your position on the first text?",
+          "suggestedAnswers": ["Hospitals help save koalas' lives"]
+        },
+        {
+          "question": "Where will you place your strongest reason?"",
+          "suggestedAnswers": ["Start strong to hook the reader"]
+        }
+      ]`,
+    } as unknown as WritingPlanPacket;
+
+    expect(normalisePlan(plan).planningQuestions).toEqual([
+      {
+        question: "What is your position on the first text?",
+        suggestedAnswers: ["Hospitals help save koalas' lives"],
+      },
+      {
+        question: "Where will you place your strongest reason?",
+        suggestedAnswers: ["Start strong to hook the reader"],
+      },
+    ]);
+  });
+
   it("returns an empty modelAnswers pair when the field is missing (legacy session)", () => {
     const legacy = { ...VALID_PLAN } as Partial<WritingPlanPacket>;
     delete (legacy as Record<string, unknown>).modelAnswers;
