@@ -25,8 +25,8 @@ const HOSTED_ZONE_ID = "Z07017401CSATAMC5HN1W";
 // on-demand throughput via the bare model ID is not supported.
 const HAIKU_45_MODEL_ID = "au.anthropic.claude-haiku-4-5-20251001-v1:0";
 const HAIKU_45_BASE_MODEL_ID = "anthropic.claude-haiku-4-5-20251001-v1:0";
-const SONNET_46_MODEL_ID = "au.anthropic.claude-sonnet-4-6";
-const SONNET_46_BASE_MODEL_ID = "anthropic.claude-sonnet-4-6";
+const SONNET_5_MODEL_ID = "au.anthropic.claude-sonnet-5";
+const SONNET_5_BASE_MODEL_ID = "anthropic.claude-sonnet-5";
 
 // AWS Bedrock pricing for Claude Haiku 4.5 — verify against the latest values
 // at https://aws.amazon.com/bedrock/pricing/ when prices change. Quoted in USD
@@ -34,8 +34,8 @@ const SONNET_46_BASE_MODEL_ID = "anthropic.claude-sonnet-4-6";
 // compute the dollar cost of each request server-side and surface it to the UI.
 const HAIKU_45_INPUT_PRICE_PER_MTOK = "1.00";
 const HAIKU_45_OUTPUT_PRICE_PER_MTOK = "5.00";
-const SONNET_46_INPUT_PRICE_PER_MTOK = "3.00";
-const SONNET_46_OUTPUT_PRICE_PER_MTOK = "15.00";
+const SONNET_5_INPUT_PRICE_PER_MTOK = "2.20";
+const SONNET_5_OUTPUT_PRICE_PER_MTOK = "11.00";
 const COGNITO_SMS_EXTERNAL_ID = "ai-homework-helper-cognito-sms";
 
 interface AiHomeworkHelperStackProps extends cdk.StackProps {
@@ -221,15 +221,19 @@ export class AiHomeworkHelperStack extends cdk.Stack {
     );
 
     // ── Shared Lambda env + bundling config ───────────────────────────────
+    const advancedModelId =
+      this.node.tryGetContext("advancedModelId") ?? SONNET_5_MODEL_ID;
+    const advancedBaseModelId =
+      this.node.tryGetContext("advancedBaseModelId") ?? SONNET_5_BASE_MODEL_ID;
     const sharedBedrockEnv = {
       BEDROCK_FAST_MODEL_ID: HAIKU_45_MODEL_ID,
       BEDROCK_FAST_BASE_MODEL_ID: HAIKU_45_BASE_MODEL_ID,
       BEDROCK_FAST_INPUT_PRICE_PER_MTOK: HAIKU_45_INPUT_PRICE_PER_MTOK,
       BEDROCK_FAST_OUTPUT_PRICE_PER_MTOK: HAIKU_45_OUTPUT_PRICE_PER_MTOK,
-      BEDROCK_ADVANCED_MODEL_ID: SONNET_46_MODEL_ID,
-      BEDROCK_ADVANCED_BASE_MODEL_ID: SONNET_46_BASE_MODEL_ID,
-      BEDROCK_ADVANCED_INPUT_PRICE_PER_MTOK: SONNET_46_INPUT_PRICE_PER_MTOK,
-      BEDROCK_ADVANCED_OUTPUT_PRICE_PER_MTOK: SONNET_46_OUTPUT_PRICE_PER_MTOK,
+      BEDROCK_ADVANCED_MODEL_ID: advancedModelId,
+      BEDROCK_ADVANCED_BASE_MODEL_ID: advancedBaseModelId,
+      BEDROCK_ADVANCED_INPUT_PRICE_PER_MTOK: SONNET_5_INPUT_PRICE_PER_MTOK,
+      BEDROCK_ADVANCED_OUTPUT_PRICE_PER_MTOK: SONNET_5_OUTPUT_PRICE_PER_MTOK,
       BEDROCK_GUARDRAIL_ID: guardrail.attrGuardrailId,
       BEDROCK_GUARDRAIL_VERSION: guardrailVersion.attrVersion,
     };
@@ -246,8 +250,8 @@ export class AiHomeworkHelperStack extends cdk.Stack {
       resources: [
         `arn:aws:bedrock:*::foundation-model/${HAIKU_45_BASE_MODEL_ID}`,
         `arn:aws:bedrock:*:*:inference-profile/${HAIKU_45_MODEL_ID}`,
-        `arn:aws:bedrock:*::foundation-model/${SONNET_46_BASE_MODEL_ID}`,
-        `arn:aws:bedrock:*:*:inference-profile/${SONNET_46_MODEL_ID}`,
+        `arn:aws:bedrock:*::foundation-model/${advancedBaseModelId}`,
+        `arn:aws:bedrock:*:*:inference-profile/${advancedModelId}`,
       ],
     });
     const bedrockGuardrailPolicy = new iam.PolicyStatement({

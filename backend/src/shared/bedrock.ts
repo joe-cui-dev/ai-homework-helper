@@ -16,6 +16,7 @@ import {
   type Message,
   type Tool,
 } from "@aws-sdk/client-bedrock-runtime";
+import type { DocumentType } from "@smithy/types";
 import { jsonrepair } from "jsonrepair";
 import { logger } from "./logger";
 import type { ModelChoice } from "./modelChoice";
@@ -130,6 +131,7 @@ export const callClaude = async (
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userContent }],
     temperature: options.temperature ?? 0,
+    ...model.requestOverrides,
   };
 
   const command = new InvokeModelCommand({
@@ -238,6 +240,12 @@ export const converseWithTools = async (
         any: Record<string, never>;
       },
     },
+    ...(model.requestOverrides
+      ? {
+          additionalModelRequestFields:
+            model.requestOverrides as unknown as DocumentType,
+        }
+      : {}),
     ...((options.enableGuardrail ?? true) && GUARDRAIL_ID && GUARDRAIL_VERSION
       ? {
           guardrailConfig: {

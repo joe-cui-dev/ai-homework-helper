@@ -30,12 +30,13 @@ describe("modelChoice", () => {
     expect(resolveBedrockModel("advanced")).toMatchObject({
       choice: "advanced",
       label: "Advanced",
-      modelId: "au.anthropic.claude-sonnet-4-6",
+      modelId: "au.anthropic.claude-sonnet-5",
+      requestOverrides: { thinking: { type: "disabled" } },
     });
   });
 
   it("computes cost from the selected model registry entry", () => {
     expect(computeCostUsdForModelChoice(1_000_000, 1_000_000, "fast")).toBe(6);
-    expect(computeCostUsdForModelChoice(1_000_000, 1_000_000, "advanced")).toBe(18);
+    expect(computeCostUsdForModelChoice(1_000_000, 1_000_000, "advanced")).toBe(13.2);
   });
 });

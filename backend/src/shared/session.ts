@@ -21,6 +21,8 @@ export interface SessionBase {
   sessionId: string;
   studentId: string;
   modelChoice: ModelChoice;
+  /** Model resolved when this Session was created; not used to pin later calls. */
+  modelId?: string;
   timestamp: string;
   updatedAt: string;
   usage: TokenUsage;

@@ -38,10 +38,11 @@ describe("Bedrock wrappers model choice", () => {
 
     expect(bedrockMock._sendMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        modelId: "au.anthropic.claude-sonnet-4-6",
+        modelId: "au.anthropic.claude-sonnet-5",
+        body: expect.stringContaining('"thinking":{"type":"disabled"}'),
       }),
     );
-    expect(result.usage.costUsd).toBe(18);
+    expect(result.usage.costUsd).toBe(13.2);
   });
 
   it("routes Converse calls through the selected model registry entry", async () => {
@@ -61,9 +62,10 @@ describe("Bedrock wrappers model choice", () => {
 
     expect(bedrockMock._sendMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        modelId: "au.anthropic.claude-sonnet-4-6",
+        modelId: "au.anthropic.claude-sonnet-5",
+        additionalModelRequestFields: { thinking: { type: "disabled" } },
       }),
     );
-    expect(result.usage.costUsd).toBe(18);
+    expect(result.usage.costUsd).toBe(13.2);
   });
 });

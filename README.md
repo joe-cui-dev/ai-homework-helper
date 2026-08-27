@@ -9,7 +9,7 @@ A serverless, parent-led AI coaching app for Australian primary-school students 
 - **Writing** — start from an assignment prompt, receive a parent coaching plan, then return with drafts or clarifying questions in the same Writing Session.
 - **Practice** — launch an adaptive, multi-turn tutor from a Homework question.
 
-Parents choose **Fast** (Claude Haiku 4.5) or **Advanced** (Claude Sonnet 4.6) when starting Homework, Reading, or Writing. The choice is retained for that Session; Practice inherits it from its source Homework Session.
+Parents choose **Fast** (Claude Haiku 4.5) or **Advanced** (Claude Sonnet 5) when starting Homework, Reading, or Writing. The choice is retained for that Session; Practice inherits it from its source Homework Session.
 
 ## Architecture
 
@@ -30,7 +30,7 @@ All POST coaching endpoints stream NDJSON responses. Homework starts with an exp
 
 - Node.js 22+
 - AWS CLI credentials for the target account
-- Bedrock access to the configured Claude Haiku 4.5 and Claude Sonnet 4.6 inference profiles
+- Bedrock access to the configured Claude Haiku 4.5 and Claude Sonnet 5 inference profiles
 - An ACM certificate for the configured site domain in `us-east-1`; see `infra/bin/app.ts` for the required infrastructure configuration
 
 ## Getting started

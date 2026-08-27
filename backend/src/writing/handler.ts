@@ -34,7 +34,7 @@ import type {
 } from "../shared/types";
 import type { WritingSession, WritingTurn } from "../shared/session";
 import type { AgentSidecar } from "../shared/sessionStore";
-import { parseOptionalModelChoice } from "../shared/modelChoice";
+import { parseOptionalModelChoice, resolveBedrockModel } from "../shared/modelChoice";
 import { logger } from "../shared/logger";
 
 const verifier = CognitoJwtVerifier.create({
@@ -265,6 +265,7 @@ const handleStart = async (
     studentId,
     sessionType: "writing",
     modelChoice,
+    modelId: resolveBedrockModel(modelChoice).modelId,
     timestamp: now,
     updatedAt: now,
     status: "active",

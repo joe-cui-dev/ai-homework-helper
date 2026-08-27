@@ -1,0 +1,3 @@
+# Sonnet 5 Advanced Model Mapping
+
+Advanced maps to Claude Sonnet 5, with `thinking: { type: "disabled" }` supplied by the model registry on every invocation. Sonnet 5 enables adaptive thinking by default, but thinking is incompatible with the application's forced tool use; removing this override would make Homework, Reading, Writing, and Practice fail validation rather than enable an optional quality feature. A Session records the resolved `modelId` when it starts for auditability, but later turns do not pin to it: they continue to resolve the current model registry so the retired model need not remain available forever.

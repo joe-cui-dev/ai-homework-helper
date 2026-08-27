@@ -57,7 +57,7 @@ This is an npm workspaces monorepo with three packages: `backend/`, `frontend/`,
 
 **Safety:** two-layer enforcement — Bedrock Guardrails (harmful content/profanity/PII/prompt attacks/off-topic) on all model calls, plus Cognito access-token validation ensuring `studentId` always comes from the verified token.
 
-**AI Model:** Sessions use a parent-selected `modelChoice`: Fast maps to Claude Haiku 4.5 and Advanced maps to Claude Sonnet 4.6. The backend owns the Bedrock model registry and raw model IDs.
+**AI Model:** Sessions use a parent-selected `modelChoice`: Fast maps to Claude Haiku 4.5 and Advanced maps to Claude Sonnet 5. The backend owns the Bedrock model registry and raw model IDs.
 
 ## Frontend Setup
 

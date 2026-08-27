@@ -19,7 +19,7 @@ import { generateReadingPackets } from "./readingPacket";
 import { saveSession, uploadSessionImages } from "../shared/sessionStore";
 import type { ReadingSession } from "../shared/session";
 import type { ReadingBatchPacket, StreamEvent } from "../shared/types";
-import { parseOptionalModelChoice } from "../shared/modelChoice";
+import { parseOptionalModelChoice, resolveBedrockModel } from "../shared/modelChoice";
 import { logger } from "../shared/logger";
 
 const verifier = CognitoJwtVerifier.create({
@@ -253,6 +253,7 @@ export const handler = awslambda.streamifyResponse(
           sessionId,
           studentId,
           modelChoice,
+          modelId: resolveBedrockModel(modelChoice).modelId,
           timestamp: now,
           updatedAt: now,
           usage: batchUsage,

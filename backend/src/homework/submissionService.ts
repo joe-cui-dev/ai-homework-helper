@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "crypto";
 import { sumUsage } from "../shared/bedrock";
-import type { ModelChoice } from "../shared/modelChoice";
+import { resolveBedrockModel, type ModelChoice } from "../shared/modelChoice";
 import { logger } from "../shared/logger";
 import type { HomeworkPageSubmissionRecord, HomeworkQuestion, HomeworkSession, Session } from "../shared/session";
 import {
@@ -210,6 +210,7 @@ const runInitial = async (
   const contextByPageId = new Map(contexts.map((context) => [context.pageId, context.content]));
   const session: HomeworkSession = {
     sessionType: "homework", sessionId, studentId, modelChoice: request.modelChoice,
+    modelId: resolveBedrockModel(request.modelChoice).modelId,
     timestamp: now, updatedAt: now, usage: sumUsage(analysis.usage, packetResult.usage),
     pages: imageKeys.map((imageKey, index) => ({ pageId: pageIds[index], imageKey, context: { content: contextByPageId.get(pageIds[index])! } })),
     questions, submissions: [],

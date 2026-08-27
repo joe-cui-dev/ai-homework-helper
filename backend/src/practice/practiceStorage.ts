@@ -21,6 +21,7 @@ import {
   saveSession,
 } from "../shared/sessionStore";
 import { logger } from "../shared/logger";
+import { resolveBedrockModel } from "../shared/modelChoice";
 
 export const PRACTICE_SESSION_MAX_AGE_HOURS = 24;
 
@@ -72,6 +73,7 @@ export const createPracticeBundle = async (
     sessionId: randomUUID(),
     studentId: input.studentId,
     modelChoice: origin.modelChoice,
+    modelId: resolveBedrockModel(origin.modelChoice).modelId,
     timestamp: now,
     updatedAt: now,
     usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },

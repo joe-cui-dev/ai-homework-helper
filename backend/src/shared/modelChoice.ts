@@ -7,6 +7,7 @@ export interface BedrockModelConfig {
   baseModelId: string;
   inputPricePerMTok: number;
   outputPricePerMTok: number;
+  requestOverrides?: Record<string, unknown>;
 }
 
 const readNumberEnv = (name: string, fallback: number): number => {
@@ -34,18 +35,21 @@ export const MODEL_REGISTRY: Record<ModelChoice, BedrockModelConfig> = {
     label: "Advanced",
     modelId:
       process.env.BEDROCK_ADVANCED_MODEL_ID ??
-      "au.anthropic.claude-sonnet-4-6",
+      "au.anthropic.claude-sonnet-5",
     baseModelId:
       process.env.BEDROCK_ADVANCED_BASE_MODEL_ID ??
-      "anthropic.claude-sonnet-4-6",
+      "anthropic.claude-sonnet-5",
     inputPricePerMTok: readNumberEnv(
       "BEDROCK_ADVANCED_INPUT_PRICE_PER_MTOK",
-      3,
+      2.2,
     ),
     outputPricePerMTok: readNumberEnv(
       "BEDROCK_ADVANCED_OUTPUT_PRICE_PER_MTOK",
-      15,
+      11,
     ),
+    // Sonnet 5 enables adaptive thinking by default, which is incompatible
+    // with this app's forced tool use. See ADR 0012.
+    requestOverrides: { thinking: { type: "disabled" } },
   },
 };
 
