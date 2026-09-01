@@ -33,6 +33,19 @@ const { converseWithTools } = jest.requireMock("../shared/bedrock") as {
   converseWithTools: jest.Mock;
 };
 
+type Block = Record<string, unknown>;
+
+// Text Bedrock will NOT assess: quoted worksheet material.
+const unguardedText = (content: Block[]): string =>
+  content.map((b) => (b.text as string | undefined) ?? "").filter(Boolean).join("\n");
+
+// Text tagged for guardrail assessment: the request the parent is making.
+const guardedTextOf = (content: Block[]): string =>
+  content
+    .map((b) => ((b.guardContent as { text?: { text?: string } } | undefined)?.text?.text) ?? "")
+    .filter(Boolean)
+    .join("\n");
+
 const PACKET = (id: number): CoachingPacket => ({
   questionId: id,
   tldrAnswer: `Answer for question ${id}.`,
@@ -65,6 +78,19 @@ describe("generateCoachingPacketsFromContext", () => {
     expect(firstPrompt).not.toContain("TABLE CONTEXT");
     expect(firstPrompt).not.toContain("UNRELATED CONTEXT");
     expect(secondPrompt).toContain("TABLE CONTEXT");
+  });
+
+  it("guards the question list but not the Page Context", async () => {
+    converseWithTools.mockResolvedValueOnce({ stopReason: "tool_use", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 }, message: { role: "assistant", content: [{ toolUse: { name: "submit_coaching_packets", input: { packets: [PACKET(4)] } } }] } });
+
+    await generateCoachingPacketsFromContext([contextQuestions[0]], contexts, "fast");
+
+    const content = converseWithTools.mock.calls[0][0][0].content as Block[];
+    // Extracted Page Context is the worksheet, not the parent's request.
+    expect(guardedTextOf(content)).not.toContain("GRAPH CONTEXT");
+    expect(unguardedText(content)).toContain("GRAPH CONTEXT");
+    expect(guardedTextOf(content)).toContain("[questionId=4");
+    expect(content.filter((b) => b.guardContent)).toHaveLength(1);
   });
 
   it("fails the whole generation when output is missing or duplicated", async () => {
@@ -188,20 +214,46 @@ describe("generateCoachingPackets", () => {
     await generateCoachingPackets([IMG], QUESTIONS, "READING PASSAGE BODY");
 
     const [messages] = converseWithTools.mock.calls[0];
-    const userMessage = messages[0];
-    const textBlocks = userMessage.content
-      .map((b: Record<string, unknown>) => (b.text as string | undefined) ?? "")
-      .filter(Boolean)
-      .join("\n");
-    expect(textBlocks).toContain("READING PASSAGE BODY");
-    expect(textBlocks).toContain("[questionId=1");
-    expect(textBlocks).toContain("[questionId=2");
-    expect(textBlocks).toContain("What are Alex's symptoms?");
+    const content = messages[0].content as Block[];
+    const allText = `${unguardedText(content)}\n${guardedTextOf(content)}`;
+    expect(allText).toContain("READING PASSAGE BODY");
+    expect(allText).toContain("[questionId=1");
+    expect(allText).toContain("[questionId=2");
+    expect(allText).toContain("What are Alex's symptoms?");
     // subject and yearLevel live on IdentifiedQuestion now; the coaching
     // call must pass them to the model so it can calibrate childHint and
     // shape whyItWorks without re-classifying.
-    expect(textBlocks).toContain("subject=english");
-    expect(textBlocks).toContain("yearLevel=year-3");
+    expect(allText).toContain("subject=english");
+    expect(allText).toContain("yearLevel=year-3");
+  });
+
+  it("guards the question list but not the reading passage", async () => {
+    converseWithTools.mockResolvedValueOnce({
+      stopReason: "tool_use",
+      usage: { inputTokens: 100, outputTokens: 200, costUsd: 0.0011 },
+      message: {
+        role: "assistant",
+        content: [
+          {
+            toolUse: {
+              name: "submit_coaching_packets",
+              input: { packets: [PACKET(1), PACKET(2)] },
+            },
+          },
+        ],
+      },
+    });
+
+    await generateCoachingPackets([IMG], QUESTIONS, "READING PASSAGE BODY");
+
+    const content = converseWithTools.mock.calls[0][0][0].content as Block[];
+    // A quoted passage is source material, not a request — assessing it is
+    // what blocked a pirate comprehension worksheet as "roleplay".
+    expect(guardedTextOf(content)).not.toContain("READING PASSAGE BODY");
+    expect(unguardedText(content)).toContain("READING PASSAGE BODY");
+    expect(guardedTextOf(content)).toContain("[questionId=1");
+    // Exactly one guarded block: with none, Bedrock assesses the whole message.
+    expect(content.filter((b) => b.guardContent)).toHaveLength(1);
   });
 
   it("throws when guardrail intervenes, surfacing the message", async () => {

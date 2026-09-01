@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
 import { buildUsage, parseDataUrl, sumUsage } from "../shared/bedrock";
+import { guardedText } from "../shared/guardrail";
 import type { ModelChoice } from "../shared/modelChoice";
 import type { CoachingPacket, IdentifiedQuestion } from "../shared/types";
 import { logger } from "../shared/logger";
@@ -198,9 +199,11 @@ export const generateCoachingPackets = async (
     )
     .join("\n");
 
-  content.push({
-    text: `Identified questions (one packet required per id):\n${questionList}`,
-  });
+  // The question list is the request; the reading passage above is source
+  // material the parent photographed, so only the former is guarded.
+  content.push(
+    guardedText(`Identified questions (one packet required per id):\n${questionList}`),
+  );
 
   const messages: BedrockMessage[] = [{ role: "user", content }];
 
@@ -258,7 +261,10 @@ export const generateCoachingPacketsFromContext = async (
         const relevantContexts = key ? key.split("\u0000").map((id) => ({ pageId: id, content: contextById.get(id)! })) : [];
         const questionList = chunk.map((q) => `[questionId=${q.questionId}, subject=${q.subject}, yearLevel=${q.yearLevel}] ${q.input}`).join("\n");
         const response = await runForcedHomeworkTool<{ packets: CoachingPacket[] }>({
-          messages: [{ role: "user", content: [{ text: `Relevant Page Context:\n\n${relevantContexts.map((context) => `[pageId=${context.pageId}]\n${context.content}`).join("\n\n---\n\n") || "No page image was supplied; use the typed question."}\n\nIdentified questions:\n${questionList}` }] }],
+          messages: [{ role: "user", content: [
+            { text: `Relevant Page Context:\n\n${relevantContexts.map((context) => `[pageId=${context.pageId}]\n${context.content}`).join("\n\n---\n\n") || "No page image was supplied; use the typed question."}` },
+            guardedText(`Identified questions:\n${questionList}`),
+          ] }],
           tool: SUBMIT_TOOL,
           toolName: "submit_coaching_packets",
           systemPrompt: SYSTEM_PROMPT,

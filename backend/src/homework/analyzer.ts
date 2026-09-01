@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RawTokenUsage, Tool, BedrockMessage } from "../shared/bedrock";
 import { buildUsage, parseDataUrl, sumUsage } from "../shared/bedrock";
+import { guardedText } from "../shared/guardrail";
 import type { ModelChoice } from "../shared/modelChoice";
 import type { PageAnalysis, IdentifiedQuestion } from "../shared/types";
 import { logger } from "../shared/logger";
@@ -146,8 +147,10 @@ export const analyzePages = async (
     return { image: { format, source: { bytes: Buffer.from(base64Data, "base64") } } };
   });
 
+  // The typed question is the only thing the parent authored here; the images
+  // carry no text blocks, so tagging it is enough to scope the guardrail.
   if (questionText?.trim()) {
-    content.push({ text: questionText.trim() });
+    content.push(guardedText(questionText.trim()));
   }
 
   const messages: BedrockMessage[] = [{ role: "user", content }];
@@ -287,10 +290,12 @@ export const analyzeHomeworkSubmission = async (input: {
   const newPageIds = new Set(input.newPages.map((page) => page.pageId));
   const priorPageIds = new Set(input.priorPages.map((page) => page.pageId));
   const existingQuestionIds = new Set(input.existingQuestions.map((question) => question.questionId));
+  // typedQuestion is deliberately absent: it travels in its own guarded block
+  // below, so the guardrail judges it without also judging the prior Page
+  // Context an append submission carries in here.
   const semanticPrompt = JSON.stringify({
     newPageIds: [...newPageIds], priorPageContexts: input.priorPages,
     existingQuestionSummaries: input.existingQuestions,
-    typedQuestion: input.questionText?.trim() || undefined,
   });
   const runAnalysisPass = async (
     targetedImages: Array<{ pageId: string; image: StoredImage }> = [],
@@ -301,6 +306,13 @@ export const analyzeHomeworkSubmission = async (input: {
       : input.newPages.map((page) => imageBlockFromDataUrl(page.image));
     for (const targeted of targetedImages) content.push(imageBlockFromStored(targeted.image));
     content.push({ text: `Submission context (stable IDs are authoritative):\n${semanticPrompt}\nTargeted prior images included: ${targetedImages.map((p) => p.pageId).join(", ") || "none"}${firstPass ? `\nThe first-pass Page Context below is final and must not be reinterpreted. Use the targeted old images only to resolve Question relations, and reproduce these contexts unchanged:\n${JSON.stringify(firstPass)}` : ""}` });
+    content.push(
+      guardedText(
+        input.questionText?.trim()
+          ? `Parent's typed question:\n${input.questionText.trim()}`
+          : "",
+      ),
+    );
     const response = await runForcedHomeworkTool<HomeworkAnalysisToolInput>({
       messages: [{ role: "user", content }],
       tool: SUBMIT_HOMEWORK_ANALYSIS_TOOL,

@@ -123,6 +123,42 @@ describe("analyzeHomeworkSubmission", () => {
     expect(JSON.stringify(messages)).toContain("Earlier graph axes");
   });
 
+  it("guards the typed question only, leaving prior Page Context unassessed", async () => {
+    converseWithTools.mockResolvedValueOnce({ stopReason: "tool_use", usage: { inputTokens: 10, outputTokens: 5, costUsd: 0 }, message: { role: "assistant", content: [{ toolUse: { name: "submit_homework_submission_analysis", input: finalInput } }] } });
+
+    await analyzeHomeworkSubmission({
+      newPages: [{ pageId: "new-1", image: IMG }],
+      priorPages: [{ pageId: "old-1", content: "Earlier graph axes" }],
+      existingQuestions: [{ questionId: 7, input: "Graph question", subject: "math", yearLevel: "year-4", sourcePageIds: ["old-1"] }],
+      questionText: "Why is question 3 wrong?",
+      modelChoice: "fast", loadPriorImage: jest.fn(),
+    });
+
+    const content = converseWithTools.mock.calls[0][0][0].content as Array<Record<string, unknown>>;
+    const guarded = content.filter((block) => "guardContent" in block);
+    // Prior Page Context is worksheet text the parent photographed earlier;
+    // assessing it as a request is what blocks legitimate submissions.
+    expect(JSON.stringify(guarded)).not.toContain("Earlier graph axes");
+    expect(JSON.stringify(guarded)).toContain("Why is question 3 wrong?");
+    expect(guarded).toHaveLength(1);
+  });
+
+  it("still emits one guarded block when the parent typed nothing", async () => {
+    converseWithTools.mockResolvedValueOnce({ stopReason: "tool_use", usage: { inputTokens: 10, outputTokens: 5, costUsd: 0 }, message: { role: "assistant", content: [{ toolUse: { name: "submit_homework_submission_analysis", input: finalInput } }] } });
+
+    await analyzeHomeworkSubmission({
+      newPages: [{ pageId: "new-1", image: IMG }],
+      priorPages: [{ pageId: "old-1", content: "Earlier graph axes" }],
+      existingQuestions: [{ questionId: 7, input: "Graph question", subject: "math", yearLevel: "year-4", sourcePageIds: ["old-1"] }],
+      modelChoice: "fast", loadPriorImage: jest.fn(),
+    });
+
+    // Without a guarded block Bedrock reverts to assessing the whole message,
+    // prior Page Context included.
+    const content = converseWithTools.mock.calls[0][0][0].content as Array<Record<string, unknown>>;
+    expect(content.filter((block) => "guardContent" in block)).toHaveLength(1);
+  });
+
   it("loads only requested owned prior images and permits one fallback", async () => {
     converseWithTools
       .mockResolvedValueOnce({ stopReason: "tool_use", usage: { inputTokens: 10, outputTokens: 5, costUsd: 0 }, message: { role: "assistant", content: [{ toolUse: { name: "submit_homework_submission_analysis", input: { ...finalInput, candidates: [], requestedPriorPageIds: ["old-1"] } } }] } })
